@@ -1,0 +1,178 @@
+name: CI
+
+# The gate. It runs on both operating systems the app ships on, because the failures this port is
+# most likely to produce are the ones that only appear on one of them: the process-group and
+# console-window handling, the credential store, ConPTY, and the frameless window.
+#
+# 2.x ran no tests in CI at all — release.sh was the only gate, on the maintainer's machine. The
+# history that argues against that is in the repository: a named-pipe address bug and a credential
+# class marked "not verified on Windows" both shipped.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Build installers without publishing anything
+        type: boolean
+        default: false
+
+# A new push to a pull request makes the previous run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27.1"
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11.20.0"
+  # Wails links against the system WebKit through cgo. Without these the linker warns on every
+  # object and the binary claims a minimum it does not have.
+  MACOSX_DEPLOYMENT_TARGET: "26.0"
+
+jobs:
+  backend:
+    name: Backend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false # a Windows-only failure must not hide a macOS one, and vice versa
+      matrix:
+        os: [macos-15, windows-2025]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      # An unrecovered panic on any goroutine ends the whole process, taking every terminal, AI run
+      # and stream with it. safego.Go is the only sanctioned spelling, and this is what makes that
+      # a rule rather than a habit. Inverted: a match is a failure.
+      - name: No bare goroutines
+        shell: bash
+        run: |
+          if grep -rnE '^[[:space:]]*go (func|[a-zA-Z_.]+\()' backend --include='*.go' \
+               | grep -v '_test.go' | grep -v 'shared/safego'; then
+            echo "::error::start goroutines through shared/safego.Go (see backend/shared/safego)"
+            exit 1
+          fi
+
+      - name: Cross-compile the other platform
+        # Catches a build-tagged file that only its own OS ever compiles — the process-group and
+        # Job Object code is split exactly that way.
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            GOOS=darwin GOARCH=arm64 go build ./...
+          else
+            GOOS=windows GOARCH=amd64 go build ./...
+          fi
+
+  frontend:
+    name: Renderer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: frontend
+        run: pnpm typecheck
+
+      # `pnpm lint` is deliberately absent. typescript-eslint refuses to load against TypeScript 7
+      # ("typescript-eslint does not support TS 7.0"); its tracking issue targets TS >= 7.1. The
+      # ESLint config is kept intact, so this becomes one more step the day support lands.
+      # Tracked in README, "Known gaps".
+
+      - name: Test
+        working-directory: frontend
+        run: pnpm test
+
+      - name: Build
+        working-directory: frontend
+        run: pnpm build
+
+  smoke:
+    name: Smoke test (${{ matrix.os }})
+    needs: [backend, frontend]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build the renderer
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Build the application
+        shell: bash
+        run: go build -trimpath -mod=readonly -ldflags "-X main.version=0.0.0-ci" -o bin/CodeFlow .
+
+      # The environment probes, run on the binary that was just produced rather than on the source.
+      # This is what catches "it compiles but git is not reachable from a packaged build".
+      - name: Probe the environment
+        shell: bash
+        run: ./bin/CodeFlow --smoke-test
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.package
+        with:
+          name: codeflow-${{ matrix.os }}
+          path: bin/CodeFlow*
+          retention-days: 7

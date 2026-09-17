@@ -1,0 +1,83 @@
+version: "2"
+
+# golangci-lint v2 configuration.
+#
+# The set is chosen around the failure modes this port actually has, not around a "strict" label:
+#
+#   - errcheck / errorlint: the C# original handled errors at boundaries and the Go port has to do
+#     the same explicitly. An ignored error here is a command that reports success and did nothing.
+#   - bodyclose / noctx: every provider, work-item and update call goes through net/http. A leaked
+#     body is a leaked connection in a process that runs for days.
+#   - contextcheck: a Wails call's context is cancelled when the call returns (§3.7). Handing it to
+#     an AI run or a stream connector would close the thing the moment it started.
+#   - gosec: this process holds the user's tokens and spawns CLIs with their arguments.
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - contextcheck
+    - errcheck
+    - errorlint
+    - govet
+    - ineffassign
+    - misspell
+    - noctx
+    - revive
+    - staticcheck
+    - unparam
+    - unused
+    - gosec
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      # check-blank stays off: this codebase's convention is that a deliberate `_ =` carries a
+      # comment saying why the error cannot be acted on (a log write that must not fail the thing
+      # it was recording, a best-effort cleanup). Flagging those would force a nolint on every one
+      # and make the real signal — an error dropped silently — harder to see.
+      check-blank: false
+    govet:
+      enable-all: true
+      disable:
+        # Struct field alignment is not worth reordering a wire-shaped struct for: the field order
+        # of a response type mirrors the specification's table, which is how a reviewer checks it.
+        - fieldalignment
+        # `shadow` flags `if err := f(); err != nil` inside any function that already has an `err`,
+        # which is ordinary Go and reads better than the alternatives. It is off by default in
+        # govet for that reason; enable-all turned it on. Genuine shadowing bugs in this codebase
+        # would be caught by the tests, since every shadowed value here is an error that is
+        # checked on the next line.
+        - shadow
+    revive:
+      rules:
+        - name: exported
+          disabled: true # package comments carry the reasoning; per-symbol prefixes would repeat it
+    misspell:
+      # No locale on purpose. Forcing one turns every US/UK variant into a finding, and several of
+      # those "misspellings" are byte contracts: `NOTHING_TO_ANALYZE: ` is a sentinel the renderer
+      # matches with startsWith, and "correcting" it to ANALYSE would silently break a handled
+      # state. Default catches real typos and leaves spelling variants alone.
+      ignore-rules:
+        - analyze
+        - analyse
+
+  exclusions:
+    rules:
+      # Tests may ignore errors from setup helpers and use weak randomness; they are not the
+      # threat model, and requiring a check on every t.Setenv-adjacent call buries the assertions.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - unparam
+
+      # The diagnostics writers swallow I/O failures on purpose: a full disk must not fail the
+      # thing that was only being logged. Each site carries a justifying comment.
+      - path: backend/diagnostics/
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt

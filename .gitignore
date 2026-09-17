@@ -1,0 +1,44 @@
+# Build output
+bin/
+build/bin/
+dist-installers/
+
+# The renderer is built into frontend/dist and embedded with go:embed.
+#
+# The directory is ignored, but `.gitkeep` is committed: `//go:embed all:frontend/dist` fails to
+# compile when the pattern matches nothing, so without a tracked file `go build ./...` and
+# `go test ./...` would both fail on a clean clone, before anything had a chance to run. The `all:`
+# prefix is what makes a dotfile count.
+frontend/dist/*
+!frontend/dist/.gitkeep
+
+frontend/node_modules/
+node_modules/
+.pnpm-store/
+
+# Wails regenerates these; nothing under frontend/src imports them (the bridge uses Call.ByName).
+frontend/bindings/
+
+# Secrets. Carried over from the 2.x repository: a signing identity or a provider token that lands
+# here is published the moment the repository is public.
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.mobileprovision
+
+# "secrets" as a word, not as a prefix. The unanchored `secrets*` this replaces also matched
+# `backend/security/secretscan.go` — the secret scanner's own source — and silently kept it out of
+# the repository, where it would have been missing from every clone.
+secrets
+secrets.*
+secrets-*
+secrets_*
+
+# Per-developer configuration, never shared
+CLAUDE.local.md
+.claude/settings.local.json
+
+# macOS
+.DS_Store

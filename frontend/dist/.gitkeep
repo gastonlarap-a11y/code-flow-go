@@ -1,0 +1,11 @@
+This file exists so `//go:embed all:frontend/dist` in main.go compiles on a clean clone.
+
+go:embed fails at build time when its pattern matches nothing, so without a tracked file here
+`go build ./...` and `go test ./...` would both fail before running — on a checkout where the
+renderer simply has not been built yet. The `all:` prefix in the embed directive is what makes a
+dotfile like this one count as a match.
+
+Vite empties this directory on every build, which deletes this file; the `frontend:build` task
+restores it immediately afterwards. If it ever goes missing, `task frontend:build` brings it back.
+
+Everything else in this directory is Vite's output and is gitignored.

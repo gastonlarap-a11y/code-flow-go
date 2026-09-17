@@ -1,0 +1,219 @@
+[
+  {
+    "$schema": "codeflow-fixture-v1",
+    "sourceFile": "src/CodeFlow.App/Ai/AiText.cs",
+    "sourceLines": "74-108",
+    "extractedFrom": [
+      "strips_colour_codes_from_a_cli_error",
+      "strips_osc_hyperlink_sequences",
+      "leaves_ordinary_text_untouched"
+    ],
+    "kind": "vector",
+    "unit": "strip_ansi",
+    "cases": [
+      {
+        "id": "strips-sgr-colour-codes",
+        "input": {
+          "text": "\u001b[0m\u001b[91m\u001b[1mError: \u001b[0mInsufficient balance."
+        },
+        "expected": {
+          "result": "Error: Insufficient balance."
+        },
+        "notes": "CSI sequences (ESC [ params final-byte in @-~) are dropped whole; opencode colours its errors this way."
+      },
+      {
+        "id": "strips-osc-hyperlink-sequences",
+        "input": {
+          "text": "see \u001b]8;;https://example.com\u0007the docs\u001b]8;;\u0007"
+        },
+        "expected": {
+          "result": "see the docs"
+        },
+        "notes": "OSC sequences (ESC ] ... terminated by BEL or ESC \\\\) are dropped whole, including the hyperlink URL itself."
+      },
+      {
+        "id": "leaves-ordinary-text-untouched",
+        "input": {
+          "text": "feat: add thing [skip ci]"
+        },
+        "expected": {
+          "result": "feat: add thing [skip ci]"
+        }
+      }
+    ]
+  },
+  {
+    "$schema": "codeflow-fixture-v1",
+    "sourceFile": "src/CodeFlow.App/Ai/AiText.cs",
+    "sourceLines": "814-830",
+    "extractedFrom": [
+      "reads_the_version_out_of_each_cli_banner",
+      "falls_back_to_the_banner_line_and_rejects_empty_output"
+    ],
+    "kind": "vector",
+    "unit": "parse_version",
+    "cases": [
+      {
+        "id": "claude-banner-with-parenthetical-label",
+        "input": {
+          "output": "2.0.14 (Claude Code)"
+        },
+        "expected": {
+          "result": "2.0.14"
+        }
+      },
+      {
+        "id": "codex-cli-banner",
+        "input": {
+          "output": "codex-cli 0.20.0\n"
+        },
+        "expected": {
+          "result": "0.20.0"
+        }
+      },
+      {
+        "id": "v-prefixed-banner",
+        "input": {
+          "output": "v1.4.2"
+        },
+        "expected": {
+          "result": "1.4.2"
+        }
+      },
+      {
+        "id": "leading-blank-lines-then-version",
+        "input": {
+          "output": "\n  0.9.1  \nsecond line"
+        },
+        "expected": {
+          "result": "0.9.1"
+        }
+      },
+      {
+        "id": "no-version-shaped-token-falls-back-to-whole-first-line",
+        "input": {
+          "output": "nightly build"
+        },
+        "expected": {
+          "result": "nightly build"
+        }
+      },
+      {
+        "id": "whitespace-only-output-is-none",
+        "input": {
+          "output": "   \n  "
+        },
+        "expected": {
+          "result": null
+        }
+      },
+      {
+        "id": "empty-output-is-none",
+        "input": {
+          "output": ""
+        },
+        "expected": {
+          "result": null
+        }
+      }
+    ]
+  },
+  {
+    "$schema": "codeflow-fixture-v1",
+    "sourceFile": "src/CodeFlow.App/Ai/AiText.cs",
+    "sourceLines": "37-56",
+    "extractedFrom": [
+      "a_credit_balance_refusal_counts_as_a_quota_signal",
+      "a_genuine_failure_is_not_a_quota_signal"
+    ],
+    "kind": "vector",
+    "unit": "quota_signal",
+    "cases": [
+      {
+        "id": "credit-balance-refusal-is-a-quota-signal",
+        "input": {
+          "text": "Error: Insufficient balance. Manage your billing here: https://x/billing"
+        },
+        "expected": {
+          "result": true
+        }
+      },
+      {
+        "id": "unknown-flag-error-is-not-a-quota-signal",
+        "input": {
+          "text": "error: unknown flag --nope"
+        },
+        "expected": {
+          "result": false
+        }
+      }
+    ],
+    "notes": "The full QUOTA_SIGNALS dictionary, lower-cased substring match: usage limit, rate limit, quota exceeded, resets at, try again in, limit reached, insufficient balance, insufficient credit, out of credit, payment required, billing."
+  },
+  {
+    "$schema": "codeflow-fixture-v1",
+    "sourceFile": "src/CodeFlow.App/Ai/AuthSignals.cs",
+    "extractedFrom": [
+      "A_lost_login_is_recognised_as_an_auth_signal"
+    ],
+    "kind": "vector",
+    "unit": "auth_signal",
+    "cases": [
+      {
+        "id": "claude-expired-oauth-session-is-an-auth-signal",
+        "input": {
+          "text": "Failed to authenticate: OAuth session expired and could not be refreshed"
+        },
+        "expected": {
+          "result": true
+        }
+      },
+      {
+        "id": "codex-not-logged-in-is-an-auth-signal",
+        "input": {
+          "text": "not logged in — run `codex login`"
+        },
+        "expected": {
+          "result": true
+        }
+      },
+      {
+        "id": "opencode-401-event-is-an-auth-signal",
+        "input": {
+          "text": "APIError: Unauthorized: unauthorized: AuthenticateToken authentication failed"
+        },
+        "expected": {
+          "result": true
+        }
+      },
+      {
+        "id": "opencode-auth-required-is-an-auth-signal",
+        "input": {
+          "text": "auth required: run `opencode auth login`"
+        },
+        "expected": {
+          "result": true
+        }
+      },
+      {
+        "id": "unknown-flag-error-is-not-an-auth-signal",
+        "input": {
+          "text": "error: unknown flag --nope"
+        },
+        "expected": {
+          "result": false
+        }
+      },
+      {
+        "id": "a-review-finding-about-a-401-does-match-the-dictionary",
+        "input": {
+          "text": "The endpoint returns 401 Unauthorized when the token is missing, and the caller never handles it."
+        },
+        "expected": {
+          "result": true
+        }
+      }
+    ],
+    "notes": "The AUTH_SIGNALS dictionary, lower-cased substring match: failed to authenticate, oauth session expired, session expired, not logged in, auth required, authentication failed, unauthorized. The last case is the point of the class and is deliberately `true`: the dictionary cannot tell a lost login from a review discussing one, so nothing protects that review except *where* Matches is called — only on a failure path, never over a reply that worked. See `an-ordinary-reply-mentioning-401-is-still-a-reply` in codex.vectors.json, which is the case that would break if that placement were ever widened."
+  }
+]

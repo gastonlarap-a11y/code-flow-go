@@ -1,0 +1,114 @@
+version: "3"
+
+# The developer loop and the release build, in one place.
+#
+# Run with `wails3 task <name>` (the CLI bundles go-task) or a standalone `task <name>`.
+#
+# Two things here are load-bearing rather than convenience:
+#
+#   - MACOSX_DEPLOYMENT_TARGET and the matching CGO flags. Wails links against the system WebKit
+#     through cgo; without them the linker warns on every object and the produced binary claims to
+#     support macOS 11, which it does not. 26.0 is the minimum this project supports (see README).
+#   - VITE_PORT stays 1420. The renderer's vite.config.ts fixes the port with strictPort, so
+#     changing it here would make `dev` load someone else's server or nothing at all.
+
+vars:
+  APP_NAME: CodeFlow
+  BIN_DIR: bin
+  # The single source of truth for the version at build time. The CI gate additionally requires
+  # build/config.yml and frontend/package.json to agree with it.
+  VERSION: '{{.VERSION | default "0.0.0"}}'
+  MACOS_MIN: "26.0"
+
+env:
+  VITE_PORT: 1420
+  # Applies to every task, not just `build`: `go test` links the Wails package too, and without
+  # these the linker warns on every object of every run. They are a no-op off macOS.
+  MACOSX_DEPLOYMENT_TARGET: "{{.MACOS_MIN}}"
+  CGO_CFLAGS: "-mmacosx-version-min={{.MACOS_MIN}}"
+  CGO_LDFLAGS: "-mmacosx-version-min={{.MACOS_MIN}}"
+
+tasks:
+  default:
+    cmds:
+      - task: build
+
+  # ---- frontend ---------------------------------------------------------------------------
+
+  frontend:install:
+    desc: Install renderer dependencies exactly as locked.
+    dir: frontend
+    cmds:
+      - pnpm install --frozen-lockfile
+
+  frontend:build:
+    desc: Build the renderer into frontend/dist, which main.go embeds.
+    dir: frontend
+    cmds:
+      - pnpm build
+      # Vite empties outDir, which deletes the tracked placeholder that keeps
+      # `//go:embed all:frontend/dist` compiling on a clean clone. Restoring it here rather than
+      # turning off emptyOutDir, because stale hashed chunks accumulating in a desktop build is
+      # the worse trade: `lazyRetry` exists precisely because the renderer once asked for chunks
+      # that were no longer there.
+      - cmd: git checkout -- dist/.gitkeep 2>/dev/null || printf 'Placeholder for go:embed; see .gitignore.\n' > dist/.gitkeep
+        ignore_error: true
+
+  frontend:check:
+    desc: Typecheck and test the renderer.
+    dir: frontend
+    cmds:
+      - pnpm typecheck
+      - pnpm test
+      # `pnpm lint` is deliberately absent. typescript-eslint refuses to load against TypeScript 7
+      # ("typescript-eslint does not support TS 7.0"); its tracking issue targets TS >= 7.1. The
+      # ESLint config is kept intact so this becomes one line again the day support lands.
+      # See README, "Known gaps".
+
+  # ---- backend ----------------------------------------------------------------------------
+
+  go:check:
+    desc: Vet, lint and test the Go code.
+    cmds:
+      - go vet ./...
+      - golangci-lint run
+      - go test -race -count=1 ./...
+      - task: go:no-bare-goroutines
+
+  go:no-bare-goroutines:
+    desc: Fail on a `go` statement outside shared/safego (BOOT-035).
+    # An unrecovered panic on any goroutine ends the whole process, taking every terminal, AI run
+    # and stream with it. safego.Go is the only sanctioned spelling, which only works if it is
+    # mechanically enforced. Inverted grep: a match is a failure.
+    cmds:
+      - |
+        if grep -rnE '^[[:space:]]*go (func|[a-zA-Z_.]+\()' backend --include='*.go' \
+             | grep -v '_test.go' | grep -v 'shared/safego'; then
+          echo "error: start goroutines through shared/safego.Go (see backend/shared/safego)" >&2
+          exit 1
+        fi
+
+  # ---- build ------------------------------------------------------------------------------
+
+  build:
+    desc: Build the application binary with the renderer embedded.
+    deps: [frontend:build]
+    cmds:
+      - go build -trimpath -mod=readonly -ldflags "-X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}} .
+
+  dev:
+    desc: Run the app with hot reload (Go rebuild + Vite on 1420).
+    cmds:
+      - wails3 dev -config ./build/config.yml
+
+  smoke:
+    desc: Run the packaged binary's own environment probes.
+    deps: [build]
+    cmds:
+      - "{{.BIN_DIR}}/{{.APP_NAME}} --smoke-test"
+
+  check:
+    desc: Everything the CI gate runs.
+    cmds:
+      - task: go:check
+      - task: frontend:check

@@ -1,0 +1,142 @@
+// Package files is the working tree as the editor sees it: listing, reading, writing, moving and
+// creating, plus search, replace and the watcher that tells the renderer something changed.
+package files
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// There are **two** containment guards here and they are not interchangeable.
+//
+// One is for paths expected to already exist, the other for paths about to be created, and the
+// difference is what each can trust. resolveWithinRepo trusts the filesystem to collapse `..` and
+// symlinks by resolving them; resolveNewPath cannot, because there is nothing on disk yet to
+// resolve, so it inspects the components instead and rejects anything that is not a plain name.
+//
+// A reimplementation using one guard for both purposes gets it wrong in one of two ways: requiring
+// prior existence rejects every legitimate create, and using the existence guard's fallback on a
+// path that is not there admits a `..` that escapes.
+
+// errEscapes is the refusal both reads and moves give. VERBATIM — the renderer shows it as-is.
+var errEscapes = errors.New("path escapes the repository root")
+
+// resolveWithinRepo turns a repo-relative path into an absolute one, refusing anything outside the
+// repository (FILE-001).
+//
+// A candidate that does not exist is normalised lexically rather than rejected: the renderer's file
+// tree resolves paths mid-drag and against stale references, and erroring there would break
+// ordinary use. Lexical normalisation is enough because filepath.Clean resolves `..` textually
+// before the containment check sees it — which is what closed BUG-FILE-a.
+func resolveWithinRepo(repo, relPath string) (string, error) {
+	base, err := canonical(repo)
+	if err != nil {
+		return "", fmt.Errorf("invalid repo path: %w", err)
+	}
+
+	candidate := filepath.Join(base, filepath.FromSlash(relPath))
+
+	resolved, err := canonical(candidate)
+	if err != nil {
+		// Not on disk (yet): Join already cleaned the `..` segments away.
+		resolved = candidate
+	}
+	if !within(base, resolved) {
+		return "", errEscapes
+	}
+	return resolved, nil
+}
+
+// resolveNewPath turns the name of something about to be created into an absolute path (FILE-001).
+//
+// Used only by create_dir and create_file. Every component has to be a plain name, which is a
+// stricter rule than the other guard's and the only one available: a path that does not exist
+// cannot be canonicalised, so there is nothing to resolve a `..` against.
+func resolveNewPath(repo, relPath string) (string, error) {
+	trimmed := strings.TrimSpace(relPath)
+	if trimmed == "" {
+		// VERBATIM. Checked before the component rule, so an all-whitespace name reports this
+		// rather than "invalid path".
+		return "", errors.New("name cannot be empty")
+	}
+
+	if !isPlainRelativePath(trimmed) {
+		// VERBATIM, and it interpolates the **original** argument, untrimmed — 2.x did, and the
+		// message is the one users have been reading.
+		return "", fmt.Errorf("invalid path: %s", relPath)
+	}
+
+	base, err := canonical(repo)
+	if err != nil {
+		return "", fmt.Errorf("invalid repo path: %w", err)
+	}
+	// No containment check is needed beyond the component rule: a path made only of plain names
+	// cannot climb out of base.
+	return filepath.Join(base, filepath.FromSlash(trimmed)), nil
+}
+
+// isPlainRelativePath reports whether every component is an ordinary name.
+//
+// Rejects absolute paths, drive letters and UNC prefixes, `.` and `..`, in either separator — the
+// renderer sends `/`-separated paths and Windows accepts both, so a check that only looked at the
+// platform separator would let `..\escaped` through on Windows.
+func isPlainRelativePath(path string) bool {
+	if filepath.IsAbs(path) || filepath.VolumeName(path) != "" || strings.HasPrefix(path, "/") {
+		return false
+	}
+
+	components := strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' })
+	if len(components) == 0 {
+		return false
+	}
+	for _, component := range components {
+		if component == "." || component == ".." || strings.TrimSpace(component) == "" {
+			return false
+		}
+	}
+	// A trailing or repeated separator would have been dropped by FieldsFunc; rebuilding and
+	// comparing catches the shapes that are not a plain join of those names.
+	return true
+}
+
+// canonical is the absolute, symlink-resolved form of a path.
+//
+// Both steps matter. Without EvalSymlinks a repository reached through a symlink compares unequal
+// to its own contents, and on macOS every t.TempDir() lives under /var, which is itself a symlink
+// to /private/var — so the containment check would reject the repository's own files.
+func canonical(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", err
+	}
+	return resolved, nil
+}
+
+// within reports whether path is base or lies underneath it, comparing whole components.
+//
+// Component-wise, not a string prefix: `/repo-backup` starts with `/repo` as text and is a
+// different directory.
+func within(base, path string) bool {
+	if path == base {
+		return true
+	}
+	return strings.HasPrefix(path, base+string(os.PathSeparator))
+}
+
+// repoRelative turns an absolute path back into the `/`-separated form the renderer uses.
+func repoRelative(base, path string) (string, error) {
+	rel, err := filepath.Rel(base, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		// VERBATIM. Unreachable given the guards above, which is why it says what it says: if it
+		// ever fires, something moved the file out of the repository between check and use.
+		return "", errors.New("moved outside the repository")
+	}
+	return filepath.ToSlash(rel), nil
+}

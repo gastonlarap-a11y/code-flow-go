@@ -1,0 +1,35 @@
+# wails3 build configuration.
+#
+# The identity here is not cosmetic: CodeFlow 3.0 is a drop-in replacement for 2.7.x, and three of
+# these values are what make an upgrade keep the user's data rather than start beside it.
+#
+#   - identifier `com.codeflow.app` is the bundle id 2.x shipped, the single-instance UniqueID in
+#     main.go, and the macOS keychain service name every stored token is filed under. Changing it
+#     makes every saved credential unreadable and lets two CodeFlows run at once.
+#   - productName `CodeFlow` is the .app name Finder replaces on a drag-install, and the NSIS
+#     display name the Windows uninstaller matches on.
+#   - version is the number the updater compares against the GitHub release feed. The CI gate
+#     requires this, frontend/package.json and the -ldflags value to agree.
+#
+# The minimum macOS is 26.0 (Tahoe). Apple stopped patching macOS 14 Sonoma in September 2026, and
+# every supported version from 15 up ships Safari 26+ — which is what lets the renderer use CSS
+# anchor positioning, the Popover API and light-dark() with no fallback path. See README.
+
+info:
+  productName: CodeFlow
+  productIdentifier: com.codeflow.app
+  description: Code review and API workbench
+  productVersion: "3.0.0"
+  productCompany: Gastón Lara P.
+  productCopyright: © 2026 Gastón Lara P.
+  productComments: Code review and API workbench
+
+# Where wails3 dev finds the renderer. The port is fixed because frontend/vite.config.ts sets
+# strictPort: a mismatch would load someone else's dev server, or nothing.
+dev_mode:
+  frontend:
+    dir: frontend
+    install: pnpm install
+    build: pnpm build
+    dev: pnpm dev
+    dev_url: http://localhost:1420
