@@ -8,17 +8,18 @@ This repository is **CodeFlow 3.0**, a rewrite of CodeFlow 2.7.x as a single Go 
 as a drop-in replacement: it installs over 2.7.x and keeps the same database, the same keychain
 entries and the same update feed.
 
-> **Status: Phases 1–3 complete, Phase 4 in progress.** The window, the desktop shell and the bridge; storage
+> **Status: Phases 1–4 complete.** The window, the desktop shell and the bridge; storage
 > with its migrations, the credential store, workspaces, projects, settings, prompts, review
 > contexts, agents, MCP servers, skills, chat and job history, and the review-run store; Git in
 > full — status, diffs, history, branches, staging, committing, stash, merge and conflicts, AI
 > checkpoints, remotes, the identity and clone/fetch/pull/push with their streamed progress; the
 > file tree and its operations, the go-to-file palette, search and replace, the working-tree
-> watcher, the pre-commit secret gate and the terminal; and from Phase 4, the AI routing cascade,
-> binary discovery, the run lifecycle with its streaming and cancellation, all six engines, and
-> the commit-message, inline-edit, conflict-resolution and finding-fix operations. **140 of 246
-> backend commands answer**; 11 are deferred on purpose and 95 remain. `MIGRATION-GO.md` is the
-> plan and `docs/` is the authoritative specification of the behaviour being ported.
+> watcher, the pre-commit secret gate and the terminal; and the AI layer in full — the routing
+> cascade, binary discovery, the run lifecycle with its streaming and cancellation, all six
+> engines, chat with its history and session handling, and the commit-message, inline-edit,
+> conflict-resolution, finding-fix and pull-request-description operations. **142 of 246 backend
+> commands answer**; 11 are deferred on purpose and 93 remain. `MIGRATION-GO.md` is the plan and
+> `docs/` is the authoritative specification of the behaviour being ported.
 >
 > Git no longer goes through libgit2 — every operation is a `git` invocation, so parity is proven
 > by tests against real temporary repositories rather than by reasoning about library semantics.

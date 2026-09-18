@@ -76,6 +76,55 @@ func (gitConflicts) ConflictVersions(ctx context.Context, repo, relPath string) 
 	return versions.Base, versions.Ours, versions.Theirs, nil
 }
 
+// gitBranches compares two branches, for drafting a pull request description.
+type gitBranches struct{}
+
+func (gitBranches) BranchDiff(ctx context.Context, repo, source, target string) (string, error) {
+	return git.BranchDiff(ctx, repo, source, target)
+}
+
+// aiCheckpoints protects a working tree around an AI run that can write to it.
+type aiCheckpoints struct{}
+
+func (aiCheckpoints) CreateCheckpoint(ctx context.Context, repo, kind string) (string, error) {
+	return git.CreateCheckpoint(ctx, repo, kind)
+}
+
+func (aiCheckpoints) RemoveCheckpointIfUnchanged(ctx context.Context, repo, id string) (bool, error) {
+	return git.RemoveCheckpointIfUnchanged(ctx, repo, id)
+}
+
+// chatTurns adapts the activity store to the one row the AI package writes.
+//
+// It exists because `ai` declares the two questions it asks — record this turn, who answered the
+// last one — while the store owns the table. The conversion is the seam, and it lives here because
+// this is the only place that knows both.
+type chatTurns struct{ store *activity.Store }
+
+func (c chatTurns) RecordTurn(ctx context.Context, turn ai.NewTurn) (string, error) {
+	stored, err := c.store.RecordTurn(ctx, activity.NewTurn{
+		ProjectID:       turn.ProjectID,
+		SessionID:       turn.SessionID,
+		EngineSessionID: turn.EngineSessionID,
+		Question:        turn.Question,
+		Answer:          turn.Answer,
+		Trace:           turn.Trace,
+		ResponseTimeMs:  turn.ResponseTimeMs,
+		IsError:         turn.IsError,
+		Provider:        turn.Provider,
+		Model:           turn.Model,
+		EngineVersion:   turn.EngineVersion,
+	})
+	if err != nil {
+		return "", err
+	}
+	return stored.CreatedAt, nil
+}
+
+func (c chatTurns) LastTurnProvider(ctx context.Context, projectID, conversationID string) (*string, error) {
+	return c.store.LastTurnProvider(ctx, projectID, conversationID)
+}
+
 // projectPaths resolves a project id to the repository it names.
 type projectPaths struct{ store *workspaces.Store }
 
@@ -155,20 +204,31 @@ func BuildRegistry(deps Deps) *bridge.Registry {
 	if runs == nil {
 		runs = ai.NewRunRegistry(deps.Emitter, 0)
 	}
-	var aiProjects ai.ProjectPaths
+	var (
+		aiProjects ai.ProjectPaths
+		aiTurns    ai.TurnRecorder
+	)
 	if workspaceStore != nil {
 		aiProjects = projectPaths{store: workspaceStore}
+	}
+	if deps.DB != nil {
+		// Chat history is the one AI dependency that genuinely needs the database. Without it a
+		// turn still answers and simply is not remembered, which beats refusing to answer.
+		aiTurns = chatTurns{store: activity.NewStore(deps.DB, clock)}
 	}
 
 	aiClient := platform.NewSharedHTTPClient()
 	aiRouter := ai.NewRouter(aiSettings)
 	ai.Register(registry, ai.Deps{
-		Router:     aiRouter,
-		Catalogue:  ai.NewCatalogue(aiClient, credentials),
-		Runs:       runs,
-		Operations: ai.NewOperations(aiRouter, runs, aiClient, credentials),
-		Conflicts:  gitConflicts{},
-		Projects:   aiProjects,
+		Router:      aiRouter,
+		Catalogue:   ai.NewCatalogue(aiClient, credentials),
+		Runs:        runs,
+		Operations:  ai.NewOperations(aiRouter, runs, aiClient, credentials),
+		Conflicts:   gitConflicts{},
+		Projects:    aiProjects,
+		Turns:       aiTurns,
+		Checkpoints: aiCheckpoints{},
+		Branches:    gitBranches{},
 	})
 
 	// Everything below needs the database. When the storage stage failed it is nil, and these

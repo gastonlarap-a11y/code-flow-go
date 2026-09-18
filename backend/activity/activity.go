@@ -13,7 +13,21 @@ import (
 	"strings"
 
 	"github.com/gastonlarap-a11y/code-flow/backend/storage"
+	"github.com/google/uuid"
 )
+
+// newID mints a row id in the lowercase 8-4-4-4-12 form .NET's Guid.ToString() produced, so a row
+// written by 3.0 is indistinguishable in shape from one 2.x wrote.
+func newID() string { return uuid.NewString() }
+
+// boolToInt is how every boolean column is written: the schema declares INTEGER and the renderer
+// types the field as a real boolean.
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
 
 // ChatTurn is one question/answer pair. The field names are the renderer's `ActivityLogEntry`.
 type ChatTurn struct {
@@ -239,6 +253,73 @@ func (s *Store) GetConversation(ctx context.Context, projectID, sessionID string
 		return rows.Err()
 	})
 	return out, err
+}
+
+// NewTurn is one chat exchange about to be recorded.
+type NewTurn struct {
+	ProjectID string
+	// SessionID is the app's own conversation id, stable across turns. EngineSessionID is the
+	// CLI's resume token, which changes between runs and may be absent entirely.
+	SessionID       string
+	EngineSessionID *string
+
+	Question string
+	Answer   string
+	// Trace is the JSON array of activity lines, or nil for a turn that kept none.
+	Trace *string
+
+	ResponseTimeMs *int64
+	IsError        bool
+
+	// Recorded as they were **at the time of the run**, so reopening a conversation does not
+	// relabel its turns with today's routing.
+	Provider      *string
+	Model         *string
+	EngineVersion *string
+}
+
+// RecordTurn writes one chat exchange and answers the row as stored (AI-050).
+//
+// It returns the row rather than nothing because the caller shows the user a timestamp, and the
+// stored one is what a reopened conversation will show — taking a second reading from the clock
+// would make the live turn and the same turn tomorrow disagree by milliseconds.
+//
+// **A cancelled turn is never recorded**, and that decision belongs to the caller: a stopped run
+// has no answer, and a permanent artefact for something the user did on purpose is clutter they
+// then have to delete.
+func (s *Store) RecordTurn(ctx context.Context, turn NewTurn) (ChatTurn, error) {
+	stored := ChatTurn{
+		ID:              newID(),
+		ProjectID:       turn.ProjectID,
+		SessionID:       &turn.SessionID,
+		EngineSessionID: turn.EngineSessionID,
+		Question:        turn.Question,
+		Answer:          turn.Answer,
+		Trace:           turn.Trace,
+		CreatedAt:       s.clock.Now(),
+		ResponseTimeMs:  turn.ResponseTimeMs,
+		IsError:         turn.IsError,
+		Provider:        turn.Provider,
+		Model:           turn.Model,
+		EngineVersion:   turn.EngineVersion,
+	}
+
+	err := s.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO activity_log (`+turnColumns+`)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			stored.ID, stored.ProjectID, storage.NullString(stored.SessionID),
+			storage.NullString(stored.EngineSessionID), stored.Question, stored.Answer,
+			storage.NullString(stored.Trace), stored.CreatedAt,
+			storage.NullInt64(stored.ResponseTimeMs), boolToInt(stored.IsError),
+			storage.NullString(stored.Provider), storage.NullString(stored.Model),
+			storage.NullString(stored.EngineVersion))
+		if err != nil {
+			return fmt.Errorf("record chat turn: %w", err)
+		}
+		return nil
+	})
+	return stored, err
 }
 
 // DeleteConversation removes every turn of a conversation and its stored title.
