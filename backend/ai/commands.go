@@ -24,8 +24,20 @@ type Deps struct {
 	// needs one question answered and knows nothing else about git.
 	Conflicts ConflictReader
 	// Projects resolves a project id to the repository it names. Nil when the database did not
-	// open, and then the one command that needs it says so rather than guessing a directory.
+	// open, and then the commands that need it say so rather than guessing a directory.
 	Projects ProjectPaths
+	// Turns persists chat history. Nil without a database: a turn then answers normally and simply
+	// is not remembered, which beats refusing to answer at all.
+	Turns TurnRecorder
+	// Checkpoints protects the working tree around anything that can write to it.
+	Checkpoints Checkpointer
+	// Branches compares two branches, for drafting a pull request description.
+	Branches BranchDiffer
+}
+
+// BranchDiffer answers the diff between two branches.
+type BranchDiffer interface {
+	BranchDiff(ctx context.Context, repo, source, target string) (string, error)
 }
 
 // ConflictReader answers the three versions of a conflicted file.
@@ -171,6 +183,83 @@ func Register(r *bridge.Registry, deps Deps) {
 		if err != nil {
 			return nil, err
 		}
-		return deps.Operations.ApplyFindingFix(ctx, runID, findingPrompt, workingDir)
+		// A fix writes to the tree, so it is snapshotted first and the snapshot dropped afterwards
+		// when nothing changed — including on failure, so a half-applied fix from a killed run
+		// stays undoable (AI-052).
+		checkpointID := ""
+		if deps.Checkpoints != nil && workingDir != "" {
+			if id, err := deps.Checkpoints.CreateCheckpoint(ctx, workingDir, "fix-finding"); err == nil {
+				checkpointID = id
+			}
+		}
+		text, err := deps.Operations.ApplyFindingFix(ctx, runID, findingPrompt, workingDir)
+		if checkpointID != "" {
+			_, _ = deps.Checkpoints.RemoveCheckpointIfUnchanged(ctx, workingDir, checkpointID)
+		}
+		return text, err
+	})
+
+	r.Add("send_chat_message", func(ctx context.Context, p bridge.Params) (any, error) {
+		var args struct {
+			ProjectID      string         `json:"projectId"`
+			Message        string         `json:"message"`
+			SessionID      *string        `json:"sessionId"`
+			ConversationID string         `json:"conversationId"`
+			RunID          string         `json:"runId"`
+			Agent          *AgentOverride `json:"agent"`
+		}
+		if err := bridge.Bind(p, &args); err != nil {
+			return nil, err
+		}
+		if args.ProjectID == "" {
+			return nil, bridge.MissingParameterError("projectId")
+		}
+		if deps.Projects == nil {
+			return nil, errors.New("no project store available")
+		}
+		workingDir, err := deps.Projects.ProjectPath(ctx, args.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+
+		request := ChatRequest{
+			ProjectID:      args.ProjectID,
+			WorkingDir:     workingDir,
+			Message:        args.Message,
+			ConversationID: args.ConversationID,
+			RunID:          args.RunID,
+			Agent:          args.Agent,
+		}
+		if args.SessionID != nil {
+			request.SessionID = *args.SessionID
+		}
+		return deps.Operations.Chat(ctx, deps.Turns, deps.Checkpoints, request)
+	})
+
+	r.Add("generate_pr_description", func(ctx context.Context, p bridge.Params) (any, error) {
+		var args struct {
+			ProjectID    string `json:"projectId"`
+			SourceBranch string `json:"sourceBranch"`
+			TargetBranch string `json:"targetBranch"`
+			RunID        string `json:"runId"`
+		}
+		if err := bridge.Bind(p, &args); err != nil {
+			return nil, err
+		}
+		if deps.Projects == nil || deps.Branches == nil {
+			return nil, errors.New("no repository available")
+		}
+		repo, err := deps.Projects.ProjectPath(ctx, args.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		// Local git, no host call: a description can be drafted before the pull request exists,
+		// which is when the user actually wants one.
+		diff, err := deps.Branches.BranchDiff(ctx, repo, args.SourceBranch, args.TargetBranch)
+		if err != nil {
+			return nil, err
+		}
+		return deps.Operations.GeneratePRDescription(ctx, args.RunID,
+			args.SourceBranch, args.TargetBranch, diff)
 	})
 }

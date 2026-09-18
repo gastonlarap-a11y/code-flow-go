@@ -13,11 +13,11 @@ import (
 const (
 	// maxDiffChars is a working diff or a file's context.
 	maxDiffChars = 20_000
+	// maxReviewDiffChars is a whole branch comparison, which is legitimately much larger than a
+	// working diff.
+	maxReviewDiffChars = 120_000
 	// maxConflictSideChars bounds one side of a conflict. A side bigger than this is better
 	// merged by hand than fed whole to a model.
-	//
-	// The branch-comparison cap (120 000) arrives with generate_pr_description, which is the only
-	// operation that needs it — declaring it now would be a constant nothing reads.
 	maxConflictSideChars = 40_000
 )
 
@@ -129,6 +129,59 @@ func (o Operations) GenerateCommitMessage(ctx context.Context, runID, diff strin
 		return "", err
 	}
 	return stripCodeFence(result.Text), nil
+}
+
+// PRDescriptionDraft is a drafted title and body.
+type PRDescriptionDraft struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+// GeneratePRDescription drafts a pull request from the diff between two branches (AI-020).
+//
+// No host call: the diff is local git, so a description can be drafted before the pull request
+// exists — which is the point, since it is what the user pastes when creating one.
+func (o Operations) GeneratePRDescription(ctx context.Context, runID, sourceBranch, targetBranch, diff string) (PRDescriptionDraft, error) {
+	if strings.TrimSpace(diff) == "" {
+		// VERBATIM, Spanish.
+		return PRDescriptionDraft{}, errors.New("No hay diferencias entre las ramas para describir") //nolint:staticcheck // ST1005: VERBATIM
+	}
+
+	template := o.router.SharedTemplate(ctx,
+		"pr_description_template", "claude_pr_description_template", Prompt(PromptPRDescription))
+
+	payload := fmt.Sprintf("RAMA ORIGEN: %s\nRAMA DESTINO: %s\n\nDIFF:\n%s",
+		sourceBranch, targetBranch, truncate(diff, maxReviewDiffChars))
+
+	result, err := o.Invoke(ctx, runID, TaskPRDescription, Invocation{
+		Prompt:       template,
+		StdinContent: payload,
+		ReadOnly:     true,
+	}, false)
+	if err != nil {
+		return PRDescriptionDraft{}, err
+	}
+	return splitPRDescription(result.Text), nil
+}
+
+// splitPRDescription separates the `TITLE:`-prefixed first line from the body.
+//
+// The model is asked for that shape and mostly obliges; when it does not, the whole answer becomes
+// the body and the title is left empty rather than guessed from the first line — a wrong title is
+// harder to notice than a missing one, because it looks deliberate.
+func splitPRDescription(text string) PRDescriptionDraft {
+	trimmed := strings.TrimSpace(text)
+
+	firstLine, body, _ := strings.Cut(trimmed, "\n")
+	firstLine = strings.TrimSpace(firstLine)
+
+	if !strings.HasPrefix(strings.ToUpper(firstLine), "TITLE:") {
+		return PRDescriptionDraft{Body: trimmed}
+	}
+	return PRDescriptionDraft{
+		Title: strings.TrimSpace(firstLine[len("TITLE:"):]),
+		Body:  strings.TrimSpace(body),
+	}
 }
 
 // ResolveConflict proposes a merged file from the three sides (AI-021).
