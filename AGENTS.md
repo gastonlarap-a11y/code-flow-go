@@ -4,7 +4,7 @@ Desktop code-review and API workbench: **one Go binary** hosting a Wails v3 wind
 renderer embedded. A port of CodeFlow 2.7.x (Electron shell + .NET sidecar), shipping as **3.0.0**,
 a drop-in replacement that keeps every user's database, credentials and update path.
 
-**Phases 1–3 complete; Phase 4 next** (128 of 246 commands answer). `MIGRATION-GO.md` is the plan; `docs/` is the authoritative
+**Phases 1–3 complete, Phase 4 nearly so** (140 of 246 commands answer). `MIGRATION-GO.md` is the plan; `docs/` is the authoritative
 specification (~11 000 lines) and outranks any assumption about behaviour.
 
 ## Layout

@@ -40,5 +40,11 @@ secrets_*
 CLAUDE.local.md
 .claude/settings.local.json
 
+# Editor and IDE state. Per developer by definition: a committed .idea/ makes everyone else's
+# inspections, run configurations and module paths change under them.
+.idea/
+.vscode/
+*.swp
+
 # macOS
 .DS_Store

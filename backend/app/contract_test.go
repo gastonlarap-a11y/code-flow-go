@@ -80,12 +80,18 @@ var notYetPorted = map[string][]string{
 	"phase 3": {},
 	// Phase 4 — AI engines and the run lifecycle. The chat and job-history *stores* came early,
 	// with activity in Phase 2; what is left here is the engines that fill them.
+	// Phase 4 — AI engines and the run lifecycle. The chat and job-history *stores* came early,
+	// with activity in Phase 2; what is left here is the engines that fill them.
+	//
+	// Done so far: the routing cascade, binary discovery, the quota and auth signals, the built-in
+	// templates, the Settings queries, the run lifecycle, all six engines, and the four operations
+	// that need nothing beyond them.
+	//
+	// The two that remain are the two with state: a PR description reads a branch comparison and
+	// the project's link columns, and a chat turn persists its own history, resumes a session and
+	// takes a checkpoint around anything that can write.
 	"phase 4": {
-		"cancel_ai_run", "check_ai_provider", "default_analyze_template", "default_commit_template",
-		"default_pr_description_template", "default_resolve_conflict_template",
-		"default_review_template", "generate_commit_message", "generate_pr_description",
-		"inline_edit_with_ai", "list_ai_models", "resolve_conflict_with_ai",
-		"resolve_finding_with_ai", "send_chat_message",
+		"generate_pr_description", "send_chat_message",
 	},
 	// Phase 5 — providers, PR review pipeline, work items
 	"phase 5": {
