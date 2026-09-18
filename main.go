@@ -11,6 +11,7 @@ import (
 	"embed"
 	"os"
 
+	"github.com/gastonlarap-a11y/code-flow/backend/ai"
 	"github.com/gastonlarap-a11y/code-flow/backend/app"
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
 	"github.com/gastonlarap-a11y/code-flow/backend/desktop"
@@ -85,6 +86,7 @@ func main() {
 	opener := desktop.NewOpener()
 	watchers := files.NewWatcherRegistry(emitter)
 	terminals := terminal.NewRegistry(emitter)
+	aiRuns := ai.NewRunRegistry(emitter, 0)
 
 	// The feature wiring lives in app.BuildRegistry so the contract test can inspect the real
 	// registry rather than a second copy of this list.
@@ -96,6 +98,7 @@ func main() {
 		Opener:      opener,
 		Watchers:    watchers,
 		Terminals:   terminals,
+		AIRuns:      aiRuns,
 	})
 
 	host := desktop.NewHostService(state, paths)
@@ -134,6 +137,9 @@ func main() {
 			// them: a shell left running is a process the user cannot see and did not keep.
 			watchers.StopAll()
 			terminals.CloseAll()
+			// An AI run left alive keeps a CLI — and its model call — running and billing after
+			// the window is gone.
+			aiRuns.CancelAll()
 
 			if db != nil {
 				if err := db.Close(); err != nil {

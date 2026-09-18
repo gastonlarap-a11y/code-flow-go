@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gastonlarap-a11y/code-flow/backend/activity"
+	"github.com/gastonlarap-a11y/code-flow/backend/ai"
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
 	"github.com/gastonlarap-a11y/code-flow/backend/files"
 	"github.com/gastonlarap-a11y/code-flow/backend/git"
@@ -45,6 +46,10 @@ type Deps struct {
 	// caller that has to stop them again.
 	Watchers  *files.WatcherRegistry
 	Terminals *terminal.Registry
+
+	// AIRuns owns the AI operations in flight. Same rule as the two above: nil builds one, and
+	// main passes its own because shutdown has to stop them.
+	AIRuns *ai.RunRegistry
 }
 
 // gitCheckpointer lets a repo-wide replace take the same snapshot an AI run does.
@@ -57,6 +62,29 @@ type gitCheckpointer struct{}
 
 func (gitCheckpointer) CreateCheckpoint(ctx context.Context, repo, kind string) (string, error) {
 	return git.CreateCheckpoint(ctx, repo, kind)
+}
+
+// gitConflicts lets the AI conflict resolver read the three sides from the index. Same seam, same
+// reason: `ai` declares the one question it asks, git exposes a plain function.
+type gitConflicts struct{}
+
+func (gitConflicts) ConflictVersions(ctx context.Context, repo, relPath string) (string, string, string, error) {
+	versions, err := git.ConflictVersionsFor(ctx, repo, relPath)
+	if err != nil {
+		return "", "", "", err
+	}
+	return versions.Base, versions.Ours, versions.Theirs, nil
+}
+
+// projectPaths resolves a project id to the repository it names.
+type projectPaths struct{ store *workspaces.Store }
+
+func (p projectPaths) ProjectPath(ctx context.Context, projectID string) (string, error) {
+	project, err := p.store.GetProject(ctx, projectID)
+	if err != nil {
+		return "", err
+	}
+	return project.LocalPath, nil
 }
 
 // BuildRegistry registers every command and seals the registry.
@@ -115,6 +143,33 @@ func BuildRegistry(deps Deps) *bridge.Registry {
 		terminals = terminal.NewRegistry(deps.Emitter)
 	}
 	terminal.Register(registry, terminals)
+
+	// The AI routing and the Settings queries need no database: a nil settings reader resolves to
+	// the built-in defaults, so an install whose storage failed can still be configured. The run
+	// lifecycle and the operations that use it arrive with the rest of Phase 4.
+	var aiSettings ai.SettingsReader
+	if workspaceStore != nil {
+		aiSettings = workspaceStore
+	}
+	runs := deps.AIRuns
+	if runs == nil {
+		runs = ai.NewRunRegistry(deps.Emitter, 0)
+	}
+	var aiProjects ai.ProjectPaths
+	if workspaceStore != nil {
+		aiProjects = projectPaths{store: workspaceStore}
+	}
+
+	aiClient := platform.NewSharedHTTPClient()
+	aiRouter := ai.NewRouter(aiSettings)
+	ai.Register(registry, ai.Deps{
+		Router:     aiRouter,
+		Catalogue:  ai.NewCatalogue(aiClient, credentials),
+		Runs:       runs,
+		Operations: ai.NewOperations(aiRouter, runs, aiClient, credentials),
+		Conflicts:  gitConflicts{},
+		Projects:   aiProjects,
+	})
 
 	// Everything below needs the database. When the storage stage failed it is nil, and these
 	// commands are simply not registered: the window still opens, the renderer's banner says why,
