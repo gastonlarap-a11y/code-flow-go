@@ -531,6 +531,10 @@ No `publish`, file associations, protocols, notarisation, or Linux targets.
   - Feed `GET https://api.github.com/repos/gastonlarap-a11y/code-flow/releases/latest`, headers
     `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`,
     `X-GitHub-Api-Version: 2022-11-28`, `User-Agent: CodeFlow/<version>`.
+    **The port reads `code-flow-go` instead**, because that is where its releases are published
+    until the cutover (§14 D2) — everything else about the request is unchanged. Carrying this URL
+    across verbatim is what made 3.0.0 and 3.1.0 report "up to date" against a feed whose latest is
+    `v2.7.1`: see `DIVERGENCE-BOOT-h`.
   - Token: keychain `github-token:github.com`, else `gh auth token` (5 s timeout), else `no-credential`
     (still required although the repository is public).
   - 401/403 → `unauthorized`; other non-2xx or a draft → `no-release`.

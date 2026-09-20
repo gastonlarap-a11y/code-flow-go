@@ -661,6 +661,16 @@ cascade), `backend/update/releaseversion.go` (`IsNewer`), `backend/update/handof
 `shasum -a 256` on macOS and `sha256sum` on Windows. `update_download` fetches that file, hashes
 what it downloaded, and refuses anything that does not match — deleting the file rather than
 leaving a rejected installer one double-click away in Downloads.
+
+**The feed is `gastonlarap-a11y/code-flow-go`, which is not the repository 2.7.x reads**
+(`DIVERGENCE-BOOT-h`). It is a literal, not a setting — a configurable update source is a
+configurable place to be handed a binary from — and it names the repository
+`.github/workflows/release.yml` publishes to. It has to: an application whose feed is a repository
+its own releases are not published to reports "up to date" forever, which is what 3.0.0 and 3.1.0
+did. They asked `code-flow`, were told `v2.7.1`, found it older than themselves and said nothing —
+correct arithmetic on the wrong shelf, and invisible, because "no newer release" carries no reason
+by design. `update_test.go` pins the constant, since no comparison test can catch it. **It moves
+back to `code-flow` at the cutover** (§14 D2) and not before.
 **Inputs / outputs**: unchanged on the wire. The digest is fetched sidecar-side, deliberately: the
 renderer passes the asset url and name back into `update_download`, so a digest that made the same
 round trip would be one an attacker who reached the renderer could choose.
@@ -1026,6 +1036,7 @@ panel that the outage makes inert.
 | `DIVERGENCE-BOOT-a` | BOOT-003 | `base_dir()` hardcodes `C:\CodeFlow` on Windows instead of `%LOCALAPPDATA%`; every derived path depends on it; the uninstaller hardcodes the same literal independently. |
 | `DIVERGENCE-BOOT-b` | BOOT-017 | `reset_app_data` (and the deletion it schedules) never touches OS-keychain-stored secrets, matching the Windows uninstaller's identical scope. |
 | `DIVERGENCE-BOOT-g` | BOOT-021 | **The download bar now moves.** 2.x emitted `update:progress` every 256 KiB and the Electron shell never forwarded the name, so the renderer subscribed to an event that could not arrive and the bar sat at 0 % until `update_download` returned — a download that looked hung for as long as it took. In Wails an emitted event reaches the window by construction, so this is fixed by removing the transport rather than by changing any code: the payload, the 256 KiB interval and the final `done` are unchanged, and `lib/bridge/updater.ts` converts them to the `Started`/`Progress`/`Finished` deltas `updateStore` already counted. The letter is `g` rather than the free `d` because letters are never reused in this ledger, retired ones included. |
+| `DIVERGENCE-BOOT-h` | BOOT-021 | **The updater reads `gastonlarap-a11y/code-flow-go`; 2.7.x reads `gastonlarap-a11y/code-flow`.** The port's releases are published to the first because a 3.x release on the second becomes `latest` there and offers itself to every 2.7.x install — that is the cutover (§14 D2) and it has not been made. Carrying 2.x's feed URL across meant 3.0.0 and 3.1.0 asked a repository their own releases were not on: the answer was `v2.7.1`, older than the running build, so every check reported "up to date" — silently, since being current carries no reason. Two releases shipped unable to see a third. The two feeds converge at the cutover, when this constant moves back. |
 | `BUG-BOOT-c` (fixed) | BOOT-037 | The core was spawned into the app's own process group, so a group-wide signal from a stopped AI CLI reached Electron and terminated it gracefully. Reported as "I press stop and the app closes"; it left no crash report, no exception and no `app.quit()` in any stack, and was only found in the unified system log. |
 | `BUG-BOOT-b` (fixed) | BOOT-035 | Neither the channel sockets nor the core's three pipes had an `error` listener, and the main process had no `uncaughtException` handler. One `'error'` event on a live connection was thrown, which ended the app mid-action — leaving no crash report and no log line, so it was indistinguishable from the app quitting on purpose. |
 | `BUG-BOOT-a` (fixed) | BOOT-034 | The Windows listener passed the full `\\.\pipe\…` path to `NamedPipeServerStream` as if it were a pipe name, so it listened at an address the shell could not open. Every command failed; the app looked like it had dead buttons. Fixed, with the Windows skip removed from all four IPC suites. |
