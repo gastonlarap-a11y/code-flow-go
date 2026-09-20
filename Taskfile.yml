@@ -198,15 +198,21 @@ tasks:
     deps: [build]
     cmds:
       - wails3 generate webview2bootstrapper -dir build/windows/nsis
-      # Backslashes, because NSIS is given this path to open and `ROOT_DIR` on Windows is already
-      # backslashed: appending `/bin/...` to it made `D:\a\repo/bin/CodeFlow.exe`, which NSIS
-      # answered with `File: ... -> no files found` for a file that was right there. The generated
-      # `build/windows/Taskfile.yml` switches separators per OS for the same reason; this task only
-      # ever runs on Windows, so it can simply use them.
+      # Run from the script's own directory, which the generated `build/windows/Taskfile.yml` also
+      # does, because `project.nsi` opens with `OutFile "..\..\..\bin\..."` — three levels up from
+      # *there*. Invoked from the repository root it would write three levels above the repository.
+      #
+      # The binary's path is absolute and backslashed: `ROOT_DIR` on Windows already uses
+      # backslashes, and appending `/bin/...` produced `D:\a\repo/bin/CodeFlow.exe`, which NSIS
+      # answered with `File: ... -> no files found` for a file that was right there. It is quoted
+      # because go-task runs commands through a POSIX shell, where an unquoted `\` escapes the next
+      # character — that is what turned `build\windows\nsis\project.nsi` into
+      # `buildwindowsnsisproject.nsi`.
       - >-
+        cd build/windows/nsis &&
         makensis -V3 -DARG_WAILS_AMD64_BINARY="{{.ROOT_DIR}}\{{.BIN_DIR}}\{{.APP_NAME}}.exe"
         -DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user
-        build\windows\nsis\project.nsi
+        project.nsi
       # `-Setup-` is not cosmetic: it is how 2.7.x tells the installer from the portable build, and
       # handing over the portable one updates nothing (BOOT-021).
       - mv "{{.BIN_DIR}}/{{.APP_NAME}}-amd64-installer.exe" "{{.BIN_DIR}}/{{.APP_NAME}}-Setup-{{.VERSION}}-x64.exe"
