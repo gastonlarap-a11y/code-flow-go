@@ -373,6 +373,23 @@ func TestAnOlderReleaseIsNotOffered(t *testing.T) {
 	assert.Empty(t, found.Reason)
 }
 
+// The feed names the repository this application's releases are published to.
+//
+// Pinned because the test above passes either way. 3.0.0 and 3.1.0 shipped asking `code-flow`,
+// whose latest release is 2.7.1 — older than themselves — so every check answered "up to date",
+// correctly, forever. The arithmetic was never wrong; the shelf was. Nothing in the comparison can
+// catch that, and neither can an integration test that serves its own feed, so what is asserted is
+// the one fact both depend on.
+//
+// **This moves to `code-flow` at the cutover (§14 D2) and not before**, at which point this test is
+// the reminder that the constant is the decision.
+func TestTheFeedNamesTheRepositoryTheReleasesArePublishedTo(t *testing.T) {
+	assert.Equal(t,
+		"https://api.github.com/repos/gastonlarap-a11y/code-flow-go/releases/latest",
+		update.GitHubFeedURL,
+		"the updater must read the repository `.github/workflows/release.yml` publishes to")
+}
+
 // An unavailable answer carries why, and the running version with it — the panel shows both, and a
 // reason with no version beside it is half a sentence.
 func TestAnUnavailableAnswerCarriesWhyAndTheRunningVersion(t *testing.T) {

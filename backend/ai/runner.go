@@ -175,9 +175,26 @@ func (r Runner) execute(
 		})
 	}
 
+	// **Every read finishes before `Wait` is called**, and that order is not a preference: `Wait`
+	// closes the pipes `StdoutPipe` and `StderrPipe` return as soon as the process exits, and
+	// `os/exec` says so plainly — "it is incorrect to call Wait before all reads from the pipe have
+	// completed". Waiting first meant a pump could have its pipe closed out from under it with
+	// output still in flight, and the run would come back missing its last lines. For a process
+	// that writes a little and exits at once, missing all of them.
+	//
+	// Not theoretical: three CI runs in this package failed on it, each one a different piece of
+	// output gone — the reply text, a stdout line, the stdin echo. Rare on an idle machine and
+	// common on a loaded one, which is the worst shape a defect can have, and why it read as
+	// flakiness for two releases.
+	//
+	// The wait is bounded by the run's own machinery. A pipe that a grandchild holds open after the
+	// child exits stalls the reads; nothing arrives, the silence deadline fires, and `KillTree`
+	// takes the grandchild with it, which closes the pipe. A call with no `Run` has no deadline —
+	// but it has no bound on the process either, so this widens a case that was already unbounded
+	// rather than opening a new one.
+	wg.Wait()
 	waitErr := cmd.Wait()
 	close(stopped)
-	wg.Wait()
 
 	// Asked after the wait: a run stopped while it was running has its reason set by then, and it
 	// replaces whatever the killed process happened to print.

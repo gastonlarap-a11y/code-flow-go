@@ -18,7 +18,18 @@ import (
 // GitHubFeedURL is the release the updater reads. A literal, because it is this application's own
 // release feed and not something an install can be pointed at: a configurable update source is a
 // configurable place to be handed a binary from.
-const GitHubFeedURL = "https://api.github.com/repos/gastonlarap-a11y/code-flow/releases/latest"
+//
+// **It is `code-flow-go`, and 2.7.x's updater reads `code-flow`. The two are not the same feed and
+// that is deliberate.** The port's releases are published here (§14 D2 chose it: a 3.x release on
+// `code-flow` becomes `latest` there and offers itself to every 2.7.x install, which is the cutover
+// and has not been made). An app that reads a feed its own releases are not published to is an app
+// that reports "up to date" forever — which is what 3.0.0 and 3.1.0 did: they asked `code-flow`,
+// were told `v2.7.1`, found it older than themselves, and said nothing. Correct arithmetic on the
+// wrong shelf.
+//
+// **At the cutover this constant moves back to `code-flow`** and both feeds hold the same releases
+// from then on. It is pinned by a test so the move is a deliberate edit rather than a drift.
+const GitHubFeedURL = "https://api.github.com/repos/gastonlarap-a11y/code-flow-go/releases/latest"
 
 const (
 	// ghTokenTimeout bounds the `gh auth token` fallback. It is a local process reading a local
