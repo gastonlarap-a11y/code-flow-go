@@ -1,4 +1,5 @@
 import { Parser } from "@dbml/core";
+import { DEFAULT_SCHEMA, tableKey } from "./identifiers";
 import {
   emptyModel,
   type DbmlEndpointModel,
@@ -36,13 +37,11 @@ import {
  */
 const GRAMMAR = "dbmlv2";
 
-/** The schema `@dbml/core` files a table under when the document names none. */
-export const DEFAULT_SCHEMA = "public";
-
-/** The identity of a table across re-parses and in stored layouts. */
-export function tableKey(schema: string | null | undefined, name: string): string {
-  return `${schema || DEFAULT_SCHEMA}.${name}`.toLowerCase();
-}
+/**
+ * The schema default and the table key live in `identifiers.ts`, which this re-exports: they are
+ * this module's vocabulary, but `editDbml.ts` needs them without pulling 15 MB of parser behind it.
+ */
+export { DEFAULT_SCHEMA, tableKey } from "./identifiers";
 
 interface DbmlDiagnostic {
   message?: string;

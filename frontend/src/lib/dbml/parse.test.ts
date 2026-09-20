@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDbmlModel, tableKey } from "./parse";
+import { parseDbmlModel } from "./parse";
 import type { DbmlSchemaModel } from "./model";
 
 const FIXTURE = `
@@ -138,12 +138,5 @@ Ref: usuarios.id <? animales.usuario_id
     if (parsed.ok) return;
     expect(parsed.error).not.toContain("[object Object]");
     expect(parsed.error).toMatch(/\(\d+:\d+\)/);
-  });
-});
-
-describe("tableKey", () => {
-  it("lower-cases and defaults the schema", () => {
-    expect(tableKey(null, "Users")).toBe("public.users");
-    expect(tableKey("Sales", "Orders")).toBe("sales.orders");
   });
 });

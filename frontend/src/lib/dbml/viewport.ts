@@ -21,6 +21,11 @@ export const MIN_SCALE = 0.2;
 export const MAX_SCALE = 2;
 export const IDENTITY: Viewport = { x: 0, y: 0, scale: 1 };
 
+/** How far a floating panel sits from the point it belongs to. */
+export const OVERLAY_OFFSET = 14;
+/** How close one may come to the edge of the canvas. */
+export const OVERLAY_MARGIN = 8;
+
 /** Breathing room kept around the diagram when it is fitted to the view. */
 export const FIT_PADDING = 48;
 
@@ -56,5 +61,24 @@ export function fitBounds(bounds: Rect | null, size: Size, padding = FIT_PADDING
     scale,
     x: (size.width - bounds.width * scale) / 2 - bounds.x * scale,
     y: (size.height - bounds.height * scale) / 2 - bounds.y * scale,
+  };
+}
+
+/**
+ * Where a tooltip or a menu goes: beside the point it belongs to, and inside the canvas.
+ *
+ * It flips above the point rather than overflowing below, which is the case that matters — a bubble
+ * hanging off the bottom of the diagram is one nobody can read, and a menu that does it is one
+ * nobody can click. The margin wins over the offset when the canvas is smaller than the panel, so
+ * the panel is clipped from the far side instead of being pushed off the near one.
+ */
+export function overlayAt(at: Point, canvas: Size, panel: Size): { left: number; top: number } {
+  const below = at.y + OVERLAY_OFFSET;
+  return {
+    left: Math.max(OVERLAY_MARGIN, Math.min(at.x + OVERLAY_OFFSET, canvas.width - panel.width - OVERLAY_MARGIN)),
+    top: Math.max(
+      OVERLAY_MARGIN,
+      below + panel.height > canvas.height ? at.y - OVERLAY_OFFSET - panel.height : below,
+    ),
   };
 }
