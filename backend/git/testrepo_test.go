@@ -58,6 +58,18 @@ func newTestRepo(t *testing.T) *testRepo {
 	repo.git("config", "user.name", "Test")
 	repo.git("config", "user.email", "test@example.com")
 
+	// And the line endings, for the same reason and one the comment above got wrong.
+	//
+	// `GIT_CONFIG_NOSYSTEM` keeps the *system* file out, but Git for Windows defaults
+	// `core.autocrlf` to true in the build itself when nothing sets it — so on a Windows runner
+	// every checkout came back with CRLF and seven tests compared "committed\n" against
+	// "committed\r\n". Setting it here makes the fixture the same bytes on every platform, which
+	// is what these tests are actually about.
+	//
+	// It says nothing about how the app treats a CRLF working tree; that is a real repository's
+	// business and `Runner.RunRaw` exists for it.
+	repo.git("config", "core.autocrlf", "false")
+
 	return repo
 }
 
