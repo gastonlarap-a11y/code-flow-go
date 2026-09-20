@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -146,7 +147,7 @@ func (r Runner) RunRaw(ctx context.Context, args ...string) (RawResult, error) {
 		result.ExitCode = exitErr.ExitCode()
 		return result, nil
 	}
-	return result, fmt.Errorf("run git %s: %w", strings.Join(full, " "), err)
+	return result, startFailure(r.repo, full, err)
 }
 
 // RunOutsideRepo runs git without binding a repository — `git --version`, `git init`, `git clone`.
@@ -182,7 +183,26 @@ func execute(ctx context.Context, args, extraEnv []string, dir string) (Result, 
 		result.ExitCode = exitErr.ExitCode()
 		return result, nil
 	}
-	return result, fmt.Errorf("run git %s: %w", strings.Join(args, " "), err)
+	return result, startFailure(dir, args, err)
+}
+
+// startFailure explains why git could not be started, rather than repeating what Go said.
+//
+// `exec` reports a missing working directory as `fork/exec /usr/bin/git: no such file or directory`
+// — it attributes the failed chdir to the binary, because that is the path it was holding when the
+// child called `execve`. Passed through, that sentence tells a user whose project folder was moved
+// or unmounted that **git is not installed**, and prints the whole command line into a toast to say
+// it. Both halves are wrong and the second is what they would take to a bug report.
+//
+// Found by the differential oracle (`tools/parity`): 2.7.1 answers `Path '<path>' doesn't point at
+// a valid Git repository or workdir.` for the same call.
+func startFailure(dir string, args []string, err error) error {
+	if dir != "" {
+		if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
+			return fmt.Errorf("%s is not a directory that can be read; the repository may have been moved, renamed or unmounted", dir)
+		}
+	}
+	return fmt.Errorf("run git %s: %w", strings.Join(args, " "), err)
 }
 
 // captureBoth reads stdout and stderr concurrently.

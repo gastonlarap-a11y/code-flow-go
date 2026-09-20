@@ -88,7 +88,7 @@ func DetectGitHub(remoteURL string, knownHosts []string) (GitHubRepo, bool) {
 }
 
 const (
-	azureHost = "dev.azure.com"
+	azureHostname = "dev.azure.com"
 	// azureLegacySuffix is the pre-2018 form, still what a great many long-lived repositories have
 	// in their remote. Matched **case-sensitively**, as in 2.x, and the organisation keeps the
 	// host's own casing rather than being folded — it becomes part of the keychain key, so folding
@@ -133,7 +133,7 @@ func DetectAzure(remoteURL string) (AzureRepo, bool) {
 	host, path, _ := strings.Cut(withoutUser, "/")
 	segments := nonEmptySegments(path)
 
-	if strings.EqualFold(host, azureHost) {
+	if strings.EqualFold(host, azureHostname) {
 		if len(segments) != 4 || segments[2] != "_git" {
 			return AzureRepo{}, false
 		}

@@ -2,17 +2,24 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/gastonlarap-a11y/code-flow/backend/activity"
 	"github.com/gastonlarap-a11y/code-flow/backend/ai"
+	"github.com/gastonlarap-a11y/code-flow/backend/apiclient"
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
+	"github.com/gastonlarap-a11y/code-flow/backend/dbml"
 	"github.com/gastonlarap-a11y/code-flow/backend/files"
 	"github.com/gastonlarap-a11y/code-flow/backend/git"
 	"github.com/gastonlarap-a11y/code-flow/backend/platform"
+	"github.com/gastonlarap-a11y/code-flow/backend/providers"
 	"github.com/gastonlarap-a11y/code-flow/backend/review"
 	"github.com/gastonlarap-a11y/code-flow/backend/security"
 	"github.com/gastonlarap-a11y/code-flow/backend/storage"
 	"github.com/gastonlarap-a11y/code-flow/backend/terminal"
+	"github.com/gastonlarap-a11y/code-flow/backend/tickets"
+	"github.com/gastonlarap-a11y/code-flow/backend/update"
 	"github.com/gastonlarap-a11y/code-flow/backend/workspaces"
 )
 
@@ -25,6 +32,12 @@ import (
 type Deps struct {
 	Paths   platform.Paths
 	Emitter bridge.Emitter
+
+	// Version is the running build, stamped into main by the linker. It reaches exactly one
+	// feature — the updater, which answers it to the renderer and compares it against the feed —
+	// and travels as a value rather than being read from a package variable so a test can ask what
+	// a 2.7.1 or a 3.0.1 install would decide.
+	Version string
 
 	// DB is nil until the storage stage has run, and stays nil when it failed. Features that need
 	// it take it from here; a nil one means the window opens and those commands report the
@@ -77,10 +90,18 @@ func (gitConflicts) ConflictVersions(ctx context.Context, repo, relPath string) 
 }
 
 // gitBranches compares two branches, for drafting a pull request description.
+//
+// The comparison is reshaped for a prompt before it leaves here (`GIT-031`): trimmed to what sits
+// around each change, with what was excluded or omitted named. A model drafting a description from
+// a flattened diff cut at a fixed length describes the first files and nothing from the rest.
 type gitBranches struct{}
 
 func (gitBranches) BranchDiff(ctx context.Context, repo, source, target string) (string, error) {
-	return git.BranchDiff(ctx, repo, source, target)
+	diff, err := git.BranchDiff(ctx, repo, source, target)
+	if err != nil {
+		return "", err
+	}
+	return git.RenderTextForPrompt(diff, git.PromptBudgetChars), nil
 }
 
 // aiCheckpoints protects a working tree around an AI run that can write to it.
@@ -134,6 +155,109 @@ func (p projectPaths) ProjectPath(ctx context.Context, projectID string) (string
 		return "", err
 	}
 	return project.LocalPath, nil
+}
+
+// gitRemotes answers "what does this repository point at", for the provider detection that links a
+// project to its pull-request host. The provider package asks in its own terms so a remote scan is
+// testable without a repository on disk.
+type gitRemotes struct{}
+
+func (gitRemotes) ListRemotes(ctx context.Context, repoPath string) ([]providers.Remote, error) {
+	found, err := git.ListRemotes(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	remotes := make([]providers.Remote, 0, len(found))
+	for _, remote := range found {
+		remotes = append(remotes, providers.Remote{Name: remote.Name, URL: remote.URL})
+	}
+	return remotes, nil
+}
+
+// gitFetcher brings refs in before a review reads them.
+//
+// The review pipeline asks in its own terms — fetch this repository, fetch these refspecs — and
+// every call through it is best-effort at the call site: being offline makes a review weaker, not
+// impossible.
+type gitFetcher struct{ network git.Network }
+
+func (f gitFetcher) Fetch(ctx context.Context, repo string) error {
+	return f.network.Fetch(ctx, repo, nil)
+}
+
+func (f gitFetcher) FetchRefspecs(ctx context.Context, repo, remote string, refspecs []string) error {
+	return f.network.FetchRefspecs(ctx, repo, remote, refspecs)
+}
+
+// providerCredentials answers whether a host or organisation is already connected, and hands over
+// its token when it is.
+//
+// The key formats stay in the credential store, which owns them as `VERBATIM` contracts — this
+// adapter is the only place that knows both those formats and the questions the providers ask. It
+// also translates the store's two actionable failures into the provider package's own, so the
+// decision about the `CREDENTIAL_REFUSED: ` sentinel stays at the command boundary (`XLANG-012`)
+// rather than travelling with every read.
+type providerCredentials struct{ store *security.Store }
+
+func (c providerCredentials) HasGitHubToken(host string) (bool, error) {
+	return c.store.Has(security.GitHubTokenKey(host))
+}
+
+func (c providerCredentials) HasADOPAT(org string) (bool, error) {
+	return c.store.Has(security.ADOPATKey(org))
+}
+
+func (c providerCredentials) GitHubToken(host string) (string, error) {
+	return c.read(security.GitHubTokenKey(host))
+}
+
+func (c providerCredentials) ADOPAT(org string) (string, error) {
+	return c.read(security.ADOPATKey(org))
+}
+
+func (c providerCredentials) read(key string) (string, error) {
+	secret, err := c.store.Get(key)
+	switch {
+	case errors.Is(err, security.ErrNoEntry):
+		return "", providers.ErrNoCredential
+	case errors.Is(err, security.ErrRefused):
+		// Both errors are wrapped: the platform's own words are kept after the marker — "User
+		// interaction is not allowed" says something a generic sentence does not — and a caller
+		// that knows the credential store can still match its error too.
+		return "", fmt.Errorf("%w: %w", providers.ErrCredentialRefused, err)
+	case err != nil:
+		return "", err
+	}
+	return secret, nil
+}
+
+// dbPasswords is the schema designer's half of the same seam (DBML-024).
+//
+// Separate from `providerCredentials` because the questions are different — a provider asks "is this
+// host connected", a database asks for one secret by connection id — and because this one is keyed
+// by id rather than by host: renaming a server must not strand its password, and two logins to the
+// same server are two secrets.
+type dbPasswords struct{ store *security.Store }
+
+func (c dbPasswords) SetDBPassword(connectionID, password string) error {
+	return c.store.Set(security.DBPasswordKey(connectionID), password)
+}
+
+func (c dbPasswords) DBPassword(connectionID string) (string, error) {
+	secret, err := c.store.Get(security.DBPasswordKey(connectionID))
+	if errors.Is(err, security.ErrNoEntry) {
+		// No stored password is an ordinary state — a database that takes none, or a connection
+		// saved before one was set — and not a failure to read.
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return secret, nil
+}
+
+func (c dbPasswords) DeleteDBPassword(connectionID string) error {
+	return c.store.Delete(security.DBPasswordKey(connectionID))
 }
 
 // BuildRegistry registers every command and seals the registry.
@@ -217,13 +341,16 @@ func BuildRegistry(deps Deps) *bridge.Registry {
 		aiTurns = chatTurns{store: activity.NewStore(deps.DB, clock)}
 	}
 
-	aiClient := platform.NewSharedHTTPClient()
+	// One client for the whole process — the AI HTTP engines, both providers, the work items and
+	// the updater. Built here rather than per feature: it is where the connection pool, the proxy
+	// setting and the one-retry-for-a-bodyless-request rule (PROV-049) live.
+	httpClient := platform.NewSharedHTTPClient()
 	aiRouter := ai.NewRouter(aiSettings)
 	ai.Register(registry, ai.Deps{
 		Router:      aiRouter,
-		Catalogue:   ai.NewCatalogue(aiClient, credentials),
+		Catalogue:   ai.NewCatalogue(httpClient, credentials),
 		Runs:        runs,
-		Operations:  ai.NewOperations(aiRouter, runs, aiClient, credentials),
+		Operations:  ai.NewOperations(aiRouter, runs, httpClient, credentials),
 		Conflicts:   gitConflicts{},
 		Projects:    aiProjects,
 		Turns:       aiTurns,
@@ -243,18 +370,90 @@ func BuildRegistry(deps Deps) *bridge.Registry {
 			Paths:   deps.Paths,
 			Emitter: deps.Emitter,
 		})
-		activity.Register(registry, activity.Deps{Store: activity.NewStore(deps.DB, clock)})
+		activityStore := activity.NewStore(deps.DB, clock)
+		activity.Register(registry, activity.Deps{Store: activityStore})
 
 		// The review *store* only reads and edits saved runs, so it lands with storage. The
 		// pipeline that produces them — running a review, reconciling, posting — is Phase 5 and
 		// will add its own Register.
 		review.RegisterStore(registry, review.Deps{Store: review.NewStore(deps.DB, clock)})
+
+		// The providers read and write the project row and file a decision in the project's
+		// history, so they need the database.
+		providerDeps := providers.Deps{
+			Projects:    workspaceStore,
+			Remotes:     gitRemotes{},
+			Credentials: providerCredentials{store: credentials},
+			Activity:    activityStore,
+			HTTP:        httpClient,
+		}
+		providers.Register(registry, providerDeps)
+
+		// The review pipeline. Publishing goes through the same host resolution the provider
+		// commands dispatch through, so a review cannot post to a host the sidebar would not have
+		// listed from; and the run reads its methodology, contexts and MCP servers from the same
+		// workspace store Settings writes them to.
+		pipeline := review.PipelineDeps{
+			Store:    review.NewStore(deps.DB, clock),
+			Hosts:    providerDeps,
+			Projects: workspaceStore,
+			AI:       ai.NewOperations(aiRouter, runs, httpClient, credentials),
+			Fetcher:  gitFetcher{network: git.NewNetwork(deps.Emitter)},
+			Activity: activityStore,
+			Paths:    deps.Paths,
+		}
+		review.RegisterPublishing(registry, pipeline)
+		review.RegisterPipeline(registry, pipeline)
+
+		// The work items. They share the HTTP client and the credential store with the providers —
+		// a board and a repository live on the same host and under the same PAT — and the same AI
+		// operations as the pull-request review, because `review_changes` is a dispatcher over two
+		// orchestrations rather than a third one.
+		tickets.Register(registry, tickets.Deps{
+			Store:       tickets.NewStore(deps.DB, clock),
+			Workspaces:  workspaceStore,
+			Prompts:     workspaceStore,
+			Credentials: providerCredentials{store: credentials},
+			AI:          ai.NewOperations(aiRouter, runs, httpClient, credentials),
+			Activity:    activityStore,
+			Paths:       deps.Paths,
+			HTTP:        httpClient,
+		})
+
+		// The API workbench's own data: collections, environments, history and the cookie jar.
+		apiclient.RegisterStore(registry, apiclient.Deps{
+			Store: apiclient.NewStore(deps.DB, clock),
+		})
+
+		// The schema designer keeps two things: where a person dragged each table, and which
+		// databases they saved. The password for one of those never appears in either — it goes to
+		// the credential store, and the type that crosses the bridge has no field for it.
+		dbml.Register(registry, dbml.Deps{
+			Store:       dbml.NewStore(deps.DB, clock),
+			Credentials: dbPasswords{store: credentials},
+			AI:          ai.NewOperations(aiRouter, runs, httpClient, credentials),
+		})
 	}
 
-	// Phases 3–8 add their remaining lines here:
-	//   git.Register / files.Register / files.RegisterWatcher / terminal.Register
-	//   ai.Register / providers.Register / tickets.Register / review.Register
-	//   apiclient.Register / dbml.Register / update.Register
+	// The workbench's transports, registered outside the database block on purpose: they need no
+	// storage, so an install whose database did not open can still send one request by hand —
+	// which is when somebody is most likely to want to.
+	apiclient.RegisterHTTP(registry, apiclient.HTTPDeps{Cancels: apiclient.NewCancels()})
+	apiclient.RegisterStreams(registry, apiclient.StreamDeps{
+		Streams: apiclient.NewStreams(deps.Emitter),
+	})
+
+	// The updater, outside the database block for the same reason the transports are: an install
+	// whose storage failed is the one most likely to be fixed by the next version, and an updater
+	// that needed the database would be unreachable exactly when it is wanted. It takes the same
+	// credential adapter the providers do — the feed is read with the user's own GitHub token.
+	update.Register(registry, update.Deps{
+		Version:     deps.Version,
+		Credentials: providerCredentials{store: credentials},
+		HTTP:        httpClient,
+		Emitter:     deps.Emitter,
+		Opener:      deps.Opener,
+	})
 
 	registry.Seal()
 	return registry

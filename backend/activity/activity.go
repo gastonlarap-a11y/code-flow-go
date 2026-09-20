@@ -384,6 +384,59 @@ func (s *Store) LastTurnProvider(ctx context.Context, projectID, sessionID strin
 
 const jobColumns = `id, project_id, kind, label, custom_label, status, result, error, meta, created_at`
 
+// NewJob is one finished run to file.
+//
+// The id is the caller's: the renderer mints it for the job it is already showing in flight, so the
+// run on screen and the same run reloaded from history after a restart share one identity.
+type NewJob struct {
+	ID        string
+	ProjectID string
+	// Kind is one of `analyze-changes`, `pr-review`, `pr-action` — the three the panel groups by.
+	Kind   string
+	Label  string
+	Status string
+	Result *string
+	Error  *string
+	// Meta is JSON whose shape varies by kind. Empty becomes `{}`, which is what the column's own
+	// default is and what the renderer parses.
+	Meta string
+}
+
+// RecordJob files a finished run.
+//
+// Only finished ones: a run still in flight has nothing to reopen, and a cancelled one leaves no
+// row at all. Which outcomes reach here is the caller's decision and it is not uniform —
+// `pr-action` is written on success only, while the other two kinds record their failures too.
+func (s *Store) RecordJob(ctx context.Context, job NewJob) (JobEntry, error) {
+	entry := JobEntry{
+		ID:        job.ID,
+		ProjectID: job.ProjectID,
+		Kind:      job.Kind,
+		Label:     job.Label,
+		Status:    job.Status,
+		Result:    job.Result,
+		Error:     job.Error,
+		Meta:      job.Meta,
+		CreatedAt: s.clock.Now(),
+	}
+	if entry.Meta == "" {
+		entry.Meta = "{}"
+	}
+
+	err := s.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO job_history (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			entry.ID, entry.ProjectID, entry.Kind, entry.Label, nil,
+			entry.Status, storage.NullString(entry.Result), storage.NullString(entry.Error),
+			entry.Meta, entry.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("record the job: %w", err)
+		}
+		return nil
+	})
+	return entry, err
+}
+
 // ListJobs returns a project's finished runs, newest first.
 func (s *Store) ListJobs(ctx context.Context, projectID string) ([]JobEntry, error) {
 	out := make([]JobEntry, 0, 16)

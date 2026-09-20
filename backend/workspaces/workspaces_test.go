@@ -214,6 +214,39 @@ func TestClearingTheGitIdentityStoresNullRatherThanEmpty(t *testing.T) {
 	assert.Nil(t, got.GitEmail)
 }
 
+// `WI-005`: the two ticket-account columns are written and cleared as a pair, because a board
+// project name without the organisation it was listed from addresses nothing.
+func TestTheTicketAccountColumnsAreWrittenTogether(t *testing.T) {
+	store := newStore(t)
+	w := seedWorkspace(t, store)
+	org, project := "contoso", "Payments"
+
+	require.NoError(t, store.SetWorkspaceTicketAccount(t.Context(), w.ID, &org, &project))
+	got, err := store.GetWorkspace(t.Context(), w.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.ADOOrg)
+	assert.Equal(t, "contoso", *got.ADOOrg)
+	require.NotNil(t, got.ADOProject)
+	assert.Equal(t, "Payments", *got.ADOProject)
+
+	// Changing the organisation clears the project in the same write, which is what the renderer
+	// sends: the previous board belonged to the previous organisation.
+	other := "acme"
+	require.NoError(t, store.SetWorkspaceTicketAccount(t.Context(), w.ID, &other, nil))
+	got, err = store.GetWorkspace(t.Context(), w.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "acme", *got.ADOOrg)
+	assert.Nil(t, got.ADOProject)
+
+	// Blank is stored as NULL: an empty string here would read as a chosen board with no name.
+	blank := "   "
+	require.NoError(t, store.SetWorkspaceTicketAccount(t.Context(), w.ID, &blank, &blank))
+	got, err = store.GetWorkspace(t.Context(), w.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got.ADOOrg)
+	assert.Nil(t, got.ADOProject)
+}
+
 // The lookup git makes before every commit: which identity does this directory commit under?
 func TestResolveGitIdentityFollowsTheProjectToItsWorkspace(t *testing.T) {
 	store := newStore(t)
@@ -233,6 +266,86 @@ func TestResolveGitIdentityFollowsTheProjectToItsWorkspace(t *testing.T) {
 	assert.Equal(t, "Gastón Lara P.", *gotName)
 	require.NotNil(t, gotEmail)
 	assert.Equal(t, "gaston@example.com", *gotEmail)
+}
+
+// ---- the pull-request host link ---------------------------------------------------------------
+
+func seedProject(t *testing.T, store *workspaces.Store, workspaceID string) workspaces.Project {
+	t.Helper()
+	project, err := store.CreateProject(t.Context(), workspaces.NewProject{
+		WorkspaceID: workspaceID, Name: "Repo", LocalPath: "/repos/thing", Icon: "git-branch",
+	})
+	require.NoError(t, err)
+	return project
+}
+
+// Each link writes its own three columns and leaves the other host's alone. A project can carry
+// both (`STORE-011`), and clearing the other side here would change which host an existing project
+// is reviewed on — silently, since dispatch prefers GitHub either way (`REVIEW-001`).
+func TestLinkingOneProviderLeavesTheOtherColumnsAlone(t *testing.T) {
+	store := newStore(t)
+	project := seedProject(t, store, seedWorkspace(t, store).ID)
+
+	require.NoError(t, store.LinkProjectADO(t.Context(), project.ID, "contoso", "Web", "api"))
+	require.NoError(t, store.LinkProjectGitHub(t.Context(), project.ID, "ghe.contoso.com", "team", "app"))
+
+	linked, err := store.GetProject(t.Context(), project.ID)
+	require.NoError(t, err)
+
+	require.NotNil(t, linked.ADOOrg)
+	require.NotNil(t, linked.ADOProject)
+	require.NotNil(t, linked.ADORepoID)
+	assert.Equal(t, "contoso", *linked.ADOOrg)
+	assert.Equal(t, "Web", *linked.ADOProject)
+	assert.Equal(t, "api", *linked.ADORepoID)
+
+	require.NotNil(t, linked.GitHubHost)
+	require.NotNil(t, linked.GitHubOwner)
+	require.NotNil(t, linked.GitHubRepo)
+	assert.Equal(t, "ghe.contoso.com", *linked.GitHubHost)
+	assert.Equal(t, "team", *linked.GitHubOwner)
+	assert.Equal(t, "app", *linked.GitHubRepo)
+}
+
+func TestUnlinkingClearsAllSixColumnsWhicheverWasSet(t *testing.T) {
+	store := newStore(t)
+	workspace := seedWorkspace(t, store)
+
+	tests := map[string]func(id string) error{
+		"github": func(id string) error {
+			return store.LinkProjectGitHub(t.Context(), id, "github.com", "acme", "widget")
+		},
+		"azure": func(id string) error {
+			return store.LinkProjectADO(t.Context(), id, "contoso", "Web", "api")
+		},
+	}
+
+	for name, link := range tests {
+		t.Run(name, func(t *testing.T) {
+			project := seedProject(t, store, workspace.ID)
+			require.NoError(t, link(project.ID))
+			require.NoError(t, store.UnlinkProject(t.Context(), project.ID))
+
+			unlinked, err := store.GetProject(t.Context(), project.ID)
+			require.NoError(t, err)
+			assert.Nil(t, unlinked.ADOOrg)
+			assert.Nil(t, unlinked.ADOProject)
+			assert.Nil(t, unlinked.ADORepoID)
+			assert.Nil(t, unlinked.GitHubHost)
+			assert.Nil(t, unlinked.GitHubOwner)
+			assert.Nil(t, unlinked.GitHubRepo)
+		})
+	}
+}
+
+// Linking a project that is no longer there reports it rather than succeeding silently: the caller
+// is working from a list the user has since changed in another window.
+func TestLinkingAProjectThatIsGoneSaysSo(t *testing.T) {
+	store := newStore(t)
+
+	err := store.LinkProjectGitHub(t.Context(), "does-not-exist", "github.com", "acme", "widget")
+
+	assert.ErrorIs(t, err, workspaces.ErrNotFound)
 }
 
 // A repository no project owns is the normal case, not an error: most repositories a user opens

@@ -31,8 +31,10 @@ registry. Three outcomes are possible and each means something different:
   - called, not registered     — either still to port (notYetPorted) or deliberately deferred (deferred)
   - registered, never called   — dead code, or a name that drifted from the renderer's spelling
 
-`notYetPorted` shrinks by one phase's worth of names at a time. When it is empty and only the
-eleven deferred names remain, the port's command surface is complete.
+`notYetPorted` shrank by one phase's worth of names at a time. It is now empty: 235 registered plus
+the eleven deferred account for all 246, and the port's command surface is complete. The three
+tests below still run in both directions, because what they now guard is drift rather than progress
+— a command the renderer stops calling, or one registered under a name it never uses.
 */
 
 // invokeCall matches `invoke<Result>("command_name"` across a line break, which is how the
@@ -55,8 +57,9 @@ var deferred = []string{
 	"debug_set_breakpoints", "debug_start", "debug_start_adapter", "debug_step", "debug_stop",
 }
 
-// notYetPorted is the work remaining: 234 commands the renderer calls today and this backend does
-// not answer yet. 234 + 11 deferred + 1 ported = 246.
+// notYetPorted is the work remaining: the commands the renderer calls today and this backend does
+// not answer yet. Registered + deferred + pending is asserted to be 246 below, which is what keeps
+// this list honest as the count moves.
 //
 // The names are transcribed from the renderer, never from the specification — the two do not
 // always agree on spelling (the renderer says `git_clone`, the spec's prose says "clone"), and the
@@ -80,51 +83,39 @@ var notYetPorted = map[string][]string{
 	"phase 3": {},
 	// Phase 4 — AI engines and the run lifecycle. The chat and job-history *stores* came early,
 	// with activity in Phase 2; what is left here is the engines that fill them.
-	// Phase 4 — AI engines and the run lifecycle. The chat and job-history *stores* came early,
-	// with activity in Phase 2; what is left here is the engines that fill them.
 	//
 	// Phase 4 is complete: the routing cascade, binary discovery, the quota and auth signals, the
 	// built-in templates, the Settings queries, the run lifecycle, all six engines, and every
 	// operation including the chat turn and the pull-request description. Its block is empty and
 	// stays as the marker that it is done.
 	"phase 4": {},
-	// Phase 5 — providers, PR review pipeline, work items
-	"phase 5": {
-		"act_on_pr_link", "act_on_pull_request", "ado_list_projects", "ado_list_repos",
-		"auto_link_project", "comment_ticket", "create_pull_request", "get_ticket",
-		"get_ticket_criteria", "github_authenticated_user", "link_branch_ticket", "link_project_ado",
-		"link_project_github", "list_my_tickets", "list_pr_comment_threads", "list_pull_requests",
-		"list_sprint_tickets", "list_ticket_reviews", "list_tickets", "post_pr_link_review_comment",
-		"post_pr_review_comment", "pr_link_comment_threads", "pr_link_decision", "pr_link_pull_request",
-		"pr_review_decision", "preview_ticket", "repo_web_url", "resolve_pr_link", "resolve_ticket_account",
-		"resolve_ticket_link", "review_changes", "review_pr_from_link", "review_pull_request",
-		"suggest_ticket_for_branch", "sync_ticket", "ticket_for_branch", "unlink_branch_ticket",
-		"unlink_project", "update_workspace_ticket_account",
-	},
-	// Phase 6 — API client (HTTP, GraphQL, WebSocket, Socket.IO, MQTT) and its stores
-	"phase 6": {
-		"api_add_history", "api_cancel_http", "api_clear_cookies", "api_clear_history",
-		"api_create_collection", "api_create_environment", "api_create_folder", "api_create_request",
-		"api_delete_collection", "api_delete_cookie", "api_delete_environment", "api_delete_folder",
-		"api_delete_history", "api_delete_request", "api_duplicate_collection",
-		"api_duplicate_environment", "api_duplicate_request", "api_list_cookies",
-		"api_list_environments", "api_list_history", "api_load_tree", "api_move_node",
-		"api_mqtt_connect", "api_mqtt_publish", "api_mqtt_subscribe", "api_mqtt_unsubscribe",
-		"api_read_file_base64", "api_read_text_file", "api_reorder_collections", "api_send_http",
-		"api_send_http_tracked", "api_socketio_connect", "api_socketio_emit", "api_stream_disconnect",
-		"api_update_collection", "api_update_environment", "api_update_folder", "api_update_request",
-		"api_upsert_cookie", "api_ws_connect", "api_ws_send",
-	},
-	// Phase 7 — schema designer (DBML)
-	"phase 7": {
-		"dbml_assist", "dbml_clear_layout", "dbml_delete_connection", "dbml_introspect_database",
-		"dbml_list_connections", "dbml_list_documents", "dbml_load_layout", "dbml_save_connection",
-		"dbml_save_positions", "dbml_test_connection",
-	},
-	// Phase 8 — updater
-	"phase 8": {
-		"update_check", "update_current_version", "update_download",
-	},
+	// Phase 5 — providers, PR review pipeline, work items.
+	//
+	// Phase 5 is complete: both provider clients, everything that reads or writes a pull request
+	// through them, the review memory, running and publishing a review, and the work items —
+	// accounts, the cache, the mirror, the criteria, both halves of `review_changes` and the one
+	// command that writes to a board. Its block is empty and stays as the marker that it is done.
+	"phase 5": {},
+	// Phase 6 — API client (HTTP, GraphQL, WebSocket, Socket.IO, MQTT) and its stores.
+	//
+	// Phase 6 is complete: everything the workbench stores, the two file readers, the HTTP send
+	// with its Digest handshake and SigV4 signing, and all three streaming transports behind one
+	// connection registry. Its block is empty and stays as the marker that it is done.
+	"phase 6": {},
+	// Phase 7 is complete: the document walk, the layout store, the connection store with its
+	// credential ordering, the assistant, and the four introspectors behind one snapshot builder.
+	// Its block is empty and stays as the marker that it is done.
+	"phase 7": {},
+	// Phase 8 is complete: the three updater commands — the running version, the feed check with
+	// its five reasons, and the download that verifies an artefact against the digest the release
+	// published before handing it to the operating system. Its block is empty and stays as the
+	// marker that it is done.
+	//
+	// With it, `notYetPorted` is empty for the first time: every command the renderer calls is
+	// either registered or one of the eleven deferred on purpose. What remains of the port is
+	// Phase 9 — the parity audit, the differential oracle and the cutover — and none of it adds a
+	// command, so this map stays empty from here.
+	"phase 8": {},
 }
 
 // fullRegistry builds the registry the running app would have.

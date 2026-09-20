@@ -2,6 +2,7 @@ package git_test
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge/jsonwire"
@@ -213,4 +214,23 @@ func TestStatusOnSomethingThatIsNotARepositoryFails(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "git status failed")
+}
+
+// A repository directory that is gone — moved, renamed, on an unmounted volume — is the case
+// `exec` reports as `fork/exec /usr/bin/git: no such file or directory`, because a failed chdir is
+// attributed to the binary the child was about to run. Passed through, that tells a user whose
+// folder moved that git is not installed, and prints the whole command line to say it.
+//
+// Found by the differential oracle (`tools/parity`) against the installed 2.7.1 core, which answers
+// `Path '<path>' doesn't point at a valid Git repository or workdir.` for the same call.
+func TestAMissingRepositoryDirectoryBlamesTheDirectoryAndNotGit(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "moved-away")
+
+	_, err := git.Status(ctx(t), missing)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), missing, "the message names the directory the user has to find")
+	assert.Contains(t, err.Error(), "moved, renamed or unmounted")
+	assert.NotContains(t, err.Error(), "fork/exec", "Go's own wording blames the wrong thing")
+	assert.NotContains(t, err.Error(), "--porcelain", "and does not print the command line into a toast")
 }
