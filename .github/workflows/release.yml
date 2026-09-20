@@ -72,12 +72,19 @@ jobs:
 
           echo "version=$config" >> "$GITHUB_OUTPUT"
 
-          # A release that already exists is not rebuilt: its assets are what users have been
-          # offered, and replacing them under a published tag changes what a digest refers to.
-          if gh release view "v$config" >/dev/null 2>&1; then
-            echo "v$config is already released; building without publishing"
+          # A **published** release is not rebuilt: its assets are what users have been offered, and
+          # replacing them under a published tag changes what a digest refers to.
+          #
+          # A draft is the opposite case and must not be confused with it. A draft is what a failed
+          # run leaves behind — this one did, with only the macOS half uploaded — and refusing to
+          # publish because that draft exists makes the retry a no-op, which is exactly how this
+          # was found. So the test is `isDraft`, not existence.
+          state=$(gh release view "v$config" --json isDraft --jq '.isDraft' 2>/dev/null || echo "absent")
+          if [ "$state" = "false" ]; then
+            echo "v$config is already published; building without publishing"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
+            [ "$state" = "true" ] && echo "v$config exists as a draft; this run will complete it"
             echo "publish=${{ github.event_name == 'workflow_dispatch' && inputs.publish || 'true' }}" >> "$GITHUB_OUTPUT"
           fi
         env:
@@ -91,11 +98,19 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+      # Created only when there is none. A draft left by a failed run is reused rather than fought
+      # over: `gh release create` fails outright on an existing tag, which would turn every retry
+      # into a failure at its first step.
       - name: Create the draft release
         run: |
-          gh release create "v${{ needs.gate.outputs.version }}" \
+          version="v${{ needs.gate.outputs.version }}"
+          if gh release view "$version" >/dev/null 2>&1; then
+            echo "$version already exists as a draft; reusing it"
+            exit 0
+          fi
+          gh release create "$version" \
             --draft --target "$GITHUB_SHA" \
-            --title "v${{ needs.gate.outputs.version }}" --generate-notes
+            --title "$version" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
 
