@@ -34,28 +34,37 @@ func changeEvents(recorder *bridge.RecordingEmitter) int {
 	return len(recorder.Named("repo:fs-changed"))
 }
 
-func startWatching(t *testing.T, repo string) *bridge.RecordingEmitter {
+// requireWatcherSupported skips a test that would start a real OS watch, in the one configuration
+// where starting one aborts the process. **Every test in this file that calls `Start` calls this
+// first**, which is why it is a helper rather than a line inside `startWatching`: three of them
+// build their own registry.
+//
+// `syncthing/notify`'s Windows backend walks the `FILE_NOTIFY_INFORMATION` records the kernel
+// writes by converting an offset into its read buffer with `unsafe.Pointer`, and `checkptr` —
+// which exists only in a `-race` build — rejects the conversion:
+//
+//	fatal error: checkptr: converted pointer straddles multiple allocations
+//	.../notify@v0.0.0-20250528144937-c7027d4f7465/watcher_readdcw.go:406
+//
+// It is a fatal error, so it takes the whole package's run with it, and it is not ours: no frame of
+// this repository appears in the trace. There is no newer version to move to either — the pinned
+// pseudo-version is the latest the proxy offers.
+//
+// Skipped in that configuration rather than on Windows outright: without `-race` there is no
+// `checkptr`, so these tests still run for a developer on Windows and in the manual acceptance
+// pass, which is where "does the watcher actually work there" gets answered. Recorded as
+// `BUG-FILE-b`, because a release build has no `checkptr` either — what ships carries the same
+// arithmetic unchecked rather than crashing on it.
+func requireWatcherSupported(t *testing.T) {
 	t.Helper()
-
-	// `syncthing/notify`'s Windows backend walks the `FILE_NOTIFY_INFORMATION` records the kernel
-	// writes by converting an offset into its buffer with `unsafe.Pointer`, and `checkptr` — which
-	// only exists in a `-race` build — rejects that conversion:
-	//
-	//	fatal error: checkptr: converted pointer straddles multiple allocations
-	//	.../notify@v0.0.0-20250528144937-c7027d4f7465/watcher_readdcw.go:406
-	//
-	// It kills the process, so it takes the whole package's run with it. The fault is entirely in
-	// the dependency — no frame of ours appears — and there is no newer version to move to: the
-	// pinned pseudo-version *is* the latest the proxy offers.
-	//
-	// Skipped only in the configuration that cannot survive it, rather than on Windows outright:
-	// without `-race` there is no `checkptr`, so these tests still run for a developer on Windows
-	// and in the manual acceptance pass, which is where "does the watcher actually work there" is
-	// answered. Recorded as `BUG-FILE-b`; a release build carries no `checkptr` either, so what
-	// ships is untested pointer arithmetic rather than a crash.
 	if runtime.GOOS == "windows" && raceEnabled {
 		t.Skip("syncthing/notify trips checkptr on Windows under -race (BUG-FILE-b); run without -race there")
 	}
+}
+
+func startWatching(t *testing.T, repo string) *bridge.RecordingEmitter {
+	t.Helper()
+	requireWatcherSupported(t)
 
 	recorder := &bridge.RecordingEmitter{}
 	registry := files.NewWatcherRegistry(recorder)
@@ -159,6 +168,8 @@ func TestARealChangeAlongsideNoiseStillReports(t *testing.T) {
 // — create, write, attributes — so the count is a property of the platform, not of this code; what
 // *is* this code's property is that one Stop silences everything.
 func TestStartingTwiceReplacesRatherThanDuplicates(t *testing.T) {
+	requireWatcherSupported(t)
+
 	repo := t.TempDir()
 	recorder := &bridge.RecordingEmitter{}
 	registry := files.NewWatcherRegistry(recorder)
@@ -173,6 +184,8 @@ func TestStartingTwiceReplacesRatherThanDuplicates(t *testing.T) {
 }
 
 func TestStoppingEndsTheReports(t *testing.T) {
+	requireWatcherSupported(t)
+
 	repo := t.TempDir()
 	recorder := &bridge.RecordingEmitter{}
 	registry := files.NewWatcherRegistry(recorder)
