@@ -164,6 +164,19 @@ tasks:
     deps: [build]
     cmds:
       - task: darwin:create:app:bundle
+      # `wails3 generate build-assets` writes `build/darwin/Assets.car` from **its own** icon — the
+      # catalog holds `appicon_Assets/wails_icon_vector`, the Wails logo — and `create:app:bundle`
+      # copies it in. macOS resolves an app icon from the asset catalog **before** the
+      # `CFBundleIconFile` in Info.plist, so the bundle showed a W however correct `icons.icns` was.
+      #
+      # Removed rather than regenerated: there is no CodeFlow `.icon` source to build a catalog
+      # from, and 2.7.1 shipped an `.icns` and nothing else. `wails3 generate icons` rewrites the
+      # `.icns` from `build/appicon.png` but leaves the catalog untouched, which is how this
+      # survived a regeneration.
+      #
+      # After the bundle is built and therefore after it was signed, so the signature is renewed.
+      - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Assets.car"
+      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
 
   package:mac:dmg:
     desc: Build the published disk image, CodeFlow-{{.VERSION}}-arm64.dmg.
