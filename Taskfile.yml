@@ -126,12 +126,21 @@ tasks:
     # and stream with it. safego.Go is the only sanctioned spelling, which only works if it is
     # mechanically enforced. Inverted grep: a match is a failure.
     cmds:
+      # Written as a capture with an explicit final status rather than as `if grep …; then fail; fi`.
+      # go-task runs this through its own shell, which answers an `if` whose condition was false —
+      # and a `grep` that matched nothing *is* false — with that condition's exit code. So the
+      # obvious spelling failed the task every time the repository passed, while CI ran the same
+      # test under bash, where it does not. A green CI and a red `task check` disagreeing about the
+      # same rule is worse than not having the rule locally at all.
       - |
-        if grep -rnE '^[[:space:]]*go (func|[a-zA-Z_.]+\()' backend --include='*.go' \
-             | grep -v '_test.go' | grep -v 'shared/safego'; then
+        bare=$(grep -rnE '^[[:space:]]*go (func|[a-zA-Z_.]+\()' backend --include='*.go' \
+                 | grep -v '_test.go' | grep -v 'shared/safego' || true)
+        if [ -n "$bare" ]; then
+          echo "$bare"
           echo "error: start goroutines through shared/safego.Go (see backend/shared/safego)" >&2
           exit 1
         fi
+        exit 0
 
   # ---- build ------------------------------------------------------------------------------
 

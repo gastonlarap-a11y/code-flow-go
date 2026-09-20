@@ -10,9 +10,10 @@
   `SqlServerIntrospector.cs`, `MySqlIntrospector.cs`, `SqliteIntrospector.cs`
 - `src/CodeFlow.App/Ai/Prompts/` — `DBML_EDIT_PROMPT.txt`, `DBML_REVIEW_PROMPT.txt`,
   `DBML_EXPLAIN_PROMPT.txt`
-- `renderer/src/lib/dbml/` — `parse.ts` (the `@dbml/core` boundary), `model.ts`, `layout.ts`,
-  `edges.ts`, `routing.ts`, `inflect.ts`, `relationPhrase.ts`, `viewport.ts`, `documentPath.ts`,
-  `assist.ts`, `emitDbml.ts`, `connectionError.ts`
+- `renderer/src/lib/dbml/` — `parse.ts` (the `@dbml/core` boundary), `model.ts`, `identifiers.ts`,
+  `editDbml.ts`, `cardEdit.ts`, `layout.ts`, `edges.ts`, `routing.ts`, `inflect.ts`,
+  `relationPhrase.ts`, `viewport.ts`, `documentPath.ts`, `assist.ts`, `emitDbml.ts`,
+  `connectionError.ts`
 - `renderer/src/lib/dbml/exporters/` — `sql.ts`, `prisma.ts`
 - `renderer/src/lib/dbml/importers/` — `sql.ts`, `prisma.ts`
 - `renderer/src/state/dbmlStore.ts`
@@ -184,12 +185,17 @@ layout; the auto-layout places it again.
 ---
 
 ### DBML-006 One parser, one model
-**Implementation**: `renderer/src/lib/dbml/parse.ts` · `renderer/src/lib/dbml/model.ts` · `renderer/src/lib/dbml/schema.ts`
+**Implementation**: `renderer/src/lib/dbml/parse.ts` · `renderer/src/lib/dbml/model.ts` ·
+`renderer/src/lib/dbml/identifiers.ts` · `renderer/src/lib/dbml/schema.ts`
 **Behaviour**: `parseDbmlModel` turns DBML text into plain data: tables keyed `schema.table` in lower
 case (unqualified ones filed under `public`), columns with their written type (arguments included),
 `pk`, `notNull`, `unique`, `increment`, default and note, indexes, references whose two ends carry
 `relation` `1` or `*` plus `onDelete`/`onUpdate`, and enums. `schema.ts` is an adapter narrowing
 that model to the Editor preview's older shape — there is one walk of the parser's output, not two.
+`identifiers.ts` holds the three rules that are *about* names rather than about parsing — the
+default schema, `tableKey`, and the quoting a name needs to be written back out — because
+`editDbml.ts` and `emitDbml.ts` both need them and neither can afford to import 15 MB of parser to
+get them. `parse.ts` re-exports the first two, so its surface is unchanged.
 **Inputs / outputs**: `string` → `{ ok: true, model } | { ok: false, error }`.
 **Edge cases**: blank input returns an empty model without invoking the parser. Invalid DBML returns
 the positioned message from `formatParseError`, never a throw. A default written as an expression
@@ -244,7 +250,8 @@ an empty state instead of a canvas.
 **Frontend dependency**: none outward.
 **Markers**: none. Not unit-tested as a component — the renderer's Vitest runs without a DOM — which is
 why the arithmetic lives in `viewport.ts`, `layout.ts` and `edges.ts`; the drag itself is verified in
-the running app.
+the running app. What a card can *change* is `DBML-028`, and keeping the last picture that parsed is
+exactly why editing through one is refused while the buffer does not.
 
 ---
 
@@ -334,7 +341,8 @@ the sentences around them follow the interface language.
 kept inside the canvas, flipping above the pointer near the bottom edge. A reference edited away while
 its tooltip is open closes it.
 **Frontend dependency**: none outward.
-**Markers**: none.
+**Markers**: none. A table's or a column's `note` uses the same bubble and the same one-at-a-time
+state — see `DBML-029`.
 
 ---
 
@@ -443,7 +451,10 @@ diagram reached only one of them. Both files are gone, and with them their adapt
 assertions `parse.test.ts` already made.
 
 The shared zoom/fit cluster is `DbmlViewportControls`, whose `onArrange` is optional: re-arranging
-means forgetting positions a person saved, and the preview has none.
+means forgetting positions a person saved, and the preview has none. The canvas's `editing` prop is
+optional for the same kind of reason: the preview draws a file the Editor owns the buffer of, so
+there is nothing here to write an edit into and the cards stay read-only (`DBML-028`). Notes and
+relationship tooltips are not editing and work in both.
 **Inputs / outputs**: `(content, path)` → the diagram. `path` is the canvas's `documentKey`, so
 switching tabs re-fits.
 **Edge cases**: the preview's drag is **ephemeral** — persistence is keyed on a project and a
@@ -684,6 +695,122 @@ the socket and then goes quiet.
 **Frontend dependency**: none outward.
 **Markers**: none.
 
+---
+
+### DBML-027 An edit changes the document's text, never a re-emission of its model
+**Implementation**: `renderer/src/lib/dbml/editDbml.ts`
+**Behaviour**: A brace scanner over the source records **where names are written** — each table's
+header, alias and columns, each column's type and settings, every relationship endpoint (written as
+its own `Ref` or inline on a column), and every `TableGroup` entry. The five operations are
+replacements inside that text: `tableNameSpan`, `renameTable`, `renameColumn`, `retypeColumn` and
+`removeTable`. Nothing is re-emitted from the model, so comments, blank lines and the order the
+document was written in all survive an edit — re-emitting would hand back a file the user did not
+write the first time they renamed a column. Edits are applied back to front so an earlier one never
+moves a later one's offsets.
+
+**Deleting a table takes its relationships with it, and this is not tidiness.** `@dbml/core` answers
+a reference to a table it cannot find with `Table 'x' does not exist in Schema 'public'` — the whole
+document then fails to parse, not just the dangling line. The same is true of a `TableGroup` entry,
+which is why those are cut too. So a delete removes: the table's block; every `Ref` statement naming
+it (and, in a `Ref { … }` block holding several, only the lines that did, unless all of them did);
+every inline `[ref: …]` on another table's column that pointed at it, leaving the column and its
+other settings intact; and every group entry naming it. A cut is grown to swallow its own
+indentation and the blank line it would have left behind.
+
+**A settings list is cut as a whole, never one entry at a time**, because a comma belongs to the
+entry on each side of it: `[ref: > a.id, ref: > a.name]` computed one entry at a time produces two
+cuts that both claim the comma, and the overlapping one is dropped — which left the first
+relationship in place, pointing at a table that was no longer there. So the doomed entries of one
+column are collected first, then cut in runs: a run followed by a survivor takes the separator after
+it, a run that ends the list takes the one before it, and a list with no survivors takes its
+brackets with it.
+
+**Inputs / outputs**: `(source, table_key, …)` → the new source, or `null` when the target is not in
+the document or the new name is blank.
+**Edge cases**: an endpoint written through a table's **alias** resolves to that table, so a delete
+takes it — but a rename leaves it alone, because the alias is not the name. Renaming a column also
+rewrites the table's own `Indexes` entries, an index over a missing column being the same parse
+error a dangling ref is. A name that cannot be written bare is quoted (`"order details"`). A brace
+inside a note, a `''' … '''` block, a comment, an array type (`text[]`) and a parenthesised type
+(`decimal(10, 2)`) are all read without ending the thing they sit in. A column called `note` or
+`indexes` is a column: those words are keywords only when a `:` or a `{` follows them.
+**Frontend dependency**: `components/dbml/DbmlView.tsx`.
+**Markers**: none. Known limit: the scanner resolves a `TableGroup` entry by name only, so a group
+that named a table through its alias is not rewritten — the edit is then refused by `DBML-028`'s
+re-parse rather than committed wrong.
+
+---
+
+### DBML-028 A card is the second way to edit the document, and every edit is parsed before it lands
+**Implementation**: `renderer/src/lib/dbml/cardEdit.ts` · `renderer/src/components/dbml/DbmlCanvas.tsx`
+(`DbmlCanvasEditing`) · `renderer/src/components/dbml/DbmlView.tsx` (`applyEdit`)
+**Behaviour**: The canvas takes an optional `editing` prop and is a picture without it — which is
+what keeps the Editor module's quick look read-only (`DBML-018`), since that view has no buffer of
+its own to write to. With it, each card offers: **double-click** on the table's title, a column's
+name or a column's type to edit it in place (Enter and blur commit, Escape abandons, the value is
+selected on open); and a **menu**, opened by right-clicking anywhere on the card or by clicking the
+`⋮` in its header — a right click alone would be the only way in, and a left click is what everyone
+tries first, while the card's own left button is taken by the drag. The menu offers "go to its
+code", which puts the caret on the table's name in the source pane and opens that pane if it was
+collapsed; "rename table", which starts the same inline edit; and "delete table", which confirms
+first and says how many relationships go with it.
+
+**The canvas raises intents and decides nothing, and neither component holds a rule.** Every
+decision the two of them make is a pure function in `cardEdit.ts` — whether an edit may land
+(`planEdit`), whether a cell being left is a commit or a cancel (`inlineEdit`), how many
+relationships a delete has to warn about (`relationsTouching`), and where a renamed table's position
+moves to (`carriedPosition`) — for the same reason `documentPath.ts` is a module rather than a
+function inside the new-document dialog: the renderer's Vitest has no DOM, so a rule left inside a
+component is a rule nothing can test. What stays in the components is wiring.
+
+`DbmlView` owns the buffer, and every intent goes through `applyEdit`, which refuses twice. It
+refuses when the **current** buffer does not parse,
+because the diagram deliberately keeps the last model that did (`DBML-008`) and a card can therefore
+outlive the table it draws — editing through it would act on a document the user is halfway through
+typing. And it refuses when the **result** does not parse, which is the bargain `DBML-017` already
+makes for the assistant's proposals: renaming a table onto one that already exists is a reasonable
+thing to attempt and an invalid document to keep, and the parser is what says so. Both refusals are
+a toast; the buffer is untouched.
+
+A rename carries the table's stored position over to its new key, since the key is the name
+(`DBML-005`) and without it a card someone deliberately placed would jump to wherever the
+auto-layout would have put it.
+**Inputs / outputs**: none on the wire beyond `DBML-005`'s `dbml_save_positions`.
+**Edge cases**: a table deleted from the source pane while its menu or its inline input is open
+closes both. The delete re-reads the buffer after the confirmation dialog rather than closing over
+it, because the source pane stays live while a dialog is open. Nothing is written to disk: an edit
+lands in the buffer, so the save button and Ctrl+Z keep owning it.
+**Frontend dependency**: none outward.
+**Markers**: none. The rules are covered by `cardEdit.test.ts`; the **wiring** — which handler sits
+on which element — was checked by mounting `DbmlCanvas` on its own in a throwaway page under the
+dev server and driving it in a browser: hover a column and a note appears, right-click and the menu
+opens on the first item, arrow keys and Enter reach "delete", the menu's "rename" opens the inline
+input with the name selected, Enter commits exactly once (blur behind it does not commit again),
+Escape commits nothing, leaving the cell commits, and the header still drags the card. Repeat it
+that way if this component changes; there is no DOM in the test run to do it from.
+
+---
+
+### DBML-029 A note is read where it was written
+**Implementation**: `renderer/src/components/dbml/DbmlCanvas.tsx` ·
+`renderer/src/lib/dbml/viewport.ts` (`overlayAt`)
+**Behaviour**: A table or column that carries a `note` shows a small mark beside its name, and
+pointing at the row — or at the header, for a table's note — shows the note in the same bubble a
+relationship uses. The mark is focusable and labelled with the note itself, for the reason every
+relationship line is (`DBML-013`): something you can only learn by pointing at it is something a
+keyboard user never learns. The bubble is placed once, where the pointer entered, rather than
+following it: a row is a few pixels tall, and only a line long enough to cross the diagram needs a
+bubble that tracks the cursor.
+**Inputs / outputs**: none on the wire.
+**Edge cases**: a note and a relationship never show at once — one bubble, one state. Nothing is
+shown while a card is being dragged or the background panned. A note written as a `''' … '''` block
+keeps its line breaks in the bubble. Placing the bubble is `overlayAt`, shared with the card menu
+and tested in `viewport.test.ts`: the panel's width is real, its height is an estimate, and the
+estimate only decides whether it flips above the pointer — so being generous costs an early flip
+and never a bubble off the bottom of the canvas.
+**Frontend dependency**: none outward.
+**Markers**: none.
+
 ## Test coverage
 
 | Test | Source | Kind |
@@ -694,7 +821,10 @@ the socket and then goes quiet.
 | `SqliteIntrospectorTests` (13) | `src/CodeFlow.App/Dbml/Introspectors/SqliteIntrospector.cs` | scenario — a real SQLite file and real `PRAGMA` calls; the file-lock case only bites on Windows |
 | `ServerIntrospectorTests` (4) | `Postgres`/`MySql`/`SqlServerIntrospector.cs` | integration — real servers, **skipped with the reason printed** unless `CODEFLOW_TEST_POSTGRES` / `_MYSQL` / `_SQLSERVER` are set; the class remarks carry the `docker run` lines. `_SQLSERVER=(localdb)\MSSQLLocalDB` runs it with Windows integrated authentication |
 | `MigrationTests` (table and index counts) | `src/CodeFlow.App/Storage/Schema.cs` | scenario |
-| `parse.test.ts` (9) | `renderer/src/lib/dbml/parse.ts` | boundary over `@dbml/core`, grammar included |
+| `parse.test.ts` (8) | `renderer/src/lib/dbml/parse.ts` | boundary over `@dbml/core`, grammar included |
+| `identifiers.test.ts` (3) | `renderer/src/lib/dbml/identifiers.ts` | pure — the key and the quoting rule |
+| `editDbml.test.ts` (43) | `renderer/src/lib/dbml/editDbml.ts` | pure, and **every case that produces a document re-parses it** |
+| `cardEdit.test.ts` (15) | `renderer/src/lib/dbml/cardEdit.ts` | pure — the rules the canvas and the view obey |
 | `layout.test.ts` (14) | `renderer/src/lib/dbml/layout.ts` | pure — invariants, never pixels |
 | `edges.test.ts` (2) | `renderer/src/lib/dbml/edges.ts` | pure |
 | `routing.test.ts` (12) | `renderer/src/lib/dbml/routing.ts` | pure — shapes, lanes, markers |
@@ -707,7 +837,7 @@ the socket and then goes quiet.
 | `emitDbml.test.ts` (12) | `renderer/src/lib/dbml/emitDbml.ts` | pure — every case re-parses the output |
 | `connectionError.test.ts` (4) | `renderer/src/lib/dbml/connectionError.ts` | pure — the sentinel |
 | `assist.test.ts` (9) | `renderer/src/lib/dbml/assist.ts` | pure — the four proposal states and the table delta |
-| `viewport.test.ts` (5) | `renderer/src/lib/dbml/viewport.ts` | pure |
+| `viewport.test.ts` (9) | `renderer/src/lib/dbml/viewport.ts` | pure — pan, zoom, fit, and where a floating panel goes |
 | `documentPath.test.ts` (12) | `renderer/src/lib/dbml/documentPath.ts` | pure |
 | `dbmlStore.test.ts` (18) | `renderer/src/state/dbmlStore.ts` | store, `lib/ipc/commands` mocked |
 

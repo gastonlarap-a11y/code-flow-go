@@ -4,6 +4,9 @@ import type {
   DbmlSnapshotRef,
   DbmlSnapshotTable,
 } from "../../types/domain";
+// Aliased: every line below reads as "the name of this thing, written the way DBML writes it", and
+// the quoting rule is shared with `editDbml.ts` so the two cannot drift.
+import { DEFAULT_SCHEMA, dbmlIdentifier as name } from "./identifiers";
 
 /**
  * A database's schema, written as a DBML document (DBML-025).
@@ -28,20 +31,6 @@ export function emitDbml(snapshot: DbmlSchemaSnapshot): string {
   }
 
   return parts.length > 0 ? `${parts.join("\n\n")}\n` : "";
-}
-
-/** The schema `@dbml/core` files an unqualified table under, and therefore the one not to write. */
-const DEFAULT_SCHEMA = "public";
-
-/**
- * A DBML identifier: bare when it can be, double-quoted when it cannot.
- *
- * Quoting everything would be simpler and is what `@dbml/core`'s own exporter does, but a document a
- * person is about to edit reads far better without it — and this text is handed straight to the
- * editor, not to a compiler.
- */
-function name(raw: string): string {
-  return /^[A-Za-z_]\w*$/.test(raw) ? raw : `"${raw.replace(/"/g, '\\"')}"`;
 }
 
 function qualified(schema: string, table: string): string {

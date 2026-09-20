@@ -214,13 +214,22 @@ jobs:
             bin/*.sha256
           if-no-files-found: error
 
+      # By name, not by glob. `ls *.exe` also matches `bin/CodeFlow.exe` — the raw build output the
+      # installer is made *from* — and v3.0.0 went out with 55 MB of it attached, offered to every
+      # user beside the three artefacts that mean something. The names are already fixed by §5.5 and
+      # already checked above, so listing them is not duplication: it is the same contract, used.
       - name: Upload to the draft release
         if: needs.gate.outputs.publish == 'true'
         shell: bash
         run: |
           cd bin
-          gh release upload "v${{ needs.gate.outputs.version }}" \
-            $(ls *.dmg *.exe *.sha256 2>/dev/null) --clobber
+          version="${{ needs.gate.outputs.version }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            names=("CodeFlow-Setup-$version-x64.exe" "CodeFlow-Portable-$version-x64.exe")
+          else
+            names=("CodeFlow-$version-arm64.dmg")
+          fi
+          gh release upload "v$version" "${names[@]}" "${names[@]/%/.sha256}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 

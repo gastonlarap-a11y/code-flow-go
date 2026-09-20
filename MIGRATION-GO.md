@@ -1055,8 +1055,8 @@ records it.
 | macOS | `CodeFlow.app`, **arm64 only** (parity), unsigned + ad-hoc, installed by dragging from the `.dmg` over the old app in `/Applications` |
 | Windows | per-user NSIS install in **`%LOCALAPPDATA%\Programs\CodeFlow`** — the directory electron-builder 26.16.1 chose for 2.7.1 (`oneClick: false` → `getWindowsInstallationDirName` returns the product name) **and** the one Wails' template uses with `WAILS_INSTALL_SCOPE=user`. 2.7.1's uninstall entry is `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\e452a328-6f16-5dfd-9ae4-7f7f7761c215` (GUID = UUIDv5 of `com.codeflow.app` in electron-builder's namespace `50e065bc-3134-11e6-9bab-38c9862bdaf3`, `NsisTarget.ts`), its `InstallLocation` is under `HKCU\Software\e452a328-…`, its uninstaller is `Uninstall CodeFlow.exe`, its `DisplayName` is **`CodeFlow <version>`** (e.g. `CodeFlow 2.7.1` — never match on `DisplayName`), shortcuts in Start Menu and on the Desktop. **The Go installer must close CodeFlow and remove 2.7.1 before copying files** — done and measured on a Windows runner with 2.7.1 running (W-1…W-3, §10.3) |
 | WebView2 profile | Wails' default user-data folder is `%APPDATA%\CodeFlow.exe` (`WindowsOptions.WebviewUserDataPath` empty → `%APPDATA%\[BinaryName.exe]`), distinct from Electron's `%APPDATA%\CodeFlow`; the Wails uninstaller removes it (`RMDir /r "$AppData\${PRODUCT_EXECUTABLE}"`) |
-| Version | `3.0.0`, same string in `build/config.yml`, `frontend/package.json` and `-X main.version` |
-| Tag | `v3.0.0` |
+| Version | The **same string** in `build/config.yml`, `frontend/package.json` and `-X main.version`. `3.0.0` was the port's first release and the releases since carry on from it; the release workflow's gate refuses to build when the first two disagree, because a mismatch is an update that loops |
+| Tag | `v<version>` — `v3.0.0` for the first |
 | Leftovers from Electron | its Chromium profile (`%APPDATA%\CodeFlow`, `~/Library/Application Support/CodeFlow`) holds **no user data** (everything lives under `{base}`); cleaning it is a decision (§14) |
 
 ### 5.5 Release artefacts and the update feed
@@ -1068,13 +1068,16 @@ beside it and refuses anything without a matching digest. Therefore:
 
 | Artefact | Exact name | Digest file |
 |---|---|---|
-| macOS disk image | `CodeFlow-3.0.0-arm64.dmg` | `CodeFlow-3.0.0-arm64.dmg.sha256` |
-| Windows installer | `CodeFlow-Setup-3.0.0-x64.exe` | `CodeFlow-Setup-3.0.0-x64.exe.sha256` |
-| Windows portable | `CodeFlow-Portable-3.0.0-x64.exe` | `CodeFlow-Portable-3.0.0-x64.exe.sha256` |
+| macOS disk image | `CodeFlow-<version>-arm64.dmg` | `CodeFlow-<version>-arm64.dmg.sha256` |
+| Windows installer | `CodeFlow-Setup-<version>-x64.exe` | `CodeFlow-Setup-<version>-x64.exe.sha256` |
+| Windows portable | `CodeFlow-Portable-<version>-x64.exe` | `CodeFlow-Portable-<version>-x64.exe.sha256` |
 
 - Digest file content: the output of `shasum -a 256 <name>` / `sha256sum <name>` run **from the
   artefact's directory** (`<64 hex>  <name>`), one entry per file. **No spaces in artefact names**
   (GitHub rewrites them to dots — the v1.7.5 incident, BOOT-021).
+- **Those six files and nothing else.** The upload step names them rather than globbing the build
+  directory: `ls *.exe` also matches `bin/CodeFlow.exe`, the raw binary the installer is built from,
+  and v3.0.0 went out with 55 MB of it attached beside the artefacts that mean something.
 - **The 3.0.0 release must be published on `gastonlarap-a11y/code-flow`**, or 2.7.x users never see
   it. §14 D2 records how (recommended: cut over the Go code into that repository).
 - On Windows 2.7.x starts the installer automatically **while it keeps running** (it only quits when
