@@ -146,6 +146,35 @@ func TestBothStreamsAreEmittedWithTheirNames(t *testing.T) {
 	assert.Equal(t, "stderr", streams["err"])
 }
 
+// Everything the process wrote arrives, including what it wrote just before exiting.
+//
+// `Wait` closes the pipes `StdoutPipe`/`StderrPipe` hand out the moment the process exits, so
+// calling it before the pumps have drained loses whatever was still in the kernel buffer. The run
+// then returns missing its last lines — or, for a process that writes once and exits, all of them.
+// It is a race, so it is written as one a slow reader cannot win by luck: 30 000 bytes across 1 000
+// lines is more than a pipe holds, from a process that exits the instant it has written them.
+//
+// Three CI failures in this package were this defect wearing three different costumes, and each one
+// looked like flakiness on its own. This is what tells them apart from the real thing.
+func TestEveryLineSurvivesAProcessThatExitsAsSoonAsItHasWritten(t *testing.T) {
+	const lines = 1000
+	var written strings.Builder
+	for i := range lines {
+		fmt.Fprintf(&written, "line %04d of output\n", i)
+	}
+
+	binary := engineBinary(t)
+	script(t, map[string]string{"SCRIPT_STDOUT": written.String()})
+	_, run, recorder := newRun(t, time.Minute, false)
+
+	result, err := ai.NewRunner(nil).Execute(t.Context(), run, binary,
+		plainCommands{}, passthrough{binary}, ai.Invocation{})
+
+	require.NoError(t, err)
+	assert.Len(t, emittedLines(recorder), lines, "every line is streamed, not just the ones that beat Wait")
+	assert.Equal(t, strings.TrimSpace(written.String()), result.Text, "and the text comes back whole")
+}
+
 // The payload has to arrive whole, and the pipe has to be closed: a CLI reading to end-of-file
 // waits forever otherwise, and the run's only bound would be the silence deadline.
 func TestStdinIsDeliveredWholeAndClosed(t *testing.T) {

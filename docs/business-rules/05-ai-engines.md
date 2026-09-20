@@ -984,8 +984,15 @@ Reglas ESTRICTAS de salida:
 **Behaviour**: Reads raw bytes (not `string`) to avoid corrupting a multi-byte UTF-8 character split across two `read()` calls. Complete lines (byte-split on `\n`) are streamed via `AiRunRegistry` as they complete. A pending (no-newline-yet) buffer over 8,192 bytes is flushed as one line — this is what keeps a CLI redrawing a `\r` progress bar from growing memory unboundedly and showing nothing.
 **Inputs / outputs**: async pipe reader → accumulated `byte[]` (also drives the side-effecting emits).
 **Edge cases**: A `None` `RunCtx` (untracked call) still accumulates bytes for the interpreter but emits nothing.
+
+**The pumps are drained before `Wait` is called, and the order is the rule** (`backend/ai/runner.go`).
+`StdoutPipe`/`StderrPipe` hand out pipes that `Wait` closes the moment the process exits, and
+`os/exec` states it outright: it is incorrect to call `Wait` before all reads from them have
+completed. Waiting first lost whatever was still in the kernel buffer — see `BUG-AI-c`. The wait is
+bounded by the run's own machinery: a pipe a grandchild holds open after the child exits stalls the
+reads, nothing arrives, the silence deadline (`AI-013`) fires and `kill_tree` closes it.
 **Frontend dependency**: `ai:output`.
-**Markers**: none
+**Markers**: `BUG-AI-c` (fixed).
 
 ### AI-011 `ai:output` is a formatted activity log, never the answer
 **Implementation**: `src/CodeFlow.App/Ai/AiRunRegistry.cs`, `src/CodeFlow.App/Ai/Engines/Claude.cs` (result_payload), `src/CodeFlow.App/Ai/Engines/OpenCode.cs` (parse_events)
@@ -1594,5 +1601,6 @@ throwaway temp directory, or network, so none is `behavioural`.
 | `DIVERGENCE-AI-a` | `src/CodeFlow.App/Ai/Engines/Gemini.cs` drives the Antigravity CLI (`agy`), not a `gemini` binary — the UI label "Gemini" is the account/brand, not the executable. Deliberate; do not "fix" the naming. | `src/CodeFlow.App/Ai/Engines/Gemini.cs` |
 | `DIVERGENCE-AI-b` | agy/Gemini session resume is a fixed sentinel + global `--continue`, not a per-conversation id — the CLI gives a headless caller no way to target a specific conversation. Two chats on the same project can silently cross contexts; accepted upstream limitation (`google-antigravity/antigravity-cli#7`), not a bug to fix in this port. | `src/CodeFlow.App/Ai/Engines/Gemini.cs`, AI-036 |
 | ~~`BUG-AI-a`~~ **CLOSED** | Temp payload files were written per invocation and never deleted: opencode's `--file` attachment (`codeflow-opencode-<uuid>.txt`) and agy's large-brief directory (`codeflow-agy-<uuid>/brief.txt`) — unbounded temp growth over the life of the app. Closed by `src/CodeFlow.App/Ai/EngineScratch.cs`, the one owner of the naming contract: creation, recognition from the built command's own arguments, deletion in the runner's `finally` on every exit path (reply, CLI error, launch failure, cancellation), and an age-gated startup sweep (> 1 h, so a concurrent instance's live invocation is never claimed). See `91-known-bugs.md`. | AI-034, AI-038, `src/CodeFlow.App/Ai/EngineScratch.cs` |
+| ~~`BUG-AI-c`~~ **CLOSED** | **A run could come back missing the end of its output, and sometimes all of it.** `backend/ai/runner.go` called `cmd.Wait()` before waiting on the pumps, and `Wait` closes the pipes `StdoutPipe`/`StderrPipe` return as soon as the process exits — whatever was still in the kernel buffer went with them. A port defect, not inherited: 2.x awaits its readers first. It read as flakiness for two releases because it is rare on an idle machine and common on a loaded one; three CI failures in this package were it, each losing a different piece (the reply text, a stdout line, the stdin echo), and each one plausible as a one-off on its own. Closed by draining the pumps first, which `os/exec` documents as the required order. Pinned by `TestEveryLineSurvivesAProcessThatExitsAsSoonAsItHasWritten` — 1 000 lines from a process that exits at once, which failed 5 runs out of 5 against the old order and is not a probabilistic test. | AI-010, `backend/ai/runner.go` |
 | `AMBIGUOUS-AI-a` | opencode's `fix_tools()` tool-name list (`read/edit/write/bash/grep/glob`) is marked `TODO(verify)` in source and has no observable runtime effect (opencode has no allow-list flag to pass them to). Whether these are opencode's true internal tool names is unconfirmed by the source itself. | `src/CodeFlow.App/Ai/Engines/OpenCode.cs`, AI-041 |
 | `VERBATIM` | The nine prompt constants; `QUOTA_MARKER` and the 11-phrase `QUOTA_SIGNALS` dictionary; `AUTH_MARKER` and the 7-phrase `AUTH_SIGNALS` dictionary; the three review-level directive blocks; opencode's stale-session Spanish message. | Prompt constants section, AI-014, AI-056, AI-022, AI-040 |
