@@ -363,7 +363,7 @@ The command handler resolves the author pair before dispatching (`ResolveAuthor`
 **Markers**: none
 
 ### GIT-031 A diff is reshaped before it is given to a model
-**Implementation**: `src/CodeFlow.App/Git/PromptDiff.cs` · `src/CodeFlow.App/Git/Diff.cs` (`RenderForPrompt`)
+**Implementation**: `src/CodeFlow.App/Git/PromptDiff.cs` · `src/CodeFlow.App/Git/Diff.cs` (`RenderForPrompt`) · `backend/git/promptdiff.go` (`RenderForPrompt`, `ShapeForPrompt`, `RenderTextForPrompt`, `SkipReason`)
 **Behaviour**: `RenderForPrompt` is the single funnel for the three prompt paths — change analysis
 (`05-ai-engines.md`), PR review and PR description (`07-review-pipeline.md`) — and it does **not**
 flatten the diff it is given. `GIT-029`'s whole-file context exists for the Changes tab; a prompt is
@@ -417,7 +417,7 @@ carried over from a previous review — which is what the review's stats line is
 paths join the `NOTE:` block as `unchanged since the previous review, already reviewed: {path}`.
 
 ### GIT-033 The code around each change is extracted, so the model does not go and read it
-**Implementation**: `src/CodeFlow.App/Git/ChangeContext.cs`
+**Implementation**: `src/CodeFlow.App/Git/ChangeContext.cs` · `backend/git/changecontext.go` (`RenderChangeContext`)
 **Behaviour**: `ChangeContext.Render(files, budgetChars = 80_000)` produces a `CODE AROUND THE
 CHANGES` section that quotes, for every changed file, **the declaration each change sits in** — with
 real line numbers, and `>` marking the lines the pull request added or modified. It rides after the
@@ -482,7 +482,7 @@ commit renders as 68 269 characters here, an 86 % reduction that now fits the bu
 **Markers**: none
 
 ### GIT-039 A branch's whole contribution is one comparison, not two diffs added together
-**Implementation**: `Diff.BranchContribution` (`src/CodeFlow.App/Git/Diff.cs`)
+**Implementation**: `Diff.BranchContribution` (`src/CodeFlow.App/Git/Diff.cs`) · `backend/git/branchcontribution.go` (`BranchContribution`)
 **Behaviour**: the merge base of `baseRef` and `HEAD`, compared against
 `DiffTargets.WorkingDirectory | DiffTargets.Index` — everything the branch has changed relative to
 where it left the base, committed and pending alike, in a single `Compare<Patch>` call. `HEAD` rather
@@ -496,6 +496,12 @@ handed the same file twice reports the same finding twice. `GIT-030`'s `BranchDi
 this and keeps its specified behaviour; this is a second method, not a change to that one.
 `DiffTargets.WorkingDirectory` implies `DiffModifiers.IncludeUntracked` in LibGit2Sharp 0.32.0
 (verified in its source), so a new file the branch adds and has not staged is included.
+**Go port**: `git diff <merge-base>` names one commit and compares it against the working tree,
+staged content included — the same single comparison. Untracked files are the one part git does not
+include, so they are rendered separately, exactly as `WorkingDiff` already does for `GIT-010`.
+Both failure modes are errors rather than an empty diff: a repository with no commits and two
+branches with no common ancestor each produce a comparison that would read as "this branch changed
+everything", which is the most misleading answer a review could be handed.
 **Frontend dependency**: `review_changes` with `scope: "branch"` (`14-work-items.md`, `WI-014`,
 `WI-023`) — the only caller, on either side of its ticket axis.
 **Markers**: none
@@ -594,4 +600,6 @@ this and keeps its specified behaviour; this is a second method, not a change to
 | `DIVERGENCE-GIT-a` | Stash rename (GIT-014) is a deliberate drop-and-reappend reflog trick with no native git equivalent; it always reorders the renamed stash to the top of the stack. Must be preserved exactly, including the reordering. |
 | `DIVERGENCE-GIT-b` | Every commit/merge/checkout/stash/reset in this domain goes through libgit2, so local git hooks (`pre-commit`, `commit-msg`, `post-checkout`, `post-merge`, etc.) never fire for those operations — verified by an exhaustive sweep finding no `ProcessStartInfo`("git")` outside `src/CodeFlow.App/Git/GitNetwork.cs`. Deliberate; preserve in the port. |
 | `DIVERGENCE-GIT-c` | No libgit2 credential callback (`RemoteCallbacks`/`Cred`) exists anywhere in the tree — verified by grep across all of the shell. Network operations shell out to the system `git` binary precisely so SSH keys, credential managers, and `includeIf` config keep working unchanged. Deliberate; the .NET port must shell out too, not use LibGit2Sharp's credential API. |
+| `DIVERGENCE-GIT-e` | **An addition's `old_path` is `null` here and the file's own path in 2.7.1.** Found by the differential oracle (`tools/parity`, §9.7) and systematic: every added file in `get_working_diff`, `get_staged_diff`, `get_commit_diff` and `list_commit_files` differs the same way, for untracked and staged-added alike. It is libgit2's data model showing through — a delta always carries both sides, so `old_file.path` is filled with the new path when there is no old one — against `git`'s own `--- /dev/null`, which the port reports as absent. **No consumer sees it**: every renderer use is `new_path ?? old_path` (`DiffView`, `SplitFileDiff`, `ChangesPanel`, `GraphView`, `CommitDiffModal`, `EditorView`, `diffText`, `repoStore`) and an addition has `new_path`, so the fallback is never reached; `CommitDiffModal` passes `old_path` back into `get_commit_file_diff`, where both values behave identically because `CommitFileDiff` already skips an old path equal to the new one. Kept as-is rather than reproduced: `null` is what the port's own tests assert as the meaning of an addition, and matching libgit2's artefact would make four commands agree with a data structure this port does not use. |
+| `DIVERGENCE-GIT-f` | **A path *inside* a repository resolves to that repository; 2.7.1 refused it.** Found by the same oracle: `get_status` on `<repo>/<subdir>` answers `<repo>`'s status here, where 2.7.1 answers `Path '<path>' doesn't point at a valid Git repository or workdir.` — LibGit2Sharp's `Repository(path)` requires the root, while `git -C <subdir>` walks up. Note that **2.7.1 already contradicted itself**: `is_git_repo` uses `Repository.Discover`, which *does* walk up, so GIT-036's documented behaviour ("a repository and a folder inside it both answer `true`") sent a project whose `local_path` was a subdirectory past the check and into a Changes panel that then errored forever. The port is self-consistent instead. **The hazard, which is real and unresolved**: porcelain paths are relative to the repository root, not to the project path, so such a project lists `README.md` while its own directory holds no such file — a silently wrong panel where 2.7.1 had a loud error. Whether 3.0 should refuse a non-root `local_path` outright (in `create_project`, once, rather than in 42 git commands) is an open decision for the cutover, recorded in `90-ambiguities.md`. |
 | `DIVERGENCE-GIT-d` | `changed_paths` (GIT-024) compares the checkpoint's tree against **the working tree alone**, where 2.x compared it against index *and* working tree. The Go port builds a temporary index from the working tree (`GIT_INDEX_FILE` outside the repository, `read-tree HEAD` + `add -A`) and diffs the checkpoint against that, which is what keeps the real `.git/index` untouched — the property GIT-022 exists for. The one observable difference: a path staged with content that differs from the checkpoint while the file on disk matches it was listed by 2.x and is not listed here. Restoring it wrote identical bytes, so nothing the user can see changes; the path simply stops appearing in the modal's "would restore" list. Introduced by the Go port. |

@@ -303,6 +303,9 @@ core entirely — in the Electron main/preload layer, not in any ported command 
    **Requirement**: an update mechanism exposing current version, a feed check, download with
    progress callbacks, and post-install relaunch, that likewise degrades silently when there
    is no installed binary to update.
+   **Go port**: no longer a bypass. The three surfaces are ordinary registry commands
+   (`backend/update/commands.go`), and `update:progress` reaches the renderer for the first time —
+   see `DIVERGENCE-BOOT-g`.
 
 3. **`components/api/ImportModal.tsx`** — `getCurrentWebview().onDragDropEvent(...)`
    (`renderer/src/lib/bridge/webview.ts`). the native webview drag handler consumes OS file drops before any
@@ -647,6 +650,13 @@ defence; this stops the second one being given away.
 ### BOOT-021 An update is verified against a published digest before it is handed over
 **Implementation**: `src/CodeFlow.App/Update/UpdateService.cs` (`ExpectedDigestAsync`,
 `DigestFor`, `VerifyDigestAsync`) · `scripts/publish-release.sh` · `.github/workflows/release.yml`
+(**cited by 2.x and never present** — `ci.yml` is the only workflow, here as it was there;
+MIGRATION-GO §2.11 records the drift and Phase 9 sweeps the citation) ·
+`backend/update/digest.go` (`DigestFor`), `backend/update/download.go` (`Download`,
+`expectedDigest`, `fetchToFile`, `safeAssetName`), `backend/update/assets.go` (`AssetFor`,
+`digestAssetFor`, `InstallKind`), `backend/update/check.go` (`Check`, the five reasons, the token
+cascade), `backend/update/releaseversion.go` (`IsNewer`), `backend/update/handoff.go`,
+`backend/update/commands.go` (the three commands)
 **Behaviour**: every release carries a `<asset>.sha256` beside each installer, written by
 `shasum -a 256` on macOS and `sha256sum` on Windows. `update_download` fetches that file, hashes
 what it downloaded, and refuses anything that does not match — deleting the file rather than
@@ -680,6 +690,45 @@ not have (see `UpdateAssets`); a digest published as its own asset is what is av
 moves the trust from "whatever this response contained" to "the bytes the release recorded".
 One file per artefact rather than a shared `SHA256SUMS`, because the two installers are built on
 different machines at different times and a shared file would be two uploads racing.
+
+**Go port**
+
+The ordering is the security property and is now stated as one: `Download` resolves the digest
+**before** requesting a single byte of the artefact. A release that publishes no `<asset>.sha256` is
+refused without downloading ninety megabytes into someone's Downloads folder to then delete them,
+and four tests pin the two halves — `TestAReleaseThatPublishesNoDigestIsRefusedBeforeAnythingIsDownloaded`
+and `TestADigestFileThatDoesNotListTheAssetIsRefused` assert that the downloads directory is still
+empty afterwards, while `TestTheDigestIsReadFromTheReleaseRatherThanFromTheCaller` points the
+caller's `assetUrl` at a second server serving different bytes and watches the real release's digest
+refuse them.
+
+Three decisions worth naming, none of which changes an observable behaviour:
+
+- **The asset name is reduced to a bare filename** (`safeAssetName`), and the file is written
+  through an `os.Root` rooted at the downloads directory rather than through a path. BOOT-021's own
+  argument is that the far side of the bridge must not choose what the download is checked against;
+  the name chooses *where the bytes land*, which the same argument covers and 2.x did not. Without
+  it an `assetName` of `../.zshrc` writes an attacker-chosen file outside Downloads with the digest
+  check passing, because a digest is about the bytes and not about where they went. The `os.Root`
+  additionally refuses to follow a symlink out of the directory — the case where the destination
+  name already exists and points somewhere else, which a name check cannot see at all.
+- **Version comparison declines to order two pre-releases of the same core.** `IsNewer` implements
+  the one direction the rule fixes — a pre-release ranks below the release it precedes — and answers
+  "not newer" for `3.0.0-beta.2` against `3.0.0-beta.1`. Ordering those means deciding whether
+  `beta.2` beats `beta.10` and whether `rc` beats `beta`, and no convention here has ever stated
+  either. Not offering an update is the safe half of the uncertainty, and the feed has never
+  produced the case.
+- **The offered version is shown without its tag prefix.** `current_version` is what the build was
+  stamped with and is bare; leaving the tag's `v` on would put "3.0.0 → v3.0.1" in front of the
+  user in the same sentence. The pre-release and the build metadata are kept, because unlike the
+  prefix they carry information.
+
+The token cascade falls through on *any* keychain outcome rather than only on "not stored", which
+means a locked keychain reaches `gh auth token` and, when that also has nothing, reports
+`no-credential` — naming the wrong cause. Deliberate: the check runs hourly in the background, and
+one that raised a keychain prompt or an error toast every hour over a secret it can live without
+would be worse than one that quietly says it could not check
+(`TestALockedKeychainDegradesToNoCredentialRatherThanFailing`).
 
 ### BOOT-019 Five shell capabilities back exactly one frontend bypass concern each
 **Implementation**: `src/CodeFlow.App/Program.cs`, `Directory.Packages.props`
@@ -976,6 +1025,7 @@ panel that the outage makes inert.
 |---|---|---|
 | `DIVERGENCE-BOOT-a` | BOOT-003 | `base_dir()` hardcodes `C:\CodeFlow` on Windows instead of `%LOCALAPPDATA%`; every derived path depends on it; the uninstaller hardcodes the same literal independently. |
 | `DIVERGENCE-BOOT-b` | BOOT-017 | `reset_app_data` (and the deletion it schedules) never touches OS-keychain-stored secrets, matching the Windows uninstaller's identical scope. |
+| `DIVERGENCE-BOOT-g` | BOOT-021 | **The download bar now moves.** 2.x emitted `update:progress` every 256 KiB and the Electron shell never forwarded the name, so the renderer subscribed to an event that could not arrive and the bar sat at 0 % until `update_download` returned — a download that looked hung for as long as it took. In Wails an emitted event reaches the window by construction, so this is fixed by removing the transport rather than by changing any code: the payload, the 256 KiB interval and the final `done` are unchanged, and `lib/bridge/updater.ts` converts them to the `Started`/`Progress`/`Finished` deltas `updateStore` already counted. The letter is `g` rather than the free `d` because letters are never reused in this ledger, retired ones included. |
 | `BUG-BOOT-c` (fixed) | BOOT-037 | The core was spawned into the app's own process group, so a group-wide signal from a stopped AI CLI reached Electron and terminated it gracefully. Reported as "I press stop and the app closes"; it left no crash report, no exception and no `app.quit()` in any stack, and was only found in the unified system log. |
 | `BUG-BOOT-b` (fixed) | BOOT-035 | Neither the channel sockets nor the core's three pipes had an `error` listener, and the main process had no `uncaughtException` handler. One `'error'` event on a live connection was thrown, which ended the app mid-action — leaving no crash report and no log line, so it was indistinguishable from the app quitting on purpose. |
 | `BUG-BOOT-a` (fixed) | BOOT-034 | The Windows listener passed the full `\\.\pipe\…` path to `NamedPipeServerStream` as if it were a pipe name, so it listened at an address the shell could not open. Every command failed; the app looked like it had dead buttons. Fixed, with the Windows skip removed from all four IPC suites. |

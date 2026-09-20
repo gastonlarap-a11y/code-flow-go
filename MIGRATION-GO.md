@@ -258,6 +258,14 @@ React 19 renderer: lib/bridge/host.ts → window.codeflow.invoke(method, params)
    DB, `workspaces` DDL, one-row round trip); LibGit2Sharp (`Repository.Discover` from the app or
    current directory, then status); PTY (`cmd.exe` or `$SHELL`//bin/sh, 120×30 then resize 100×24,
    `echo marker; exit`, 4096-byte reads, 15 s timeout, 5 s wait for exit).
+   **Ported, all three** (`backend/app/smoketest.go`): git replaces the libgit2 probe and is
+   stricter — `git --version` plus a repository initialised and read back under an isolated `HOME`,
+   which is the corporate-laptop failure; storage opens a temp database and runs every migration;
+   PTY allocates and releases one without spawning a shell, so the probe does not depend on which
+   shell the machine has or on that shell's start-up files. The storage and PTY probes were left
+   `TODO` when Phases 2 and 3 landed and their absence outlived the comment saying so — found in
+   Phase 9 and fixed, which matters because the release workflow runs this against every installer
+   before uploading it.
 2. Read the IPC token from **the first line of stdin**; blank → print
    `codeflow-core: the IPC token is read from the first line of stdin…` and exit `2` (BOOT-018b).
 3. Run each stage through `Stage(name, work)`, which records a failure to `{base}/logs/startup.log`
@@ -1936,7 +1944,11 @@ compare case-insensitively.
 
 - **Spec**: `02-bootstrap-platform.md` BOOT-021; §2.9 of this file.
 - **Source size**: 826 LOC; `update_current_version`, `update_check`, `update_download`.
-- **Go**: `backend/update` — `check.go`, `releaseversion.go`, `assets.go`, `download.go`, `handoff.go`.
+- **Go**: `backend/update` — `check.go`, `releaseversion.go`, `assets.go`, `digest.go`, `download.go`,
+  `handoff.go`, `commands.go`. `digest.go` is split out from `download.go` because reading a
+  published `.sha256` is a pure text rule with its own suite (`UpdateDigestTests`, 9 cases) and the
+  v1.7.5 single-entry history behind it; `commands.go` holds `Deps`, the resolved `Service` and the
+  three registrations, as every other feature package does.
 - **How**: port §2.9 exactly (feed, token cascade incl. `gh auth token`, reasons, version compare, asset
   choice, digest rules including the single-entry rule, `~/Downloads`, 81 920-byte chunks, progress every
   256 KiB, delete on mismatch). Hand-off, same as 2.7.1: Windows **opens** the installer through the
@@ -2002,7 +2014,7 @@ Port `FixtureCatalog`:
 
 ### 9.4 Contract tests (the ones that catch silent breakage)
 
-1. **Command coverage** (`backend/bridge/contract_test.go`): read `frontend/src/lib/ipc/commands.ts`,
+1. **Command coverage** (`backend/app/contract_test.go`): read `frontend/src/lib/ipc/commands.ts`,
    `frontend/src/lib/ipc/apiCommands.ts` and `frontend/src/lib/bridge/updater.ts`; extract names with
    `invoke(?:<[^>]*>)?\(\s*["']([a-z0-9_]+)["']`; require every name to be registered except the 11
    deferred ones (§2.4), and require no registered name the renderer does not call except an explicit
@@ -2060,6 +2072,23 @@ accepted.
 ready line, hello frame, `list_workspaces`, `create_workspace`, `get_status`, `list_branches`, a missing
 parameter, an unknown command, `update_current_version`, `default_commit_template` — with the base
 directory redirected to a temporary `HOME`.
+
+**Built, and run** (Phase 9): `tools/parity`, `task parity`. 38 scripted requests, **zero unexplained
+differences**. What it found, none of which reading would have:
+
+| Finding | Outcome |
+|---|---|
+| `get_status` on a directory that is gone answered `fork/exec /usr/bin/git: no such file or directory` — `exec` attributes a failed `chdir` to the binary, so a moved project folder reported that git was not installed, and printed the whole command line into the toast | **Defect, fixed.** `backend/git/runner.go`, `startFailure`; pinned by `TestAMissingRepositoryDirectoryBlamesTheDirectoryAndNotGit` |
+| An added file's `old_path` is `null` here and the file's own path in 2.7.1 — systematic across all four diff commands | `DIVERGENCE-GIT-e`. No consumer sees it; every renderer use is `new_path ?? old_path` |
+| A path *inside* a repository resolves to that repository here; 2.7.1 refused it, although its own `is_git_repo` already walked up | `DIVERGENCE-GIT-f` + `AMBIGUOUS-GIT-c` — an open product decision, because neither behaviour is good |
+| The unix socket path is capped at 104 bytes, and macOS's `$TMPDIR` spends 49 of them before the tool adds anything | A constraint of the transport being removed. The tool picks a short root and checks the budget rather than letting .NET raise about a parameter named `path` |
+| A request with **no `params` member at all** makes 2.7.1 raise `Operation is not valid due to the current state of the object.` where 3.0 answers `missing required parameter 'repoPath'` | Not a difference: `lib/bridge/host.ts` sends `params ?? {}`, so the renderer cannot produce that shape. The oracle was corrected, not the code |
+
+The two normalisation rules worth knowing before reading a report: **minted ids are matched by shape,
+not by field name** — every one this application mints is a uuid, so a *commit's* id stays comparable
+to the character — and `date`/`timestamp` are likewise left alone, because a commit's date is data
+the two sides read from the same fixture repository. Only clocks read at insert time and measured
+durations are erased.
 
 ### 9.8 Parity checklist per phase
 
@@ -2550,7 +2579,39 @@ Windows; after introspecting a SQLite file, delete or rename it immediately (Win
    `UpdateDigestTests`, `UpdateDownloadTests`. Add a test that runs the ported asset selection over the
    exact artefact names CI produces (§5.5): the 2.7.x selection logic is the same code, so this proves
    2.7.x will pick the right files.
-2. Finalise packaging (§10.3) and CI (§10.5); dispatch a build-only run; download its artefacts.
+2. ~~Finalise packaging (§10.3) and CI (§10.5); dispatch a build-only run; download its artefacts.~~
+   **Packaging and CI are written and verified as far as macOS can verify them.** Dispatching a run
+   needs a push, which needs an explicit instruction, so that half is still open.
+
+   - `wails3 generate build-assets` run at the pinned beta.23 with the flags §10.3 names.
+   - `build/windows/nsis/codeflow_replace_electron.nsh` written from the W-3 recipe, and
+     `project.nsi` wired per §10.3 — `!include` after `wails_tools.nsh`, `Call cf.closeRunningCodeFlow`
+     and `Call cf.uninstallElectronCodeFlow` after `wails.checkArchitecture`. **`makensis` compiles it
+     clean** (macOS has NSIS), which proves the script and both functions resolve; whether they do the
+     right thing is the Windows drill.
+   - `task package:mac`, `package:mac:dmg` and `package:win` added. They wrap the hand-written `build`
+     rather than the generated `darwin:build`, and that is the point of their existing: the generated
+     build task carries no `-X main.version`, so an `.app` made from one reports `0.0.0` and offers
+     itself as an update forever.
+   - `.github/workflows/release.yml` written per §10.5: gate → draft → installers (both OSes) →
+     publish, publishing only once all four artefacts and their digests are present.
+   - **`bin/CodeFlow-3.0.0-arm64.dmg` builds on this machine**, from a 67 MB ad-hoc-signed bundle
+     identified as `com.codeflow.app`, with its `.sha256` written the way §10.3 specifies.
+
+   **Three defects the packaging step found, all fixed:**
+
+   | Found | Why it mattered |
+   |---|---|
+   | `generate build-assets` **overwrote** `build/appicon.png` and `build/config.yml` with Wails defaults | The icon became the Wails logo and the config lost the identity block that keeps an upgrade finding the user's data. Restored; the generator is not idempotent and must not be re-run blind |
+   | The generated `Info.plist` declared `LSMinimumSystemVersion` **12.0.0** | §14 D3 decided **26.0**, and the renderer uses anchor positioning, the Popover API and `light-dark()` with **no fallback built** on that promise. Shipping 12.0 would let it install where the UI cannot lay out at all |
+   | `frontend/package.json` still said **2.7.1** | §10.5's gate requires it to equal `build/config.yml`'s `3.0.0`. The release would have refused itself — correctly, and at the worst moment |
+
+   Left over, and needing a hand: the generator also wrote `build/android/`, `build/ios/`,
+   `build/linux/`, `build/docker/` and `build/windows/msix/`, none of which this project targets
+   (arm64 macOS and x64 Windows only, §14 D8). Their Go broke the lint gate, so `build/` is now
+   excluded from golangci-lint — right in itself, since everything there is regenerated — but the
+   trees should still go:
+   `rm -rf build/android build/ios build/linux build/docker build/windows/msix build/appicon.icon build/icon.icns build/icon.ico`
 3. **Upgrade drills on clean machines** (record each in `docs/phase8-drills.md`):
    - macOS: install 2.7.1 from its `.dmg`; create workspaces, projects, API collections, a review run; save
      GitHub/ADO/AI credentials and a DB password; quit; drag the 3.0.0 `.app` over it; launch; everything is
@@ -2567,17 +2628,125 @@ Windows; after introspecting a SQLite file, delete or rename it immediately (Win
 
 ### Phase 9 — Parity audit, documentation and cutover
 
-1. `docs/verbatim/test-inventory.md` fully ticked, or each unported test recorded with its reason in the
-   owning spec document.
-2. Parity oracle (§9.7) over the full scripted request list; zero unexplained differences.
+**Steps 1, 2, 5 and 6 are done; step 4 is done as far as one machine can take it.** Everything that
+remains — the manual checklists, cold start and idle memory, the upgrade drills, and the cutover
+itself — needs a person at each of the two operating systems, and the cutover additionally needs an
+explicit instruction. Two tools came out of this phase and both stay: `task parity` (the
+differential oracle) and `task inventory` (the test audit). Neither is in `task check`: one needs
+2.7.x installed, the other reports volume rather than pass or fail.
+
+1. ~~`docs/verbatim/test-inventory.md` fully ticked, or each unported test recorded with its reason in the
+   owning spec document.~~ **Audited**: `tools/inventory`. The ticking itself is not possible and the audit
+   is what established that — §9.2 asked the port to keep the C# method names as subtest names so parity
+   would be grep-able, and **the port did not**: only 16 of the 121 classes kept even the file name, and
+   inside them the sentences were rewritten (`A_file_committed_then_edited_again_appears_once_with_its_
+   cumulative_change` became `TestBranchContributionCountsATwiceTouchedFileOnce` — same file, same
+   behaviour, two words in common). Any per-name score is a measure of English phrasing. What the audit
+   reports instead is **volume per area** and **where each class went**, and the one number that means
+   something: **1 232 C# behaviours against 1 847 Go ones**, 1.5×, with no area below 0.7×.
+
+   Of the 121 classes, 114 have entries that resemble Go tests. The seven that do not were each read
+   against the tree, and only one was a real gap:
+
+   | Class | Outcome |
+   |---|---|
+   | `Ai/PromptsTests` (4) | **A real gap, now closed.** Nothing asserted that the embedded prompts ask for what the parsers read — see below. `backend/tickets/promptcontract_test.go`, `backend/review/promptcontract_test.go` |
+   | `Ai/NetworkRetryTests` (3) | Covered, relocated: retry moved from the AI engines to the shared client, `backend/platform/platform_test.go` (9 tests) |
+   | `Ai/StdinDeliveryTests` (4) | Covered: `backend/ai/runner_test.go`, `engine_cli_test.go` |
+   | `Diagnostics/StartupLogTests` (3) | Covered: `backend/diagnostics/diagnostics_test.go`, the three `TestStartupLog*` |
+   | `Git/IdentityTests` (1) | Covered, spread: `commands_test.go`, `merge_test.go`, `staging_test.go`, `checkpoints_test.go` |
+   | `Ipc/NamedPipeIpcListenerTests` (2) | **Not ported, by design.** It tests the Windows named pipe of the transport this port removes (§2.3). There is nothing to port it to |
+   | `Dbml/ServerIntrospectorTests` (4) | **Known gap**, already recorded: needs real PostgreSQL/MySQL/SQL Server. Only SQLite is exercised end to end (§8.14) |
+   | `Tickets/AzureCommentEndToEndTests` (1) | **Known gap**: gated on `CODEFLOW_E2E_ADO_*` in C# too. Phase 5 slice 5g |
+
+   **What the gap was.** `XLANG-001` calls the finding format a three-way contract and `XLANG-016` does
+   the same for the verdict block, but both pin only the *parsers* — the prompt that causes the format to
+   exist is a text file nothing read in a test. Rewording `## VEREDICTO DE COBERTURA` in
+   `DEFAULT_TICKET_REVIEW_STANDARD.txt` left the whole suite green while every live ticket review
+   silently lost its verdict. Five tests now join the halves: every literal the parsers match is asserted
+   present in the prompt that asks for it, the prompt's own worked example is run through `ParseVerdict`,
+   and the 58-line finding-format block the two standards share is asserted byte-identical — which it has
+   to be, because `ReviewMemory` reconciles ticket and pull-request reviews with one parser.
+2. ~~Parity oracle (§9.7) over the full scripted request list; zero unexplained differences.~~ **Done**:
+   `tools/parity` / `task parity`, 38 requests, 0 unexplained differences, 7 explained (each naming the
+   marker that records it). One defect fixed and two divergences raised — see the table in §9.7.
+   Widening the script is cheap and worth doing as the manual checklists find areas worth pinning.
 3. Manual acceptance checklists of every spec document, both OSes; the WebKit list W1–W14 re-checked on the
    oldest supported macOS.
 4. Performance record (README): cold start, idle memory, installer size, `get_status` on a 100 000-file repo,
-   2.7.1 vs 3.0.0.
+   2.7.1 vs 3.0.0. **Partly done** — the half this machine can answer is in the README, measured with
+   `task parity -- -time`, which times the same request against both cores.
+
+   The shape of the result is not the one this line assumed. Every command that reads the database or
+   answers from memory is **7–29× faster**, because the transport was most of what it cost. Every
+   command that touches git is **slower** — `get_commit_diff` 748 µs → 14.8 ms, `get_working_diff`
+   8.05 ms → 22.7 ms — because the port replaced libgit2 with the `git` command line and each read is
+   now a process spawn of about 5–7 ms before git does any work. The fixture is five files, so the git
+   rows are measuring that fixed cost almost alone; on a large repository the work should dominate.
+   It is a measured consequence of a deliberate, documented decision (`backend/git` package comment),
+   not a defect, and recording it is the point of this step.
+
+   One scaling note came out of it: `get_working_diff` spawns one `git diff --no-index` **per untracked
+   file**, so the cost is linear in something the user controls.
+
+   **Still outstanding**: cold start, idle memory and `get_status` on a 100 000-file repository, all of
+   which need the window open on each OS — they belong with step 3's manual pass, not here.
 5. Spec sweep (§13): C# and Electron paths replaced by Go paths (§0.4) across `docs/`; re-run the XLANG sweep
    (grep `mirror`, `in sync`, `must match` in `backend/` and `frontend/`); marker ledgers updated.
-6. Delete `docs/verbatim/` leftovers that moved (prompts, assets); keep `test-inventory.md` until step 1 is
-   complete, then delete it.
+   **Done for the three documents §13 lists at phase 9**, and the sweep found more than paths:
+
+   - `01-ipc-surface.md` — every `###` heading now names the **Go file that registers** those commands,
+     derived from the registry rather than transcribed: each of the 246 names was found as a literal
+     registration in exactly one non-test file under `backend/`, with **zero ambiguity**, totalling the
+     235 the registry reports. Four regroupings are named (the API client split three ways, the review
+     commands five, the workspace block two, checkpoints merged into git). The sweep also found that
+     **five headings disagreed with their own row counts**, six rows are host surfaces rather than
+     commands (now marked `HOST`: they live on `desktop.HostService`, and `contract_test.go` would fail
+     if they were registered), and **four names had no row at all** — `repo_web_url` and the three
+     updater commands, which are called from `bridge/updater.ts` and were never tabulated. All four are
+     now in the tables.
+   - `00-conventions.md` — the counts are measured over `backend/` (171 files, 37 887 lines, 235
+     registered, 246 called, 23 tables), each keeping its 2.x figure beside it. Its `236 / 232` had
+     contradicted `01-ipc-surface.md`'s `235 / 246` since the port began.
+   - `13-cross-language-contracts.md` — every `XLANG-*` implementation line carries its Go path. The one
+     that does not is `XLANG-007`, deliberately: the static model lists are the renderer's alone.
+   - **The renderer moved and nothing had said so**: `renderer/src/…` became `frontend/src/…` in the
+     port, and 16 references across the two documents still used the old root. Now corrected, and
+     **every code path cited anywhere under `docs/business-rules/`, `MIGRATION-GO.md` and `AGENTS.md`
+     resolves to a file that exists** — checked by resolving each one, which also caught
+     `backend/bridge/contract_test.go` in §9.4 (it is `backend/app/contract_test.go`).
+
+   Still stale, and left for the remaining phase-9 pass: the per-row `<sub>` provenance in
+   `01-ipc-surface.md`'s tables (kept on purpose — the heading carries the Go file, the row carries
+   where it came from) and the `Implementation` lines of the twelve *other* spec documents, most of
+   which their own phase already updated.
+6. ~~Delete `docs/verbatim/` leftovers that moved (prompts, assets); keep `test-inventory.md` until step 1 is
+   complete, then delete it.~~ **Done, with two deliberate departures from what this line says.**
+
+   The prompts had already moved to `backend/ai/prompts/`, leaving an empty directory. Of the six
+   assets, only two had actually moved, and comparing digests is how that was established rather than
+   assumed:
+
+   | Asset | Fate |
+   |---|---|
+   | `icon.png` | Deleted — byte-identical to `build/appicon.png` |
+   | `tray.png` | Deleted — byte-identical to `backend/desktop/assets/tray.png` |
+   | `icon.icns`, `icon.ico` | **Moved to `build/`**, not deleted |
+   | `icon.svg`, `tray.svg` | **Moved** to `build/` and `backend/desktop/assets/` |
+
+   **The four were the only copies, and two of them are build inputs.** `icon.icns` and `icon.ico` are
+   what macOS bundling and the NSIS installer need, and Phase 8 step 2 — the step that will reference
+   them — has not been written yet; deleting them would have destroyed the only copy of an input before
+   the thing that consumes it existed. The two SVGs are the vector masters the PNGs were generated from.
+   "Leftovers that moved" is the right rule; these had not moved, so they were filed rather than dropped.
+   (`backend/desktop/desktop.go` embeds `assets/tray.png` by name, not `assets/*`, so the SVG beside it
+   does not enter the binary.)
+
+   **`test-inventory.md` stays.** The instruction assumed step 1 would end with every entry ticked, after
+   which the file is spent. Step 1 instead established that ticking is not possible — the port rewrote
+   the names — and turned the inventory into the input of a re-runnable audit (`tools/inventory`, which
+   reads it by default). Deleting it now would turn a fact anybody can re-check into a claim in a
+   document, and would break `task inventory`. It is 76 KB.
 7. **Cutover** per §14 D2 (recommended path): on the operator's order, open a pull request in
    `gastonlarap-a11y/code-flow` that replaces the tree with this repository's content (branch
    `feat/go-wails-port`), keeping the repository, its releases and its update feed; merge; bump to `3.0.0`

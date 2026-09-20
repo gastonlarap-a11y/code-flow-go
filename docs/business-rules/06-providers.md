@@ -133,6 +133,11 @@ expected type becomes `"unexpected response from GitHub: {e}"`.
 > undifferentiated 401, and a 422 that is not this one is still a raw 422, both asserted by their own
 > tests. The operator asked for this after meeting the raw JSON in a toast; it is not a silent
 > correction. See `90-ambiguities.md`.
+>
+> **In the Go port** the sentence is matched over the **raw response body**, case-insensitively,
+> rather than over a parsed `errors[]`: GitHub sends that array as strings in some responses and as
+> objects in others, and the sentence is what identifies the case either way. Same intent, one less
+> shape to get wrong — and the same graceful degradation to a raw 422 if GitHub rewords it.
 
 ### REST endpoints
 
@@ -371,6 +376,14 @@ minority of calls and sent raw on the majority. Suspected-correct behavior: `enc
 applied uniformly everywhere `repo_id` is interpolated by name, matching how `org`/`project` are
 always treated. Ported as-is, inconsistency included — not fixed here.
 
+**In the Go port** the same three call sites encode and the rest interpolate raw, but what the
+inconsistency *looks like* changed — see `DIVERGENCE-PROV-f`. Go's `net/url` escapes a space by
+itself when the request is built, so the character this row names now behaves identically on both
+paths; a reserved character does not, and still shows the bug (`#` truncates the path at the
+fragment, `%` fails to parse at all). One more call site than the enumeration above sends `repo_id`
+raw: `list_pr_comment_threads`, which the specification names in neither group — the encoded set is
+enumerated exhaustively ("all encode it") and it is not in it.
+
 ### REST endpoints
 
 - **`GET https://dev.azure.com/{org}/_apis/projects?api-version=7.1`** — `list_projects`
@@ -494,7 +507,10 @@ transport (`AzureClient.GetAsync`, `SendJsonAsync`, `OrgSegment`, `GetBytesAsync
 is reported here exactly as `DIVERGENCE-PROV-b` specifies and organisation normalisation cannot
 drift between the two.
 
-**Read-only.** Nothing in this client writes to a board.
+**One write, and it is a comment.** Everything else reads. `AddCommentAsync` posts a review verdict
+onto a work item when somebody presses a button (`14-work-items.md`, `WI-022`); no transition verb
+exists here and its absence is asserted. This section described the client as read-only while
+`WI-022` already named its one writing method — the table below now carries it, so the two agree.
 
 | Operation | Call |
 |---|---|
@@ -507,12 +523,13 @@ drift between the two.
 | Work item types | `GET .../wit/workitemtypes?api-version=7.1` |
 | A type's fields | `GET .../wit/workitemtypes/{type}/fields?api-version=7.1` |
 | Comments (read) | `GET .../wit/workItems/{id}/comments?api-version=**7.1-preview.4**` |
+| Comment (write) | `POST .../wit/workItems/{id}/comments?api-version=**7.1-preview.4**`, `{ text: html }` |
 | Attachment | `GET {relation.url}?fileName=…&download=true&api-version=7.1` |
 | Web URL | `https://dev.azure.com/{org}/{project}/_workitems/edit/{id}` |
 
 ### PROV-045 WIQL must name the project in its `WHERE` clause
 
-**Implementation**: `AzureWorkItemClient.QueryIdsAsync`
+**Implementation**: `AzureWorkItemClient.QueryIdsAsync` · `backend/providers/azureworkitems.go` (`QueryIDs`)
 **Behaviour**: the method takes an optional *condition*, never a whole query, and composes
 `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '{project}' [AND (…)]`. No caller
 can send a query without the project clause.
@@ -535,7 +552,7 @@ names, so every query is followed by a batch read.
 
 ### PROV-046 Two endpoints are preview-only, at different suffixes
 
-**Implementation**: `AzureWorkItemClient.CommentsApiVersion`, `IterationWorkItemsApiVersion`
+**Implementation**: `AzureWorkItemClient.CommentsApiVersion`, `IterationWorkItemsApiVersion` · `backend/providers/azureworkitems.go` (`azureCommentsAPIVersion`, `azureIterationItemsAPIVersion`)
 **Behaviour**: comments are pinned to `7.1-preview.4` and an iteration's work items to
 `7.1-preview.1`. A plain `7.1` is rejected on both with a 400 demanding the suffix — the same trap
 `connectionData` documents above.
@@ -544,18 +561,22 @@ with their neighbours. `AzureWorkItemClientTests` asserts both strings exactly.
 
 ### PROV-047 A work item's fields cannot be a record
 
-**Implementation**: `RawWorkItem.Fields`
-**Behaviour**: an `IReadOnlyDictionary<string, JsonElement>`. Azure keys every field by reference
-name — `System.Title`, `Microsoft.VSTS.Common.AcceptanceCriteria` — and a customised process adds
-its own; one real board carries sixteen `Custom.*` fields, four of them named by GUID. The dots are
-not legal in a C# member name, and a fixed record would drop every custom field.
+**Implementation**: `RawWorkItem.Fields` · `backend/providers/azureworkitems.go` (`RawWorkItem.Fields`)
+**Behaviour**: an `IReadOnlyDictionary<string, JsonElement>`, and a `map[string]json.RawMessage` in
+Go. Azure keys every field by reference name — `System.Title`,
+`Microsoft.VSTS.Common.AcceptanceCriteria` — and a customised process adds its own; one real board
+carries sixteen `Custom.*` fields, four of them named by GUID. The dots are not legal in a C# member
+name, and a fixed record would drop every custom field.
 **Edge cases**: values are not all strings — `System.AssignedTo` is an identity object and
 `System.CommentCount` a number — so reading one as the wrong type is a caller's decision where it
-matters rather than a deserialisation failure that loses the whole work item.
+matters rather than a deserialisation failure that loses the whole work item. The Go port makes that
+decision in two named readers, `Text` and `Identity`, each answering `""` for a field that is absent
+**or** of the wrong shape: every caller here wants "the title, or nothing", and a process that made
+`System.Title` an object would otherwise fail a sync rather than render a blank title.
 
 ### PROV-048 Work-item addresses are parsed apart from PR links
 
-**Implementation**: `src/CodeFlow.App/Providers/WorkItemLink.cs`
+**Implementation**: `src/CodeFlow.App/Providers/WorkItemLink.cs` · `backend/providers/workitemlink.go` (`ParseWorkItemLink`)
 **Behaviour**: accepts the work-item page on either host, any board URL carrying `?workitem=`, and
 a bare id or `AB#`. Organisation and project come back null for a bare id.
 **Edge cases**: it deliberately does **not** reuse `PrLink`'s splitter, which discards the query
@@ -631,7 +652,7 @@ tail; a string with no `/` at all.
 ## Rules
 
 ### PROV-001 GitHub REST/GraphQL host resolution
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`apiRoot`, `graphqlRoot`)
 **Behaviour**: `api_root(host)` returns `https://api.github.com` when `host` case-insensitively
 equals `"github.com"`, else `https://{host}/api/v3`. `graphql_root(host)` returns
 `https://api.github.com/graphql` for `github.com`, else `https://{host}/api/graphql`.
@@ -643,7 +664,7 @@ here (that's what `detect_from_remote_url`'s `known_hosts` allowlist is for, at 
 **Markers**: none.
 
 ### PROV-002 GitHub Bearer auth
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`, applied at every call site in `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`, applied at every call site in `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`GitHubClient.do`, one place per verb)
 **Behaviour**: every GitHub request carries `Authorization: Bearer {token}`. One scheme for both
 classic and fine-grained PATs.
 **Inputs / outputs**: `token: string` → header value `string`.
@@ -653,7 +674,7 @@ that loads a token from storage.
 **Markers**: none.
 
 ### PROV-003 GitHub git-remote detection
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/detection.go` (`DetectGitHub`)
 **Behaviour**: `detect_from_remote_url(remote_url, known_hosts)` splits a git remote into
 `(host, path)` (`split_host_path`, handling `scheme://[user@]host/path` and scp-like
 `[user@]host:path`, stripping `.git` and a trailing `/`), requires `host` to case-insensitively
@@ -668,7 +689,7 @@ segments returns `None`.
 **Markers**: none.
 
 ### PROV-004 GitHub generic error mapping
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`GitHubError`, `newGitHubStatusError`)
 **Behaviour**: `get_json`/`post_json`/`post_json_returning`/`patch_json` each send the same four
 headers (`Authorization`, `Accept: application/vnd.github+json`, `User-Agent: CodeFlow`,
 `X-GitHub-Api-Version: 2022-11-28`); a transport error becomes `"couldn't reach GitHub: {e}"`; any
@@ -677,11 +698,16 @@ deserialization failure on an otherwise-2xx body becomes `"unexpected response f
 **Inputs / outputs**: url/token/(body) → `T` or `void`.
 **Edge cases**: no status-code-specific branching anywhere — 401/403/404/422 all produce the same
 string shape.
+**In the Go port** the failure is a typed `GitHubError{Status, Body, SelfApproval}` rather than a
+formatted string, so the one case that *is* classified (`DIVERGENCE-PROV-c`) can be branched on with
+`errors.As` instead of by matching text. The rendered message keeps the documented shape, with
+`{status}` as the numeric code — `GitHub returned 404: {"message":…}`. Nothing parses it: the
+sentinels are what the renderer matches, and they are added at the command boundary.
 **Frontend dependency**: not established in this document's scope.
 **Markers**: none.
 
 ### PROV-005 GitHub authenticated-user lookup
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`AuthenticatedUser`)
 **Behaviour**: `GET {api_root}/user`; returns the `login` of the token's owner.
 **Inputs / outputs**: `host, token` → `string` (the login).
 **Edge cases**: none beyond the generic error mapping.
@@ -689,7 +715,7 @@ string shape.
 **Markers**: none.
 
 ### PROV-006 GitHub status bucketing
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`bucketGitHubStatus`)
 **Behaviour**: `bucket_status(state, draft, merged_at)`: `merged_at.is_some()` → `"merged"`; else
 `state == "closed"` → `"closed"`; else `draft` → `"draft"`; else `"open"`. Merge takes priority
 over the raw `state` field.
@@ -700,7 +726,7 @@ over the raw `state` field.
 **Markers**: none.
 
 ### PROV-007 GitHub list/get pull request
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`, `237-250`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`, `237-250` · `backend/providers/github.go` (`ListPullRequests`, `GetPullRequest`, `mapPull`)
 **Behaviour**: `list_pull_requests`: `GET .../pulls?state=all&per_page=100&sort=created&direction=desc`,
 maps every item through `map_pull`. `get_pull_request`: `GET .../pulls/{number}`, same mapping —
 reaches a PR regardless of how far back in the list it is.
@@ -711,7 +737,7 @@ with more than 100 all-time PRs loses whichever fall outside the newest 100 by c
 **Markers**: none.
 
 ### PROV-008 GitHub diff retrieval and fallback reconstruction
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`PullRequestDiff`, `diffFromFiles`)
 **Behaviour**: `pull_request_diff` requests `GET .../pulls/{number}` with
 `Accept: application/vnd.github.diff`; if the response is non-2xx or the body is empty/whitespace
 after success, falls back to `pull_request_diff_from_files`, which pages `GET
@@ -728,7 +754,7 @@ contributes only its header line plus the literal text
 **Markers**: none.
 
 ### PROV-009 GitHub create pull request
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`CreatePullRequest`)
 **Behaviour**: `POST .../pulls` with `{ title, head, base, body, draft }`; `head`/`base` are
 branch names, not full refs; the branch must already exist on the remote. Response mapped through
 `map_pull`.
@@ -739,7 +765,7 @@ branch names, not full refs; the branch must already exist on the remote. Respon
 **Markers**: none.
 
 ### PROV-010 GitHub head SHA lookup
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`HeadSHA`)
 **Behaviour**: `GET .../pulls/{pr_number}`, reads only `head.sha`.
 **Inputs / outputs**: `host, owner, repo, pr_number, token` → `string`.
 **Edge cases**: an empty `head.sha` errors `"GitHub didn't report a head commit for this pull
@@ -748,7 +774,7 @@ request"` rather than returning the empty string.
 **Markers**: none.
 
 ### PROV-011 GitHub anchored inline comment
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`PostAnchoredComment`; the 422 fallback belongs to `GitHubHost`, still to port)
 **Behaviour**: `POST .../pulls/{pr_number}/comments` with
 `{ body, commit_id, path, line, side: "RIGHT" }`; `line = end_line.max(start_line)`; `start_line`/
 `start_side: "RIGHT"` added only when `start_line < line`. `path` has a leading `/` stripped.
@@ -771,7 +797,7 @@ entirely — sending them with `start_line == line` 422s per the source comment.
 **Markers**: `VERIFIED-LIVE` (§2.9, 2026-08-01).
 
 ### PROV-012 GitHub general (issue) comment
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`PostComment`)
 **Behaviour**: `POST .../issues/{pr_number}/comments` with `{ body: content }`. Used for the
 summary comment and any finding whose location couldn't be parsed.
 **Inputs / outputs**: `host, owner, repo, pr_number, content, token` → `long`.
@@ -781,7 +807,7 @@ have no reply relationship).
 **Markers**: `VERIFIED-LIVE` (§2.9, 2026-08-01).
 
 ### PROV-013 GitHub reply to review comment
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`ReplyToComment`)
 **Behaviour**: `POST .../pulls/{pr_number}/comments/{comment_id}/replies` with `{ body: content }`.
 **Inputs / outputs**: `host, owner, repo, pr_number, comment_id, content, token` →
 `void`.
@@ -790,7 +816,7 @@ have no reply relationship).
 **Markers**: `VERIFIED-LIVE` (§2.9, 2026-08-01).
 
 ### PROV-014 GitHub review-thread resolution (GraphQL)
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github_graphql.go`
 **Behaviour**: two sequential `POST {graphql_root}` calls — see "The GraphQL call" above for the
 `VERBATIM` query and mutation text. Finds the review thread containing `comment_id`'s
 `databaseId` among the first 100 threads × first 100 comments each, then calls
@@ -805,7 +831,7 @@ per the source comment treats a failure here as best-effort (never fails the sur
 **Markers**: `VERIFIED-LIVE` (§2.9, 2026-08-01) — the one GraphQL path, executed and confirmed (`isResolved: true`).
 
 ### PROV-015 GitHub viewer decision
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`ViewerDecision`)
 **Behaviour**: resolves the viewer's login via `get_authenticated_user`, then `GET
 .../pulls/{number}/reviews?per_page=100`, filters to that login's reviews, and folds them in
 response order: `APPROVED`→`"approved"`, `CHANGES_REQUESTED`→`"changes_requested"`,
@@ -819,7 +845,7 @@ reviews in submission order (not independently verified in the source — assume
 **Markers**: none.
 
 ### PROV-016 GitHub submit review
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`SubmitReview`)
 **Behaviour**: `POST .../pulls/{pr_number}/reviews` with `{ event }`
 (`"APPROVE" | "REQUEST_CHANGES"`); `body: content` added only when `content.trim()` is non-empty.
 **Inputs / outputs**: `host, owner, repo, pr_number, event, body, token` → `void`.
@@ -831,7 +857,7 @@ non-2xx error from GitHub, not a distinct local error.
 classified per `XLANG-013`; a 2xx APPROVE needs a second account, see the endpoint note).
 
 ### PROV-017 GitHub close pull request
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`ClosePullRequest`)
 **Behaviour**: `PATCH .../pulls/{pr_number}` with `{ state: "closed" }`.
 **Inputs / outputs**: `host, owner, repo, pr_number, token` → `void`.
 **Edge cases**: closes without merging; no confirmation of the prior state.
@@ -839,7 +865,7 @@ classified per `XLANG-013`; a 2xx APPROVE needs a second account, see the endpoi
 **Markers**: none.
 
 ### PROV-018 GitHub comment-thread listing and grouping
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` · `backend/providers/github.go` (`ListCommentThreads`)
 **Behaviour**: fetches `GET .../pulls/{pr_number}/comments?per_page=100` (inline review comments)
 and `GET .../issues/{pr_number}/comments?per_page=100` (conversation comments). Inline comments
 are grouped into threads keyed by `root_id = in_reply_to_id.unwrap_or(id)`: the first comment seen
@@ -862,7 +888,7 @@ confirmed ordering guarantee from GitHub's docs or an explicit sort before porti
 **Markers**: `AMBIGUOUS-PROV-a`.
 
 ### PROV-019 Azure Basic-auth PAT header
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`, applied at every call site in `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`, applied at every call site in `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure.go` (`AzureClient.authorize`)
 **Behaviour**: `Authorization: Basic {base64(":" + pat)}` — empty username, PAT as password.
 **Inputs / outputs**: `pat: string` → header value `string`.
 **Edge cases**: no validation of PAT shape before sending.
@@ -871,7 +897,7 @@ ADO PAT appears anywhere in this document's files).
 **Markers**: none.
 
 ### PROV-020 Azure organization normalization
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure.go` (`NormalizeAzureOrg`)
 **Behaviour**: `normalize_org` reduces whatever form the org was saved in — bare name, full
 `https://dev.azure.com/{org}` URL, legacy `https://{org}.visualstudio.com` URL — to the bare org
 name, so it can be percent-encoded and interpolated into a path segment safely (a raw `:` in the
@@ -883,7 +909,7 @@ trimmed but otherwise unchanged (assumed to already be a bare name).
 **Markers**: none.
 
 ### PROV-021 Azure path-segment percent-encoding
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure.go` (`encodeSegment`, `repoRoot` vs `encodedRepoRoot`)
 **Behaviour**: `encode_segment` percent-encodes every byte outside `A-Za-z0-9-._~` as `%{byte:02X}`.
 Applied to `org` (post-`normalize_org`) and `project` at every call site; **not** applied
 consistently to `repo_id` — see `BUG-PROV-a` above.
@@ -894,7 +920,7 @@ consistently to `repo_id` — see `BUG-PROV-a` above.
 percent-encoding" section above).
 
 ### PROV-022 Azure git-remote detection
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/detection.go` (`DetectAzure`)
 **Behaviour**: `detect_from_remote_url` recognizes three shapes: SSH
 (`git@ssh.dev.azure.com:v3/{org}/{project}/{repo}`), `dev.azure.com` HTTPS
 (`https://dev.azure.com/{org}/{project}/_git/{repo}`), and legacy `{org}.visualstudio.com` HTTPS
@@ -910,7 +936,7 @@ a general percent-decoder here too, consistent with `src/CodeFlow.App/Providers/
 **Markers**: `BUG-PROV-b`.
 
 ### PROV-023 Azure list projects / list repos
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`ListProjects`, `ListRepos`)
 **Behaviour**: `list_projects`: `GET {org}/_apis/projects?api-version=7.1`. `list_repos`: `GET
 {org}/{project}/_apis/git/repositories?api-version=7.1`. Both return `{ value: [...] }` unwrapped
 into a plain `Vec`.
@@ -921,7 +947,7 @@ whether the server enforces a default page size on either endpoint.
 **Markers**: none.
 
 ### PROV-024 Azure status bucketing and PR mapping
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`bucketAzureStatus`, `mapAzurePullRequest`, `stripRef`)
 **Behaviour**: `bucket_status(status, is_draft)`: `"completed"`→`"merged"`, `"abandoned"`→
 `"closed"`, else `is_draft`→`"draft"`, else `"open"`. `map_pull_request` also strips the
 `refs/heads/` prefix from both branch refs (`strip_ref`) and synthesizes `url` as
@@ -934,7 +960,7 @@ RawPullRequest)` → `PullRequestSummary`.
 **Markers**: none.
 
 ### PROV-025 Azure list/get pull request
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`ListPullRequests`, `GetPullRequest`)
 **Behaviour**: `list_pull_requests`: `GET .../pullrequests?searchCriteria.status=all&api-version=7.1`,
 no explicit page size set. `get_pull_request`: `GET .../pullRequests/{pr_id}?api-version=7.1`;
 `project`/`repo_id` may each be a GUID or a name; additionally recovers the project's **name**
@@ -949,7 +975,7 @@ server defaults to for this endpoint, unlike GitHub's explicit `per_page=100`.
 **Markers**: `AMBIGUOUS-PROV-c`.
 
 ### PROV-026 Azure create pull request
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`CreatePullRequest`)
 **Behaviour**: `POST .../pullrequests?api-version=7.1` with `{ sourceRefName: "refs/heads/{source_branch}",
 targetRefName: "refs/heads/{target_branch}", title, description, isDraft: draft }`.
 **Inputs / outputs**: `org, project, repo_id, title, description, source_branch, target_branch,
@@ -960,7 +986,7 @@ draft, pat` → `PullRequestSummary`.
 **Markers**: none.
 
 ### PROV-027 Azure latest-iteration lookup
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`LatestIterationID`)
 **Behaviour**: `GET .../pullRequests/{pr_id}/iterations?api-version=7.1`, takes the last item's
 `id`, falling back to `1` if the list is empty.
 **Inputs / outputs**: `org, project, repo_id, pr_id, pat` → `long`.
@@ -970,7 +996,7 @@ an error condition.
 **Markers**: none.
 
 ### PROV-028 Azure diff assembly
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`PullRequestDiff`, `changedFiles`, `renderChange`)
 **Behaviour**: `pull_request_diff` fetches `GET .../pullRequests/{pr_id}/iterations/{iteration_id}/changes?$top=1000&api-version=7.1`
 (against the base, no `$compareTo`). For each non-folder change entry: path is
 `item.path.trim_start_matches('/')` (Azure paths are absolute within the repo); `old_id` is
@@ -997,7 +1023,7 @@ line.
 **Markers**: none.
 
 ### PROV-029 Azure unified-diff rendering
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/unifiedpatch.go`
 **Behaviour**: `unified_patch(path, old, new)` calls `git2::a blob-to-blob patch(old, Some(path),
 new, Some(path), None)` then `.to_buf()`, returning the rendered patch text. The same path is used
 for both sides — this function never renders a rename.
@@ -1005,12 +1031,14 @@ for both sides — this function never renders a rename.
 **Edge cases**: returns `None` (not an error) if libgit2 fails to produce a patch, e.g. for binary
 content — the caller treats that as "binary" rather than propagating an error.
 **Frontend dependency**: none directly — exercised by `pull_request_diff` (PROV-028).
-**Markers**: none.
+**Markers**: `DIVERGENCE-PROV-e` — the Go port renders the patch itself, there being no libgit2; see
+the table at the end of this document.
 **Test coverage**: `unified_patch_renders_a_git_style_diff`, `unified_patch_handles_added_and_deleted_files`
-— see `test-vectors/ado.vectors.json`.
+— see `test-vectors/ado.vectors.json`. The fixture asserts **containment**, not byte equality,
+because the original tests did; that is what makes it portable to a different renderer.
 
 ### PROV-030 Azure anchored comment thread
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`PostAnchoredComment`)
 **Behaviour**: `POST .../pullRequests/{pr_id}/threads?api-version=7.1` with the body shown in full
 under "Comment-thread positioning" above — `filePath` gets a leading slash added if missing (never
 stripped), `rightFileStart`/`rightFileEnd` carry `{ line, offset: 1 }`,
@@ -1024,7 +1052,7 @@ stripped), `rightFileStart`/`rightFileEnd` carry `{ line, offset: 1 }`,
 thread-creation URL and its internal `get_latest_iteration_id` call interpolate `repo_id` raw).
 
 ### PROV-031 Azure general comment thread
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`, shared POST via `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`, shared POST via `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`PostComment`, `postThread`)
 **Behaviour**: `POST .../pullRequests/{pr_id}/threads?api-version=7.1` with
 `{ comments: [{ parentCommentId: 0, content, commentType: 1 }], status: 1 }` — no `threadContext`,
 so this is a PR-level (non-anchored) thread. `post_thread` is the shared POST-and-parse-id helper
@@ -1035,7 +1063,7 @@ used by both this and PROV-030.
 **Markers**: `VERIFIED-LIVE` (§2.9, 2026-08-01); `BUG-PROV-a` (unencoded `repo_id`).
 
 ### PROV-032 Azure thread reply
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`ReplyToThread`)
 **Behaviour**: `POST .../threads/{thread_id}/comments?api-version=7.1` with
 `{ parentCommentId: 1, content, commentType: 1 }` — `parentCommentId` hardcoded to `1`, relying on
 the root comment of any thread this app created always being comment id 1 within that thread.
@@ -1046,7 +1074,7 @@ list at call time.
 **Markers**: `VERIFIED-LIVE` (§2.9, 2026-08-01); `BUG-PROV-a` (unencoded `repo_id`).
 
 ### PROV-033 Azure thread status
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`SetThreadStatus`, the six `AzureThread*` constants)
 **Behaviour**: `PATCH .../threads/{thread_id}?api-version=7.1` with `{ status }`. Status ints,
 `VERBATIM`: `1`=active, `2`=fixed, `3`=wontFix, `4`=closed, `5`=byDesign, `6`=pending.
 **Inputs / outputs**: `org, project, repo_id, pr_id, thread_id, status: int, pat` →
@@ -1057,7 +1085,7 @@ list at call time.
 `BUG-PROV-a` (unencoded `repo_id`).
 
 ### PROV-034 Azure authenticated-user id and reviewer vote
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`AuthenticatedUserID`, `SetReviewerVote`)
 **Behaviour**: `authenticated_user_id`: `GET {org}/_apis/connectionData?api-version=7.1-preview`
 (org-scoped, the one endpoint using `PREVIEW_API_VERSION`). `set_reviewer_vote`: fetches that id,
 then `PUT .../pullRequests/{pr_id}/reviewers/{user_id}?api-version=7.1` with `{ vote }` — adds the
@@ -1070,7 +1098,7 @@ caller as a reviewer if not already one, and sets the vote, in one call.
 `set_reviewer_vote`'s URL — `authenticated_user_id`'s own URL has no `repo_id` to encode).
 
 ### PROV-035 Azure viewer decision
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`ViewerDecision`)
 **Behaviour**: fetches the authenticated user's id, then `GET .../pullRequests/{pr_id}?api-version=7.1`
 (same shape as `get_pull_request`, which includes `reviewers`), finds the entry whose `id` matches
 (case-insensitive), reads `vote`: `> 0`→`"approved"`, `< 0`→`"changes_requested"`, `0`/absent→`"none"`.
@@ -1082,7 +1110,7 @@ GitHub's model.
 **Markers**: none.
 
 ### PROV-036 Azure abandon pull request
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`AbandonPullRequest`)
 **Behaviour**: `PATCH .../pullRequests/{pr_id}?api-version=7.1` with `{ status: "abandoned" }`.
 **Inputs / outputs**: `org, project, repo_id, pr_id, pat` → `void`.
 **Edge cases**: none beyond generic error mapping.
@@ -1090,7 +1118,7 @@ GitHub's model.
 **Markers**: none.
 
 ### PROV-037 Azure comment-thread listing and filtering
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` · `backend/providers/azure_endpoints.go` (`ListCommentThreads`, `azureThreadIsOpen`)
 **Behaviour**: `GET .../pullRequests/{pr_id}/threads?api-version=7.1`. Filters to threads whose
 `status`, lowercased, is `"active"`, `"pending"`, or absent (`None`) — `"fixed"`, `"wontfix"`,
 `"closed"`, `"bydesign"` threads are dropped. Within a kept thread, comments are filtered to
@@ -1106,7 +1134,7 @@ bucket as `"active"`/`"pending"`.
 **Markers**: none.
 
 ### PROV-038 pr_link percent-decoding
-**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs`
+**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs` · `backend/providers/prlink.go` (`percentDecode`)
 **Behaviour**: hand-rolled `%XX` decoder; a `%` not followed by two valid hex digits is emitted
 literally rather than dropped or erroring; output run through lossy UTF-8 decoding.
 **Inputs / outputs**: `s: string` → decoded `string`.
@@ -1116,7 +1144,7 @@ characters, is left as literal text.
 **Markers**: none.
 
 ### PROV-039 pr_link URL splitting
-**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs`
+**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs` · `backend/providers/prlink.go` (`splitLink`)
 **Behaviour**: strips fragment (from first `#`), query (from first `?`), trailing `/`; strips an
 optional `https://`/`http://` scheme; strips userinfo (`user@`, via `rsplit('@')`); splits host
 from path on the first `/`; percent-decodes each non-empty path segment.
@@ -1126,7 +1154,7 @@ from path on the first `/`; percent-decodes each non-empty path segment.
 **Markers**: none.
 
 ### PROV-040 GitHub PR link grammar
-**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs`
+**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs` · `backend/providers/prlink.go` (`parseGitHubPRLink`)
 **Behaviour**: `host` must match an entry in `known_github_hosts` (case-insensitive); segments
 must be `[owner, repo, kind, number, ..]` with `kind` case-insensitively `"pull"`/`"pulls"`; `repo`
 has a trailing `.git` stripped; `number` parses as `long`. Returned `host` is the matched
@@ -1140,7 +1168,7 @@ are ignored via `..`.
 **Test coverage**: `parses_github_links`, `rejects_non_pr_links` — see `test-vectors/pr_link.vectors.json`.
 
 ### PROV-041 Azure PR link grammar
-**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs`
+**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs` · `backend/providers/prlink.go` (`parseAzurePRLink`)
 **Behaviour**: `dev.azure.com` host: `org` = first segment, rest matched against
 `[project, "_git", repo, "pullrequest"|"pullrequests", number, ..]` or (project omitted)
 `[.._git", repo, "pullrequest"|"pullrequests", number, ..]` with `project` defaulting to `repo`.
@@ -1155,7 +1183,7 @@ list after optionally stripping a leading `"DefaultCollection"` segment (case-in
 **Test coverage**: `parses_azure_links`, `rejects_non_pr_links` — see `test-vectors/pr_link.vectors.json`.
 
 ### PROV-042 pr_link dispatch
-**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs`
+**Implementation**: `src/CodeFlow.App/Providers/PrLink.cs` · `backend/providers/prlink.go` (`ParsePRLink`)
 **Behaviour**: `parse(url, known_github_hosts)` calls `split`, then tries `parse_github`, falling
 back to `parse_azure`; first `Some` wins.
 **Inputs / outputs**: `url: string, known_github_hosts: IReadOnlyList<string>` → `PrLinkTarget?`.
@@ -1166,7 +1194,7 @@ telling the user "not a recognized PR link" vs. any more specific reason.
 **Markers**: none.
 
 ### PROV-043 GitHub token loaded from storage (command boundary)
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/commands.go` (`Deps.gitHubFor`)
 **Behaviour**: `github_authenticated_user(host)` loads the token via
 `CredentialStore.Get`(&`CredentialStore.GitHubTokenKey`(&host))`, erroring `"No GitHub token saved for
 this host"` if absent, then calls `get_authenticated_user` (PROV-005).
@@ -1210,5 +1238,7 @@ none), all extracted as data — no `behavioural`-only entries were needed.
 | `AMBIGUOUS-PROV-b` | Ambiguity | No status-code-specific branch exists anywhere in `src/CodeFlow.App/Providers/Azure/AzureClient.cs`'s error mapping; how ADO PAT expiry is detected and surfaced as a distinct UI state (rather than a generic network error) is not decided in these files. |
 | `AMBIGUOUS-PROV-c` | Ambiguity | `src/CodeFlow.App/Providers/Azure/AzureClient.cs`'s `list_pull_requests` sets no `$top`/page-size parameter; the server's effective default page size for this endpoint cannot be established from the source. The 2026-08-01 live run could not settle it either — the throwaway repo held a single PR, far below any plausible default cap. |
 | `DIVERGENCE-PROV-a` | Divergence | GitHub review events and Azure DevOps numeric reviewer votes are deliberately not unified into one shared type — preserve both models separately. |
+| `DIVERGENCE-PROV-f` | Divergence | `BUG-PROV-a`'s symptom changes shape in Go while the defect itself is preserved. The three call sites that percent-encoded `repo_id` still do and the rest still interpolate it raw, but Go's `net/url` escapes a space when it builds the request, so a repository **name** containing a space — the case the bug row names — now reaches Azure correctly on every call instead of on three of them. A reserved character still diverges, and worse than in 2.x: `#` truncates the path at the fragment, so the call lands on a URL that is not the repository's, and `%` makes the request fail to build at all. Measured, not assumed (`backend/providers/azure_test.go`). Fixing it — encoding `repo_id` everywhere — remains its own named change, as `BUG-PROV-a` says. Introduced by the Go port. |
+| `DIVERGENCE-PROV-e` | Divergence | `unified_patch` (PROV-029) is rendered by the port itself (`backend/providers/unifiedpatch.go`) rather than by libgit2, which the Go build does not have and which no Go library reproduces byte for byte — and a dependency for one function would be the larger change. The format is git's: `diff --git a/… b/…`, git's own abbreviated blob ids on the `index` line, three lines of context, git's hunk grouping and `\ No newline at end of file`, plus `/dev/null` for an absent side, which is what `git diff` writes for an add or a delete and what every diff reader expects. Verified identical to `git diff --no-index` for a single-line modification. What is **not** guaranteed is byte equality with libgit2 for every input: tie-breaking between two equally short edit scripts can pick a different line to call changed, and a changed region past a four-million-cell budget renders as one whole-file replacement instead of line by line (the bound that keeps a generated file from stalling a review). The fixture's containment assertions are the contract; both consumers — a model and the renderer's diff viewer — read diffs rather than apply them. Introduced by the Go port. |
 | `UNVERIFIED` | — | Now applies to **one** function: Azure's `set_pr_thread_status`. Everything else in the old list (GitHub: `post_pr_comment_anchored`, `post_pr_comment`, `reply_pr_review_comment`, `resolve_review_thread_for_comment`, `submit_pr_review`; Azure: `post_pr_comment_anchored`, `post_pr_comment`, `reply_pr_thread`, `set_reviewer_vote`) is `VERIFIED-LIVE` since the 2026-08-01 throwaway-PR run recorded in `90-ambiguities.md` — executed from the app against real GitHub and Azure DevOps APIs and cross-checked from outside the app. `set_pr_thread_status` stayed out of reach because it only fires when a re-review resolves a posted finding, which needs a second push the throwaway Azure repo did not allow. |
 | `VERIFIED-LIVE` | — | Executed against the real host API in the 2026-08-01 live run (see `90-ambiguities.md` for the full record), with the result cross-checked through the host's own API from outside the app. A verification is one observation, not a contract: it pins what the host accepted that day. |

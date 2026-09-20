@@ -4,8 +4,23 @@ Desktop code-review and API workbench: **one Go binary** hosting a Wails v3 wind
 renderer embedded. A port of CodeFlow 2.7.x (Electron shell + .NET sidecar), shipping as **3.0.0**,
 a drop-in replacement that keeps every user's database, credentials and update path.
 
-**Phases 1–4 complete; Phase 5 next** (142 of 246 commands answer). `MIGRATION-GO.md` is the plan; `docs/` is the authoritative
-specification (~11 000 lines) and outranks any assumption about behaviour.
+**Phases 1–8 complete; Phase 9 next** — **the command surface is done**: 235 registered + 11
+deferred on purpose = the 246 the renderer calls, and nothing is left pending.
+The PR review pipeline runs, reconciles and publishes; the work items cache, mirror, judge and — on
+a button press, and only there — comment. The API workbench is complete: its stores, HTTP with
+Digest and SigV4, and all three streaming transports behind one connection registry. So is the
+schema designer: documents, layouts, connections, the assistant and all four introspectors. The
+updater checks, verifies against the release's own digest and hands over. Phase 9 has done everything
+one machine can: the differential oracle is green (`task parity` — 38 requests against the installed
+2.7.1 core, zero unexplained differences), the test audit is done (`task inventory` — 1 232 C#
+behaviours against 1 906 here, one real gap found and closed), the specification sweep is done for
+the three documents it listed, and the performance record is in the README. **What is left needs a
+person**: the manual acceptance checklists on macOS and Windows, cold start and idle memory, the
+2.7.1 → 3.0.0 upgrade drills, and the cutover — which happens only on an explicit instruction.
+`MIGRATION-GO.md` is the plan; `docs/` is the authoritative specification (~11 000 lines) and
+outranks any assumption about behaviour. `backend/app/contract_test.go` is the progress meter: it
+re-derives all 246 names from the renderer and fails if one is registered while still listed as
+pending.
 
 ## Layout
 
@@ -18,6 +33,9 @@ specification (~11 000 lines) and outranks any assumption about behaviour.
 | `backend/shared/` | `proc` (child processes), `safego` (goroutines), `sentinel` (error prefixes) |
 | `frontend/` | The React 19 renderer, copied from 2.x; reaches Go only through `src/lib/bridge/host.ts` |
 | `docs/business-rules/` | The specification: 246 commands, 13 events, the storage schema |
+| `tools/parity/` | The differential oracle: drives the installed 2.7.x core and this one, compares |
+| `tools/inventory/` | The test audit: 1 232 C# behaviours against this tree's 1 906 |
+| `build/` | Packaging assets, **generated** by `wails3 generate build-assets` — excluded from lint, and the generator overwrites `appicon.png` and `config.yml`, so never re-run it blind |
 
 ## Commands
 
@@ -25,7 +43,11 @@ specification (~11 000 lines) and outranks any assumption about behaviour.
 task check            # everything the CI gate runs
 task go:check         # go vet + golangci-lint + go test -race + the goroutine gate
 task frontend:check   # pnpm typecheck + pnpm test
+task parity           # replay the scripted requests against the installed 2.7.x core (needs it)
+task inventory        # audit the Go tests against the C# suite they replace
 task build            # renderer + binary into bin/
+task package:mac:dmg  # the published CodeFlow-<v>-arm64.dmg and its digest
+task package:win      # the NSIS installer, the portable build and their digests (on Windows)
 task dev              # hot reload (Go + Vite on 1420)
 task smoke            # the packaged binary's own environment probes
 ```

@@ -19,11 +19,11 @@ Established by parsing the tree, not by reading it:
 
 | Set | Count | Source |
 |---|---|---|
-| Registered on the `CommandRegistry` | 235 | the `Add…Commands(…)` methods `src/CodeFlow.App/Program.cs` calls |
-| Distinct commands invoked by the frontend | 246 | `renderer/src/lib/ipc/commands.ts`, `apiCommands.ts`, `lib/bridge/updater.ts` |
-| Registered but never invoked | 0 | — |
+| Registered on the registry | 235 | the `Register(r, deps)` calls in `backend/app/registry.go`; 2.x: the `Add…Commands(…)` methods `src/CodeFlow.App/Program.cs` called |
+| Distinct commands invoked by the frontend | 246 | `frontend/src/lib/ipc/commands.ts`, `apiCommands.ts`, `lib/bridge/updater.ts` |
+| Registered but never invoked | 0 | asserted by `TestEveryRegisteredCommandIsCalledByTheRenderer` |
 | Invoked but not registered | 11 | the nine `debug_*` and `api_grpc_call` / `api_grpc_describe` — **`DEAD`** |
-| Duplicate command names | 0 | — |
+| Duplicate command names | 0 | the registry panics on one, at composition time |
 
 **The eleven have no sidecar implementation at all**, which is not the same as a dead command:
 each is a typed wrapper the frontend can call and that answers `unknown command`. They are the
@@ -31,10 +31,21 @@ two features whose backend never arrived — the debugger (`12-debugging.md`, wh
 describes routing between backends that do not exist) and the API client's gRPC protocol. Nothing
 else registered is unreachable, and nothing else invoked is missing.
 
+**Ten names in the tables below do not line up with what the renderer calls**, and the Go port
+follows the renderer. Six rows are host surfaces rather than commands and four names had no row at
+all; both lists, and why, are under *The 248 rows against the 246 names* below. The
+command-coverage contract test (`backend/app/contract_test.go`) re-derives all 246 names from the
+three wrapper files on every run, which is what makes the renderer the authority here rather than
+this document.
+
+(This paragraph said "three names" and named them until the Phase 9 sweep counted. Two of the three
+were right; it had not noticed the three updater rows, the three other host surfaces, or that five
+section headings disagreed with their own row counts.)
+
 Three wrapper files, not two: the updater's three commands are called from
-`renderer/src/lib/bridge/updater.ts`, which sits beside the shell bridges because that is where
+`frontend/src/lib/bridge/updater.ts`, which sits beside the shell bridges because that is where
 1.7.2 put it, while the commands themselves are ordinary sidecar commands like any other. No
-`invoke` from `renderer/src/lib/bridge/host.ts` is imported anywhere outside those three files.
+`invoke` from `frontend/src/lib/bridge/host.ts` is imported anywhere outside those three files.
 
 Other frontend files do bypass this boundary, but for *non-command* shell APIs (window controls,
 dialogs, opener, OS detection, webview drag-and-drop). They are inventoried in
@@ -94,25 +105,108 @@ The two `api:*` names are the only ones referenced through constants
 (`EVENT_STREAM_MESSAGE` / `EVENT_STREAM_STATUS`, `src/CodeFlow.App/ApiClient/ApiModels.cs`) rather than string
 literals at the call site.
 
-Every one of the 13 names has exactly one `listen` wrapper in `renderer/src/lib/ipc/events.ts`.
+Every one of the 13 names has exactly one `listen` wrapper in `frontend/src/lib/ipc/events.ts`.
+
+**A fourteenth name is emitted and is not in that file.** `update:progress`
+(`{ downloaded, total, done }`, every 256 KiB plus a final `done`) is subscribed to inline by
+`frontend/src/lib/bridge/updater.ts`, beside the three updater commands and for the same reason they
+sit outside `commands.ts`: 1.7.2 put the updater there and the port left it where it was. It is
+excluded from the count above because that count is about `events.ts`, and it is worth naming here
+because in 2.x the Electron shell never forwarded it — the event was emitted, nothing carried it,
+and the download bar stayed at 0 % until the command returned. In Wails it arrives
+(`DIVERGENCE-BOOT-g`); the producer is `backend/update/download.go`.
 
 ## Commands
 
-Grouped by defining file, in registration order. `Injected` lists the the shell-supplied
-dependencies; it is not part of the payload.
+Grouped by the C# file that defined them, in registration order — **which is history, not
+structure**. The Go port regrouped them, and the table below is where they actually live now. Each
+`###` heading names both: the Go file that registers those commands today, and the 2.x file they
+came from. The `<sub>` under each command name repeats that 2.x origin and is kept as provenance;
+it is not where the code is.
 
-### `src/CodeFlow.App/Platform/AppCommands.cs` — 2 commands → [02-bootstrap-platform](02-bootstrap-platform.md)
+`Injected` lists the shell-supplied dependencies of the 2.x core; it was never part of the payload
+and in Go it is the feature package's `Deps` struct.
+
+### Where the 246 are registered
+
+Derived from the registry, not transcribed: every name below was found as a literal registration in
+exactly one non-test file under `backend/`, with zero ambiguity, and the total reconciles with
+`bridge.Registry.Len()` (`tools/inventory` and `backend/app/contract_test.go` both re-check it).
+
+| Go file | Commands | Owning document |
+|---|---:|---|
+| `backend/git/commands.go` | 47 | `04-git.md` |
+| `backend/apiclient/commands.go` | 29 | `08-api-client.md` |
+| `backend/workspaces/commands.go` | 27 | `09-workspace-scoped.md` |
+| `backend/providers/commands.go` | 18 | `06-providers.md`, `07-review-pipeline.md` |
+| `backend/tickets/commands.go` | 17 | `14-work-items.md` |
+| `backend/files/commands.go` | 15 | `11-files-search-terminal.md` |
+| `backend/ai/commands.go` | 14 | `05-ai-engines.md` |
+| `backend/workspaces/skills.go` | 10 | `09-workspace-scoped.md` |
+| `backend/dbml/commands.go` | 10 | `15-dbml.md` |
+| `backend/security/commands.go` | 10 | `10-security.md` |
+| `backend/apiclient/streamcommands.go` | 9 | `08-api-client.md` |
+| `backend/review/commands.go` | 7 | `07-review-pipeline.md` |
+| `backend/activity/commands.go` | 7 | `09-workspace-scoped.md` |
+| `backend/terminal/commands.go` | 4 | `11-files-search-terminal.md` |
+| `backend/update/commands.go` | 3 | `02-bootstrap-platform.md` |
+| `backend/apiclient/httpcommands.go` | 3 | `08-api-client.md` |
+| `backend/review/commands_run.go` | 2 | `07-review-pipeline.md` |
+| `backend/review/commands_publish.go` | 2 | `07-review-pipeline.md` |
+| `backend/platform/commands.go` | 1 | `02-bootstrap-platform.md` |
+| **registered** | **235** | |
+| deferred — never registered, answer `unknown command` | 11 | `12-debugging.md`, `08-api-client.md` |
+| **called by the renderer** | **246** | |
+
+Four regroupings are worth naming, because they are the reason a reader looking for a command in
+the file its heading names will not find it:
+
+- **`ApiCommands.cs` (45) became three files.** The stores stayed together in `commands.go` (29);
+  sending one HTTP request is `httpcommands.go` (3); the three streaming transports share one
+  connection registry in `streamcommands.go` (9). The two gRPC names are deferred.
+- **`ReviewCommands.cs` (22) became five.** Fifteen of them turned out to be *provider* calls —
+  reading a pull request, listing its threads, acting on it — and live in
+  `backend/providers/commands.go`, dispatched by host. Running a review is `commands_run.go` (2),
+  publishing one is `commands_publish.go` (2), and `resolve_finding_with_ai` is an AI operation.
+- **`WorkspaceCommands.cs`'s second block (21) split in two.** Fourteen are workspace state; the
+  other seven are the review-run *history store*, which is storage rather than pipeline and landed
+  in `backend/review/commands.go` with Phase 2.
+- **`Checkpoints.cs` (3) merged into `backend/git/commands.go`.** A checkpoint is a git ref; there
+  was no reason for it to be a second file.
+
+### The 248 rows against the 246 names
+
+The tables below hold **248 rows** and the renderer calls **246 names**. The difference is six rows
+that are not sidecar commands and four names that have no row, and both halves are listed here
+rather than left to be rediscovered:
+
+**Six rows that the renderer never `invoke`s.** All six are *shell* surfaces — native dialogs, the
+system browser, quitting — which in 2.x were routed through the sidecar and in Go are methods on
+`desktop.HostService`, reached directly from `frontend/src/lib/bridge/host.ts`. They are kept in the
+tables with their shape, marked **`HOST`**, because the shape is still the contract; they are simply
+not in the registry and `contract_test.go` would fail if they were.
+
+`quit_app` · `pick_folder` · `open_external_url` · `open_repo_in_browser` · `api_pick_file` ·
+`api_save_file`
+
+**Four names with no row**, now added below: `repo_web_url` (§Reconciliation already flagged it) and
+the three updater commands, which are called from `lib/bridge/updater.ts` rather than `commands.ts`
+and were never tabulated.
+
+### `backend/platform/commands.go` — 1 command, + 1 `HOST` → [02-bootstrap-platform](02-bootstrap-platform.md)
+<sub>2.x: `src/CodeFlow.App/Platform/AppCommands.cs`. `quit_app` is now `desktop.HostService`.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
-| `quit_app`<br><sub>`src/CodeFlow.App/Platform/AppCommands.cs`</sub> | — | `()` | AppHandle | `quitApp` |
+| `quit_app` **`HOST`**<br><sub>`src/CodeFlow.App/Platform/AppCommands.cs` → `HostService.Quit`</sub> | — | `()` | AppHandle | `host.quit(reason)` — every exit names who asked (BOOT-036) |
 | `reset_app_data`<br><sub>`src/CodeFlow.App/Platform/AppCommands.cs`</sub> | — | `Result&lt;(), string&gt;` | AppHandle | `resetAppData` |
 
-### `src/CodeFlow.App/Workspaces/WorkspaceCommands.cs` — 12 commands → [09-workspace-scoped](09-workspace-scoped.md)
+### `backend/workspaces/commands.go` — 13 commands, + 1 `HOST` → [09-workspace-scoped](09-workspace-scoped.md)
+<sub>2.x: `src/CodeFlow.App/Workspaces/WorkspaceCommands.cs`, whose heading said 12 and listed 14. `pick_folder` is now `desktop.HostService`.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
-| `pick_folder`<br><sub>`src/CodeFlow.App/Workspaces/WorkspaceCommands.cs` · async</sub> | — | `Option&lt;string&gt;` | AppHandle | `pickFolder` |
+| `pick_folder` **`HOST`**<br><sub>`src/CodeFlow.App/Workspaces/WorkspaceCommands.cs` → `HostService.OpenDirectory`</sub> | — | `Option&lt;string&gt;` | AppHandle | `host.dialog().openDirectory()` |
 | `default_clone_dir`<br><sub>`src/CodeFlow.App/Workspaces/WorkspaceCommands.cs`</sub> | — | `string` | — | `defaultCloneDir` |
 | `create_workspace`<br><sub>`src/CodeFlow.App/Workspaces/WorkspaceCommands.cs`</sub> | `name: string`<br>`icon: string`<br>`color: string` | `Result&lt;Workspace, string&gt;` | State | `createWorkspace` |
 | `list_workspaces`<br><sub>`src/CodeFlow.App/Workspaces/WorkspaceCommands.cs`</sub> | — | `Result&lt;Vec&lt;Workspace&gt;, string&gt;` | State | `listWorkspaces` |
@@ -127,7 +221,8 @@ dependencies; it is not part of the payload.
 | `move_project_to_workspace`<br><sub>`src/CodeFlow.App/Workspaces/WorkspaceCommands.cs`</sub> | `id: string`<br>`workspace_id: string` | `Result&lt;(), string&gt;` | State | `moveProjectToWorkspace` |
 | `update_project_color`<br><sub>`src/CodeFlow.App/Workspaces/WorkspaceCommands.cs`</sub> | `id: string`<br>`color: string` | `Result&lt;(), string&gt;` | State | `updateProjectColor` |
 
-### `src/CodeFlow.App/Git/GitCommands.cs` — 42 commands → [04-git](04-git.md)
+### `backend/git/commands.go` — 44 of its 47 → [04-git](04-git.md)
+<sub>2.x: `src/CodeFlow.App/Git/GitCommands.cs`, whose heading said 42 and listed 44. The other three are the checkpoints below, merged into the same file.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -176,7 +271,8 @@ dependencies; it is not part of the payload.
 | `git_pull`<br><sub>`src/CodeFlow.App/Git/GitCommands.cs` · async</sub> | `repo_path: string` | `Result&lt;(), string&gt;` | AppHandle | `gitPull` |
 | `git_push`<br><sub>`src/CodeFlow.App/Git/GitCommands.cs` · async</sub> | `repo_path: string`<br>`set_upstream: bool` | `Result&lt;(), string&gt;` | AppHandle | `gitPush` |
 
-### `src/CodeFlow.App/Git/Checkpoints.cs` — 3 commands → [04-git](04-git.md)
+### `backend/git/commands.go` — the remaining 3 → [04-git](04-git.md)
+<sub>2.x: `src/CodeFlow.App/Git/Checkpoints.cs`, a separate file. A checkpoint is a git ref, so the port kept it with git.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -184,7 +280,8 @@ dependencies; it is not part of the payload.
 | `restore_ai_checkpoint`<br><sub>`src/CodeFlow.App/Git/Checkpoints.cs`</sub> | `repo_path: string`<br>`checkpoint_id: string` | `Result&lt;Vec&lt;string&gt;, string&gt;` | — | `restoreAiCheckpoint` |
 | `delete_ai_checkpoint`<br><sub>`src/CodeFlow.App/Git/Checkpoints.cs`</sub> | `repo_path: string`<br>`checkpoint_id: string` | `Result&lt;(), string&gt;` | — | `deleteAiCheckpoint` |
 
-### `src/CodeFlow.App/Workspaces/WorkspaceCommands.cs` — 21 commands → [09-workspace-scoped](09-workspace-scoped.md)
+### `backend/workspaces/commands.go` — 14 · `backend/review/commands.go` — 7 → [09-workspace-scoped](09-workspace-scoped.md)
+<sub>2.x: `src/CodeFlow.App/Workspaces/WorkspaceCommands.cs`. The seven `*_review_run*` names are the review-run **history store** — storage, not pipeline — and landed in `backend/review` with Phase 2, which is why they answer even when the pipeline cannot run.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -210,7 +307,8 @@ dependencies; it is not part of the payload.
 | `upsert_workspace_mcp`<br><sub>`src/CodeFlow.App/Workspaces/WorkspaceCommands.cs`</sub> | `id: Option&lt;string&gt;`<br>`workspace_id: string`<br>`name: string`<br>`command: string`<br>`args: string`<br>`env: string`<br>`enabled: bool` | `Result&lt;WorkspaceMcp, string&gt;` | State | `upsertWorkspaceMcp` |
 | `delete_workspace_mcp`<br><sub>`src/CodeFlow.App/Workspaces/WorkspaceCommands.cs`</sub> | `id: string` | `Result&lt;(), string&gt;` | State | `deleteWorkspaceMcp` |
 
-### `src/CodeFlow.App/Workspaces/SkillCommands.cs` — 10 commands → [09-workspace-scoped](09-workspace-scoped.md)
+### `backend/workspaces/skills.go` — 10 commands → [09-workspace-scoped](09-workspace-scoped.md)
+<sub>2.x: `src/CodeFlow.App/Workspaces/SkillCommands.cs`. Registered by `workspaces.RegisterSkills`, separately from the rest of the package.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -225,7 +323,8 @@ dependencies; it is not part of the payload.
 | `write_skill_file`<br><sub>`src/CodeFlow.App/Workspaces/SkillCommands.cs`</sub> | `workspace_id: string`<br>`skill_name: string`<br>`rel_path: string`<br>`content: string` | `Result&lt;(), string&gt;` | — | `writeSkillFile` |
 | `delete_skill_file`<br><sub>`src/CodeFlow.App/Workspaces/SkillCommands.cs`</sub> | `workspace_id: string`<br>`skill_name: string`<br>`rel_path: string` | `Result&lt;(), string&gt;` | — | `deleteSkillFile` |
 
-### `src/CodeFlow.App/Activity/ActivityCommands.cs` — 7 commands → [09-workspace-scoped](09-workspace-scoped.md)
+### `backend/activity/commands.go` — 7 commands → [09-workspace-scoped](09-workspace-scoped.md)
+<sub>2.x: `src/CodeFlow.App/Activity/ActivityCommands.cs`</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -237,7 +336,8 @@ dependencies; it is not part of the payload.
 | `rename_job_history_entry`<br><sub>`src/CodeFlow.App/Activity/ActivityCommands.cs`</sub> | `id: string`<br>`label: string` | `Result&lt;(), string&gt;` | State | `renameJobHistoryEntry` |
 | `delete_job_history_entry`<br><sub>`src/CodeFlow.App/Activity/ActivityCommands.cs`</sub> | `id: string` | `Result&lt;(), string&gt;` | State | `deleteJobHistoryEntry` |
 
-### `src/CodeFlow.App/Security/SecretCommands.cs` — 9 commands → [10-security](10-security.md)
+### `backend/security/commands.go` — 9 of its 10 → [10-security](10-security.md)
+<sub>2.x: `src/CodeFlow.App/Security/SecretCommands.cs`. All nine are registered from one loop over the three key kinds — `r.Add("set_"+prefix, …)` — so grepping the literal name finds nothing; the tenth is `scan_staged_secrets` below.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -251,13 +351,15 @@ dependencies; it is not part of the payload.
 | `has_ai_api_key`<br><sub>`src/CodeFlow.App/Security/SecretCommands.cs`</sub> | `provider: string` | `Result&lt;bool, string&gt;` | — | `hasAiApiKey` |
 | `delete_ai_api_key`<br><sub>`src/CodeFlow.App/Security/SecretCommands.cs`</sub> | `provider: string` | `Result&lt;(), string&gt;` | — | `deleteAiApiKey` |
 
-### `src/CodeFlow.App/Files/WatcherCommands.cs` — 1 commands → [10-security](10-security.md)
+### `backend/security/commands.go` — the remaining 1 → [10-security](10-security.md)
+<sub>2.x: `src/CodeFlow.App/Files/WatcherCommands.cs`. The staged-secret gate was filed under the watcher there; in Go it is where the scanner is.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
 | `scan_staged_secrets`<br><sub>`src/CodeFlow.App/Files/WatcherCommands.cs`</sub> | `repo_path: string` | `Result&lt;Vec&lt;SecretHit&gt;, string&gt;` | — | `scanStagedSecrets` |
 
-### `src/CodeFlow.App/Ai/AiCommands.cs` — 14 commands → [05-ai-engines](05-ai-engines.md)
+### `backend/ai/commands.go` — 13 of its 14 → [05-ai-engines](05-ai-engines.md)
+<sub>2.x: `src/CodeFlow.App/Ai/AiCommands.cs`, whose heading said 14 and listed 13. The fourteenth is `resolve_finding_with_ai`, tabulated under the review commands below because that is where it is called from. The five `default_*_template` names register from one loop over a name→prompt map.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -276,7 +378,8 @@ dependencies; it is not part of the payload.
 | `send_chat_message`<br><sub>`src/CodeFlow.App/Ai/AiCommands.cs` · async</sub> | `project_id: string`<br>`message: string`<br>`session_id: Option&lt;string&gt;`<br>`conversation_id: Option&lt;string&gt;`<br>`run_id: Option&lt;string&gt;`<br>`agent_provider: Option&lt;string&gt;`<br>`agent_model: Option&lt;string&gt;`<br>`agent_prompt: Option&lt;string&gt;` | `Result&lt;ChatReply, string&gt;` | AppHandle, State | `sendChatMessage` |
 | `inline_edit_with_ai`<br><sub>`src/CodeFlow.App/Ai/AiCommands.cs` · async</sub> | `rel_path: string`<br>`file_content: string`<br>`selection: string`<br>`instruction: string`<br>`run_id: Option&lt;string&gt;` | `Result&lt;string, string&gt;` | AppHandle, State | `inlineEditWithAi` |
 
-### `src/CodeFlow.App/Review/ReviewCommands.cs` — 22 commands → [07-review-pipeline](07-review-pipeline.md)
+### `backend/providers/commands.go` — 15 · `review/commands_run.go` — 2 · `review/commands_publish.go` — 2 · `ai/commands.go` — 1 → [07-review-pipeline](07-review-pipeline.md)
+<sub>2.x: `src/CodeFlow.App/Review/ReviewCommands.cs`, and the largest regrouping of the port. Fifteen of these twenty-two never were review commands: reading a pull request, listing its threads and acting on it are *provider* calls, dispatched by host, and publishing a review cannot reach a host the sidebar would not have listed from. Two more rows here are `HOST` (`open_external_url`, `open_repo_in_browser`).</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -285,8 +388,8 @@ dependencies; it is not part of the payload.
 | `ado_list_repos`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs` · async</sub> | `org: string`<br>`project: string` | `Result&lt;Vec&lt;`AdoRepo`&gt;, string&gt;` | — | `adoListRepos` |
 | `link_project_ado`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs`</sub> | `id: string`<br>`ado_org: string`<br>`ado_project: string`<br>`ado_repo_id: string` | `Result&lt;(), string&gt;` | State | `linkProjectAdo` |
 | `unlink_project`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs`</sub> | `id: string` | `Result&lt;(), string&gt;` | State | `unlinkProject` |
-| `open_repo_in_browser`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs`</sub> | `project_id: string` | `Result&lt;(), string&gt;` | State | `openRepoInBrowser` |
-| `open_external_url`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs`</sub> | `url: string` | `Result&lt;(), string&gt;` | — | `openExternalUrl` |
+| `open_repo_in_browser` **`HOST`**<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs` → split in two</sub> | `project_id: string` | `Result&lt;(), string&gt;` | State | the renderer composes `repo_web_url` + `host.openExternal` |
+| `open_external_url` **`HOST`**<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs` → `HostService.OpenExternal`</sub> | `url: string` | `Result&lt;(), string&gt;` | — | `host.openExternal(url)`; a capture-phase listener in `main.tsx` routes every external link there, because WKWebView ignores `target="_blank"` |
 | `list_pull_requests`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs` · async</sub> | `project_id: string` | `Result&lt;Vec&lt;`PullRequestSummary`&gt;, string&gt;` | State | `listPullRequests` |
 | `resolve_pr_link`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs` · async</sub> | `url: string` | `Result&lt;PrLinkResolution, string&gt;` | State | `resolvePrLink` |
 | `review_pr_from_link`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs` · async</sub> | `url: string`<br>`job_id: string`<br>`level: string`<br>`workspace_id: string`<br>`agent_provider: Option&lt;string&gt;`<br>`agent_model: Option&lt;string&gt;`<br>`agent_prompt: Option&lt;string&gt;` | `Result&lt;string, string&gt;` | AppHandle, State | `reviewPrFromLink` |
@@ -303,14 +406,16 @@ dependencies; it is not part of the payload.
 | `pr_review_decision`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs` · async</sub> | `project_id: string`<br>`pr_id: long` | `Result&lt;string, string&gt;` | State | `prReviewDecision` |
 | `act_on_pull_request`<br><sub>`src/CodeFlow.App/Review/ReviewCommands.cs` · async</sub> | `project_id: string`<br>`pr_id: long`<br>`action: string`<br>`body: Option&lt;string&gt;` | `Result&lt;PrActionOutcome, string&gt;` | State | `actOnPullRequest` |
 
-### `src/CodeFlow.App/Providers/ProviderCommands.cs` — 2 commands → [06-providers](06-providers.md)
+### `backend/providers/commands.go` — 2 of its 18 → [06-providers](06-providers.md)
+<sub>2.x: `src/CodeFlow.App/Providers/ProviderCommands.cs`. The other sixteen are the fifteen above plus `repo_web_url`, which no 2.x table row ever carried.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
 | `link_project_github`<br><sub>`src/CodeFlow.App/Providers/ProviderCommands.cs`</sub> | `id: string`<br>`github_owner: string`<br>`github_repo: string`<br>`github_host: string` | `Result&lt;(), string&gt;` | State | `linkProjectGithub` |
 | `github_authenticated_user`<br><sub>`src/CodeFlow.App/Providers/ProviderCommands.cs` · async</sub> | `host: string` | `Result&lt;string, string&gt;` | — | `githubAuthenticatedUser` |
 
-### `src/CodeFlow.App/Files/FileCommands.cs` — 13 commands → [11-files-search-terminal](11-files-search-terminal.md)
+### `backend/files/commands.go` — 13 of its 15 → [11-files-search-terminal](11-files-search-terminal.md)
+<sub>2.x: `src/CodeFlow.App/Files/FileCommands.cs`. Most register through a `withRepo` helper that binds `repoPath` before the handler runs, so the literal name sits at that call rather than at `r.Add`.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -328,14 +433,16 @@ dependencies; it is not part of the payload.
 | `search_repo`<br><sub>`src/CodeFlow.App/Files/FileCommands.cs`</sub> | `repo_path: string`<br>`query: string`<br>`options: `SearchOptions`<br>`max_results: int` | `Result&lt;SearchOptions, string&gt;` | — | `searchRepo` |
 | `replace_in_repo`<br><sub>`src/CodeFlow.App/Files/FileCommands.cs`</sub> | `repo_path: string`<br>`query: string`<br>`replacement: string`<br>`options: `SearchOptions`<br>`only_path: Option&lt;string&gt;` | `Result&lt;SearchOptions, string&gt;` | — | `replaceInRepo` |
 
-### `src/CodeFlow.App/Files/WatcherCommands.cs` — 2 commands → [11-files-search-terminal](11-files-search-terminal.md)
+### `backend/files/commands.go` — the remaining 2 → [11-files-search-terminal](11-files-search-terminal.md)
+<sub>2.x: `src/CodeFlow.App/Files/WatcherCommands.cs`. Registered by `files.RegisterWatcher`, which takes the watcher registry rather than the `Deps` the rest of the package uses.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
 | `start_watching`<br><sub>`src/CodeFlow.App/Files/WatcherCommands.cs`</sub> | `repo_path: string` | `Result&lt;(), string&gt;` | AppHandle, State | `startWatching` |
 | `stop_watching`<br><sub>`src/CodeFlow.App/Files/WatcherCommands.cs`</sub> | `repo_path: string` | `Result&lt;(), string&gt;` | State | `stopWatching` |
 
-### `src/CodeFlow.App/Dbml/DbmlCommands.cs` — 10 commands → [15-dbml](15-dbml.md)
+### `backend/dbml/commands.go` — 10 commands → [15-dbml](15-dbml.md)
+<sub>2.x: `src/CodeFlow.App/Dbml/DbmlCommands.cs`</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -350,7 +457,8 @@ dependencies; it is not part of the payload.
 | `dbml_test_connection`<br><sub>`src/CodeFlow.App/Dbml/DbmlCommands.cs`</sub> | `connection_id: string` | `Result&lt;(), string&gt;` | State, Keychain | `dbmlTestConnection` |
 | `dbml_introspect_database`<br><sub>`src/CodeFlow.App/Dbml/DbmlCommands.cs`</sub> | `connection_id: string` | `Result&lt;DbmlSchemaSnapshot, string&gt;` | State, Keychain | `dbmlIntrospectDatabase` |
 
-### `src/CodeFlow.App/Terminal/TerminalCommands.cs` — 4 commands → [11-files-search-terminal](11-files-search-terminal.md)
+### `backend/terminal/commands.go` — 4 commands → [11-files-search-terminal](11-files-search-terminal.md)
+<sub>2.x: `src/CodeFlow.App/Terminal/TerminalCommands.cs`</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -359,7 +467,8 @@ dependencies; it is not part of the payload.
 | `resize_terminal`<br><sub>`src/CodeFlow.App/Terminal/TerminalCommands.cs`</sub> | `id: string`<br>`cols: ushort`<br>`rows: ushort` | `Result&lt;(), string&gt;` | State | `resizeTerminal` |
 | `close_terminal`<br><sub>`src/CodeFlow.App/Terminal/TerminalCommands.cs`</sub> | `id: string` | `Result&lt;(), string&gt;` | State | `closeTerminal` |
 
-### not implemented (deferred) — 10 commands → [12-debugging](12-debugging.md)
+### deferred — 9 of the 11, never registered → [12-debugging](12-debugging.md)
+<sub>2.x had no implementation either. Ten rows: the nine the renderer calls, plus `debug_is_running`, which nothing calls and nothing registers (`DEAD`, DBG-037) and which is why the old heading said 10. The other two of the eleven are `api_grpc_call` and `api_grpc_describe`, tabulated with the API client below. `backend/app/contract_test.go` asserts all eleven stay unregistered: the renderer branches on the refusal, so registering one would be the change.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -374,7 +483,8 @@ dependencies; it is not part of the payload.
 | `debug_evaluate`<br><sub>not implemented (deferred) · async</sub> | `frame_id: string`<br>`expression: string` | `Result&lt;Variable, string&gt;` | — | `debugEvaluate` |
 | `debug_is_running` `DEAD`<br><sub>not implemented (deferred)</sub> | — | `bool` | — | **none — `DEAD`** |
 
-### `src/CodeFlow.App/ApiClient/ApiCommands.cs` — 45 commands → [08-api-client](08-api-client.md)
+### `backend/apiclient/commands.go` — 29 · `streamcommands.go` — 9 · `httpcommands.go` — 3 → [08-api-client](08-api-client.md)
+<sub>2.x: `src/CodeFlow.App/ApiClient/ApiCommands.cs`. Split three ways, along the line that matters at start-up: the stores need the database, the transports do not — so `RegisterHTTP` and `RegisterStreams` sit outside the composition root's `if deps.DB != nil` block and an install whose database failed can still send one request by hand. Two rows here are `HOST` (`api_pick_file`, `api_save_file`) and two are the deferred gRPC pair.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
 |---|---|---|---|---|
@@ -420,11 +530,12 @@ dependencies; it is not part of the payload.
 | `api_grpc_describe`<br><sub>`src/CodeFlow.App/ApiClient/ApiCommands.cs` · async</sub> | `request: GrpcDescribeRequest` | `Result&lt;Vec&lt;GrpcServiceInfo&gt;, string&gt;` | — | `apiGrpcDescribe` |
 | `api_grpc_call`<br><sub>`src/CodeFlow.App/ApiClient/ApiCommands.cs` · async</sub> | `id: string`<br>`request: GrpcCallRequest` | `Result&lt;GrpcResponse, string&gt;` | State | `apiGrpcCall` |
 | `api_read_file_base64`<br><sub>`src/CodeFlow.App/ApiClient/ApiCommands.cs`</sub> | `path: string` | `Result&lt;FileBase64, string&gt;` | — | `apiReadFileBase64` |
-| `api_pick_file`<br><sub>`src/CodeFlow.App/ApiClient/ApiCommands.cs` · async</sub> | `extensions: Vec&lt;string&gt;` | `Option&lt;string&gt;` | AppHandle | `apiPickFile` |
-| `api_save_file`<br><sub>`src/CodeFlow.App/ApiClient/ApiCommands.cs` · async</sub> | `default_name: string`<br>`contents: string` | `Result&lt;Option&lt;string&gt;, string&gt;` | AppHandle | `apiSaveFile` |
+| `api_pick_file` **`HOST`**<br><sub>`src/CodeFlow.App/ApiClient/ApiCommands.cs` → `HostService.OpenFile`</sub> | `extensions: Vec&lt;string&gt;` | `Option&lt;string&gt;` | AppHandle | `host.dialog().openFile(…)` |
+| `api_save_file` **`HOST`**<br><sub>`src/CodeFlow.App/ApiClient/ApiCommands.cs` → `HostService.SaveFile`</sub> | `default_name: string`<br>`contents: string` | `Result&lt;Option&lt;string&gt;, string&gt;` | AppHandle | `host.dialog().save(…)`; the bytes are written by `write_file_bytes` |
 | `api_read_text_file`<br><sub>`src/CodeFlow.App/ApiClient/ApiCommands.cs`</sub> | `path: string` | `Result&lt;string, string&gt;` | — | `apiReadTextFile` |
 
-### `src/CodeFlow.App/Tickets/TicketCommands.cs` — 13 commands → [14-work-items](14-work-items.md)
+### `backend/tickets/commands.go` — 17 commands → [14-work-items](14-work-items.md)
+<sub>2.x: `src/CodeFlow.App/Tickets/TicketCommands.cs`, whose heading said 13 and listed 17.</sub>
 
 Every command here reads. Commenting and state transitions are a later, separately requested step,
 so nothing on this surface can alter a board.
@@ -448,3 +559,27 @@ so nothing on this surface can alter a board.
 | `list_ticket_reviews`<br><sub>`src/CodeFlow.App/Tickets/TicketCommands.cs`</sub> | `projectId: string`<br>`branch: string` | `Result&lt;Vec&lt;TicketReviewResult&gt;, string&gt;` | Database | `listTicketReviews` |
 | `review_changes`<br><sub>`src/CodeFlow.App/Tickets/TicketCommands.cs` · async</sub> | `projectId: string`<br>`jobId: string`<br>`branch: string`<br>`scope: "working" \| "branch"`<br>`withTicket: bool`<br>`baseRef: Option&lt;string&gt;`<br>`level: string`<br>`agentProvider: Option&lt;string&gt;`<br>`agentModel: Option&lt;string&gt;`<br>`agentPrompt: Option&lt;string&gt;` | `Result&lt;string, string&gt;` | Database, AiRunRegistry, HttpClient | `reviewChanges` |
 | `comment_ticket`<br><sub>`src/CodeFlow.App/Tickets/TicketCommands.cs` · async</sub> | `ticketId: string`<br>`body: string` | `Result&lt;string, string&gt;` — the work item's URL | Database, HttpClient | `commentTicket` |
+
+### `backend/update/commands.go` — 3 commands → [02-bootstrap-platform](02-bootstrap-platform.md)
+
+<sub>2.x: `src/CodeFlow.App/Update/UpdateService.cs`. **These four rows are new to this document.**
+They are ordinary registry commands and always were; they had no table because the renderer calls
+them from `frontend/src/lib/bridge/updater.ts` rather than from `commands.ts`, and this document's
+tables were generated from the latter. `backend/app/contract_test.go` reads all three wrapper files,
+which is how the omission surfaced.</sub>
+
+| Command | Caller parameters | Returns | Injected | TS wrapper |
+|---|---|---|---|---|
+| `update_current_version`<br><sub>`backend/update/commands.go`</sub> | — | `string` — the build's own version, `0.0.0` when unstamped | — | `getVersion` |
+| `update_check`<br><sub>`backend/update/commands.go` · async</sub> | — | `Availability` — **never rejects**; `available` + `reason` carry the three outcomes (`XLANG-019`) | HttpClient, CredentialStore | `check` |
+| `update_download`<br><sub>`backend/update/commands.go` · async</sub> | `assetUrl: string`<br>`assetName: string` | `Result&lt;string, string&gt;` — where the artefact landed. Emits `update:progress` | HttpClient, CredentialStore, Opener | `downloadAndInstall` |
+
+### `backend/providers/commands.go` — the row 2.x never had → [07-review-pipeline](07-review-pipeline.md)
+
+<sub>`repo_web_url` is called by `openRepoInBrowser` and registered (REVIEW-005), and no 2.x table row
+carried it. It rebuilds a repository's home page from its **live remote**, not from the saved
+columns, which is why it is a provider command and not a file one.</sub>
+
+| Command | Caller parameters | Returns | Injected | TS wrapper |
+|---|---|---|---|---|
+| `repo_web_url`<br><sub>`backend/providers/commands.go` · async</sub> | `projectId: string` | `Result&lt;string, string&gt;` — the renderer opens it through `host.openExternal` | Database | `openRepoInBrowser` |

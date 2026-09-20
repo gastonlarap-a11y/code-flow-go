@@ -60,10 +60,15 @@ percent-encoding.
 
 ## Open ambiguities
 
-**Thirteen still open**, of the seventeen Phase 1 raised. Each is a question the source does not
-answer; none was resolved by guessing. Four have moved to the resolved table below: `AMBIGUOUS-WS-a`
-was settled by reading during the port, `AMBIGUOUS-PROV-b` closed as a deliberate divergence, and
-`AMBIGUOUS-REVIEW-a` / `AMBIGUOUS-REVIEW-b` closed once the source review runbook was consulted.
+**Thirteen still open**, of the seventeen Phase 1 raised, **plus one raised in Phase 9**. Each is a
+question the source does not answer; none was resolved by guessing. Four have moved to the resolved
+table below: `AMBIGUOUS-WS-a` was settled by reading during the port, `AMBIGUOUS-PROV-b` closed as a
+deliberate divergence, and `AMBIGUOUS-REVIEW-a` / `AMBIGUOUS-REVIEW-b` closed once the source review
+runbook was consulted.
+
+`AMBIGUOUS-GIT-c` is the one that did not come from reading the source at all: the differential
+oracle (`tools/parity`, MIGRATION-GO.md §9.7) found it by asking both cores the same question and
+getting two answers, neither of which anybody had chosen.
 
 (This line read "Sixteen still open" for a while after those closures — a count kept by hand that the
 closures did not update. Anyone recounting should trust the tables, not this sentence.)
@@ -73,6 +78,7 @@ closures did not update. Anyone recounting should trust the tables, not this sen
 | Id | Document | Question |
 |---|---|---|
 | `AMBIGUOUS-GIT-b` | `04-git.md` | There is **no cancellation path at all** for clone/fetch/pull/push — no kill, no timeout, no abort. Should the port add one? There is no the sidecar behaviour to port, so this is a product decision, not a translation. |
+| `AMBIGUOUS-GIT-c` | `04-git.md` | **Should a project whose `local_path` is a subdirectory of a repository be refused?** Raised by the differential oracle, not by reading: `DIVERGENCE-GIT-f` records that 3.0 resolves such a path to the containing repository where 2.7.1 errored, because `git -C` walks up and LibGit2Sharp's `Repository(path)` did not. Neither behaviour is good. 2.7.1 let the project be created (its `is_git_repo` uses `Repository.Discover`, which walks up) and then failed every Changes read with "doesn't point at a valid Git repository or workdir" — a permanently broken panel and no way to see why. 3.0 makes the reads work, but porcelain paths are relative to the *repository root*, so the panel lists files that do not exist under the project's own directory and opening one fails. The third option is neither: refuse the path once, in `create_project`, where the user is choosing a folder and can be told to pick the repository root — rather than in 42 git commands, or nowhere. That is a product decision with no 2.x behaviour to port, so it is recorded here rather than guessed. |
 | `AMBIGUOUS-STORE-a` | `03-storage.md` | The `DEFAULT ''` on four `api_*.workspace_id` columns can never satisfy its own `REFERENCES workspaces(id)` constraint and no `INSERT` relies on it. Preserve, drop, or replace? |
 | `AMBIGUOUS-FILE-c` | `11-files-search-terminal.md` | Is replacement-character artefacting acceptable when a UTF-8 sequence straddles a 4096-byte PTY read boundary, or does the frontend emulator mask it? |
 | `AMBIGUOUS-DBG-a` | `12-debugging.md` | Is DAP's asymmetry — swallow breakpoint errors at start, propagate them at `set_breakpoints` — deliberate? |

@@ -481,7 +481,9 @@ parser would silently rewrite history. `coverage_verdict` holds the single word 
 it ride in `meta` beside the provider and the model that produced the run. `diff` is written and
 never selected by `TicketReviewStore.ForBranch` — it is the largest column in the table and it exists
 so a stored verdict is re-checkable, not so it can be listed. A row whose JSON will not parse still
-returns its `review_md`, so one bad row cannot take the list down. `WI-013`.
+returns its `review_md`, so one bad row cannot take the list down. `WI-013`. Written and read in Go
+by `backend/tickets/store.go` (`AddReview`, `ReviewsForBranch`); the coverage **sentences** ride in
+`meta.coverage`, which is where `ReviewsForBranch` reads them back from.
 
 `dbml_layouts` holds where a person dragged each table of a schema document, one row per
 `(project_id, rel_path, table_key)`. The unique index `idx_dbml_layouts_key` is not an optimisation:
@@ -1024,7 +1026,7 @@ return value alone.
 **Markers**: none
 
 ### STORE-013 `add_review_run` is idempotent by id; only `findings` is ever mutated afterward
-**Implementation**: `src/CodeFlow.App/Activity/ActivityLogStore.cs`
+**Implementation**: `src/CodeFlow.App/Activity/ActivityLogStore.cs` · `backend/review/store.go` (`Store.WriteFindings`; the insert arrives with the review run itself)
 **Behaviour**: `INSERT ... ON CONFLICT(id) DO NOTHING` — a second call with the same `id`
 (the job's own id, reused as the run's id) is a silent no-op, not an overwrite. The only other
 write path touching an existing `review_runs` row is `set_review_run_findings`, which
@@ -1069,7 +1071,7 @@ outside this document's scope.
 **Markers**: none
 
 ### STORE-016 `HISTORY_HARD_CAP` is a per-workspace hard backstop, independent of the UI's display limit
-**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs`
+**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs` · `backend/apiclient/datastore.go` (`AddHistory`, `historyHardCap`)
 **Behaviour**: Every `add_history` insert is followed, in the same transaction, by `DELETE FROM
 api_history WHERE workspace_id = ?1 AND id NOT IN (SELECT id ... ORDER BY created_at DESC LIMIT
 2000)`. The 2000 cap and the trim scope (one workspace) are independent of the settings UI's
@@ -1083,7 +1085,7 @@ new entry.
 **Markers**: none
 
 ### STORE-017 `move_node`: cycle guard, cross-workspace guard, dense per-kind renumbering
-**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs`
+**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs` · `backend/apiclient/treestore.go` (`MoveNode`, `isWithinSubtree`, `carrySubtreeToCollection`, `renumberSiblings`)
 **Behaviour**: See "Query semantics" above for the full five-step sequence. Folders and
 requests are renumbered against siblings of their *own* kind only (`api_folders` and
 `api_requests` have independent `sort_order` columns) because the tree UI always renders
@@ -1099,7 +1101,7 @@ looped forever.
 **Markers**: none
 
 ### STORE-018 `denormalize()` method/url extraction and defaulting
-**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs`
+**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs` · `backend/apiclient/treestore.go` (`Denormalize`)
 **Behaviour**: Parses `spec` as JSON (a failure to parse is treated as `JsonValueKind.Null`, not
 propagated as an error); reads `.method`/`.url` as strings, defaulting each missing/non-string
 value to `""`; then, only for `method`, an empty result is further defaulted to `"GET"`. `url`
@@ -1112,7 +1114,7 @@ denormalized `method`/`url` columns.
 **Markers**: none
 
 ### STORE-019 `duplicate_*` deep-copy semantics
-**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs`
+**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs` · `backend/apiclient/treestore.go` (`DuplicateCollection`, `copyFolders`, `DuplicateRequest`), `backend/apiclient/datastore.go` (`DuplicateEnvironment`)
 **Behaviour**: `duplicate_collection`, `duplicate_request`, `duplicate_environment` each mint a
 fresh UUID, name the copy `"{original} copy"`, stamp fresh `created_at`/`updated_at`, and place
 the copy last among its new siblings (`next_*_order` in the same scope as the source).
@@ -1129,7 +1131,7 @@ Globals.
 **Markers**: none
 
 ### STORE-020 `api_cookies` upsert is keyed on the wire identity, not the row id
-**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs`
+**Implementation**: `src/CodeFlow.App/ApiClient/ApiTreeStore.cs` · `backend/apiclient/datastore.go` (`UpsertCookie`)
 **Behaviour**: `upsert_cookie`'s `ON CONFLICT(workspace_id, domain, path, name) DO UPDATE`
 matches the natural key a `Set-Cookie` response identifies a cookie by. A second write for the
 same `(workspace_id, domain, path, name)` replaces the existing row's `value`/`secure`/

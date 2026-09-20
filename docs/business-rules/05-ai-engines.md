@@ -1162,7 +1162,7 @@ ends, with no new IPC surface and no migration. A richer breakdown in the panel 
 **Markers**: none
 
 ### AI-022 `review_level_directive`: básico / completo / ultra
-**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs`
+**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs` · `backend/ai/review.go` (`ReviewLevelDirective`, `ReviewTools`)
 **Behaviour**: Appended to the end of the review prompt (after the base template, so it overrides any depth the standard implies). `"basico"`/`"básico"` → two lenses (correctness, security), `Blocker` at confidence ≥ 50 and `Crítico` at ≥ 75, `Mayor`/`Menor`/`Info` ignored, terse. Unknown/empty/anything else → `"completo"` → five lenses, confidence ≥ 60 (Blocker ≥ 50), all severities except Info. `"ultra"` → confidence ≥ 50, all six lenses including Info/nitpicks.
 **Inputs / outputs**: `(string level, bool explorable) -> &'static str` (a directive block).
 **Edge cases**: any unrecognised level string silently becomes `completo` — never an error.
@@ -1200,7 +1200,7 @@ re-syncing the built-in review prompts with the source review runbook (WF-PR-REV
 contract is `13-cross-language-contracts.md` `XLANG-001`.
 
 ### AI-023 `review_pull_request`
-**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs`
+**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs` · `backend/ai/review.go` (`Operations.Review`, `reviewPayload`)
 **Behaviour**: Errors on an empty diff. stdin payload: `PR TITLE`, `PR DESCRIPTION` (`"(no description)"` when blank), optional `PROJECT REVIEW CONTEXT` (one `- {name}: {content}` line per enabled context), `DIFF:`, then — when there is a working tree to extract it from — the `CODE AROUND THE CHANGES` block (`GIT-033`). Prompt = (custom template or `DEFAULT_REVIEW_PROMPT`) + `\n\n` + the level directive for `(level, explorable)`.
 **Inputs / outputs**: `(runner, config, pr_title, pr_description, contexts, diff, code_context, cwd, template, level, explorable, mcp_config_path, run) -> AiRun`; error `"This pull request has no changes to review"`.
 **Edge cases**: none beyond the level fallback.
@@ -1215,8 +1215,8 @@ operation took, how much of the change reached the model, what the findings did 
 review — is known there and not here. See `REVIEW-038`.
 
 ### AI-024 `analyze_changes`
-**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs`
-**Behaviour**: Errors on an empty diff (Spanish message). stdin payload: optional `PROJECT CONTEXT` block, then `DIFF:`. Prompt = custom template or `DEFAULT_ANALYZE_TEMPLATE`. Result is `stamp_footer`'d with `kind = "análisis pre-commit"`.
+**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs` · `backend/ai/changes.go` (`AnalyzeChanges`)
+**Behaviour**: Errors on an empty diff (Spanish message). stdin payload: optional `PROJECT CONTEXT` block, the `SCOPE:` line (`WI-023`), then `DIFF:`. Prompt = custom template or `DEFAULT_ANALYZE_TEMPLATE`. Result is `stamp_footer`'d with `kind = "análisis pre-commit"`.
 **Inputs / outputs**: `(engine, binary, model, contexts, diff, allowed_tools, cwd, template, mcp_config_path) -> string`; error `"NOTHING_TO_ANALYZE: No hay cambios sin commitear para analizar"`.
 **Edge cases**: none beyond what `GIT-031` leaves out, which it names in the payload.
 **Frontend dependency**: `analyze_working_changes` command.
@@ -1491,7 +1491,7 @@ second bounded nothing — seventeen `Bash` calls in one measured review, with z
 **Markers**: none
 
 ### AI-051 `analyze_working_changes`: job id doubles as run id, history persisted
-**Implementation**: `src/CodeFlow.App/Ai/AiCommands.cs`
+**Implementation**: `src/CodeFlow.App/Ai/AiCommands.cs` · `backend/tickets/review.go` (`analyze`, `fileJob`)
 **Behaviour**: `job_id` is passed as the `AiRunRegistry` run id, so the pre-existing job-list row shows this run's live output and stop button with no separate id to plumb. On completion, unless cancelled, one job-history row is written (`"done"` + text, or `"error"` + message); a cancelled run writes nothing, mirroring AI-050's chat behaviour.
 **Inputs / outputs**: n/a (persistence side effect).
 **Edge cases**: An agent override (`agent_provider`+`agent_model`, both non-blank) uses `load_ai_config_for` (AI-047) instead of the normal `Analyze` task routing; the agent's own prompt, when present, is inserted as the first enabled context under the name `"Agent"`.
