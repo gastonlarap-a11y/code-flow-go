@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Database, Download, FilePlus2, RotateCw, Save, Sparkles, Upload } from "lucide-react";
+import {
+  Database,
+  Download,
+  FilePlus2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RotateCw,
+  Save,
+  Sparkles,
+  Upload,
+} from "lucide-react";
 import { Editor, OVERFLOW_SAFE_OPTIONS, monaco } from "../../lib/monacoEditor";
 import { parseDbmlModel } from "../../lib/dbml/parse";
 import { emptyModel, type DbmlSchemaModel } from "../../lib/dbml/model";
@@ -8,7 +18,9 @@ import { useWorkspaceStore } from "../../state/workspaceStore";
 import { useThemeStore } from "../../state/themeStore";
 import { confirmAction } from "../../state/confirmStore";
 import { useT } from "../../state/languageStore";
+import { useLayoutStore } from "../../state/layoutStore";
 import { EmptyState } from "../common/EmptyState";
+import { ResizeHandle } from "../common/ResizeHandle";
 import { IconButton } from "../common/IconButton";
 import { Button } from "../common/Button";
 import { DbmlCanvas, type DbmlCanvasHandle } from "./DbmlCanvas";
@@ -26,6 +38,16 @@ import { DbmlAiModal } from "./DbmlAiModal";
  * and only a user who opens this module pays for it. The parse runs on the buffer rather than on
  * disk, which is what makes the diagram live.
  */
+/**
+ * How narrow and how wide the source pane may be dragged.
+ *
+ * The minimum is not cosmetic: below it Monaco's own gutter and horizontal scrollbar leave no
+ * column for text, so the pane stops being an editor before it stops being visible. Anyone wanting
+ * less than this wants it gone, which is what the collapse button is for.
+ */
+const DBML_EDITOR_MIN = 240;
+const DBML_EDITOR_MAX = 900;
+
 export function DbmlView() {
   const t = useT();
   const project = useWorkspaceStore((s) => s.activeProject());
@@ -38,6 +60,13 @@ export function DbmlView() {
   const dirty = useDbmlStore((s) => s.dirty);
   const saving = useDbmlStore((s) => s.saving);
   const positions = useDbmlStore((s) => s.positions);
+
+  const editorWidth = useLayoutStore((s) => s.sizes.dbmlEditorWidth);
+  const setSize = useLayoutStore((s) => s.setSize);
+  const commitSize = useLayoutStore((s) => s.commitSize);
+  // Deliberately not persisted, unlike the width: collapsing is "get this out of my way while I
+  // read the diagram", and an app that reopened with no editor would look like it had lost one.
+  const [editorCollapsed, setEditorCollapsed] = useState(false);
   const loadDocuments = useDbmlStore((s) => s.loadDocuments);
   const openDocument = useDbmlStore((s) => s.openDocument);
   const setSource = useDbmlStore((s) => s.setSource);
@@ -115,6 +144,16 @@ export function DbmlView() {
         {dirty && <span className="text-badge text-[var(--cf-warning)]">{t("dbml.unsaved")}</span>}
 
         <div className="ml-auto flex items-center gap-1">
+          {/* Beside the document's own actions, because it acts on this document's editor rather
+              than on the module. Disabled with no document for the same reason the others are:
+              there is no editor to collapse. */}
+          <IconButton
+            label={editorCollapsed ? "dbml.editor.show" : "dbml.editor.hide"}
+            icon={editorCollapsed ? PanelLeftOpen : PanelLeftClose}
+            size="sm"
+            disabled={activePath === null}
+            onClick={() => setEditorCollapsed(!editorCollapsed)}
+          />
           <Button
             variant="secondary"
             size="sm"
@@ -153,7 +192,14 @@ export function DbmlView() {
         />
       ) : (
         <div className="flex min-h-0 flex-1">
-          <div className="min-w-0 flex-1 border-r border-[var(--cf-border)]">
+          {/* The source pane is sized, not shared. It opened at half the window, which is the wrong
+              split for a designer: the diagram is what is being read and the source is edited in
+              glances. Collapsed it keeps a rail, so getting the editor back is one click rather
+              than a menu hunt. The width is remembered per install like every other pane. */}
+          <div
+            style={{ width: editorCollapsed ? undefined : editorWidth }}
+            className={`min-w-0 shrink-0 border-r border-[var(--cf-border)] ${editorCollapsed ? "hidden" : ""}`}
+          >
             <Editor
               height="100%"
               // No DBML language in Monaco; `sql` gets the comment and string colouring close
@@ -181,6 +227,17 @@ export function DbmlView() {
               }}
             />
           </div>
+
+          {!editorCollapsed && (
+            <ResizeHandle
+              axis="x"
+              value={editorWidth}
+              min={DBML_EDITOR_MIN}
+              max={DBML_EDITOR_MAX}
+              onChange={(w) => setSize("dbmlEditorWidth", w)}
+              onCommit={(w) => commitSize("dbmlEditorWidth", w)}
+            />
+          )}
 
           <div className="relative min-w-0 flex-1">
             {model.tables.length === 0 ? (
