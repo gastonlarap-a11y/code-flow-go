@@ -36,6 +36,15 @@ in file order:
 - `unlink_project` — clears whichever of the two host links a project has.
 - `open_repo_in_browser` — opens the project's reconstructed repo web URL in the OS browser.
 - `open_external_url` — opens an arbitrary http(s) URL in the OS browser.
+
+**Two of those names are not backend commands in the Go port, and one that is missing here is.**
+The renderer calls `repo_web_url` and opens the answer itself (`openRepoInBrowser` in
+`frontend/src/lib/ipc/commands.ts`), because working out the URL needs the project row and its
+remotes while opening it belongs to the shell; and `open_external_url` never reaches Go at all — a
+capture-phase listener routes external links to the host service (§7.4 W9). So `repo_web_url` is
+the registered name (`backend/providers/commands.go`, REVIEW-005), and the two above are the
+renderer's own halves. The registry, not this list, is what the command-coverage contract test
+checks against the renderer's 246 call sites.
 - `list_pull_requests` — lists a linked project's pull requests from its host.
 - `resolve_pr_link` — resolves a pasted PR URL into a PR plus (and linking, if needed) the local
   repo it belongs to.
@@ -285,6 +294,12 @@ persisten, resueltos })`.
 
 - `{categoria}` · {archivo|—} — {falso positivo|ignorado}{: {motivo_descarte} if non-empty}
 `
+
+**The out-of-scope count's wording** (`DIVERGENCE-REVIEW-b`, decided with the Go port): when a
+shallower run marks findings `fuera_de_alcance`, the banner gains a fourth segment,
+`· {n} fuera de alcance`, in the same `·`-separated shape as the other three. It is appended **only
+when the count is non-zero**, so every run without one renders byte for byte what 2.x rendered and
+every stored review still reads as it did.
 
 `delta_banner(delta)` (`src/CodeFlow.App/Review/ReviewMemory.cs`), `VERBATIM` (Spanish):
 
@@ -633,7 +648,7 @@ by `linked_repo` or by the parsed link target. No write, so not subject to §2.9
 ## Rules
 
 ### REVIEW-001 Provider dispatch prefers GitHub over Azure DevOps
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/linkedrepo.go` (`LinkedRepoFor`)
 **Behaviour**: `linked_repo(project)` returns `LinkedRepo.GitHub` if `project.github_owner` **and**
 `project.github_repo` are both set (regardless of whether the Azure columns are also set), else
 `LinkedRepo.Azure` if all three Azure columns are set, else errors `"This project isn't linked to a
@@ -646,7 +661,7 @@ calls `linked_repo`.
 **Markers**: none.
 
 ### REVIEW-002 `auto_link_project`: remote scan order and needs-token deferral
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/linkedrepo.go` (`Deps.AutoLink`)
 **Behaviour**: no-ops (`Linked`) if the project is already linked. Otherwise lists every git remote
 of the local repo, orders `origin` first then the rest in listing order, and for each tries GitHub
 detection (against `github_known_hosts`) then Azure detection. The **first** remote that both
@@ -664,7 +679,7 @@ and just skips.
 **Markers**: none.
 
 ### REVIEW-003 `github_known_hosts`: the Enterprise allowlist
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/connections.go` · `backend/providers/detection.go` (`KnownGitHubHosts`)
 **Behaviour**: always includes `github.com`; adds every host from the `github_connections` setting
 (a JSON list, one row per connected Enterprise host) that doesn't already case-insensitively match
 an entry already in the list. A malformed `github_connections` value is tolerated —
@@ -677,7 +692,7 @@ indistinguishable, at detection time, from any other unrelated self-hosted git s
 **Markers**: none.
 
 ### REVIEW-004 `build_mcp_config`: per-review MCP JSON file
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/pipeline.go` (`mcpConfig`, `parseEnvLines`)
 **Behaviour**: filters a workspace's MCP servers to `enabled`; returns `None` (no `--mcp-config`
 flag) if none are enabled. Otherwise writes `{base_dir}/workspaces/{workspace_id}/mcp.json` — each
 enabled server's `args` split on whitespace, `env` parsed as `KEY=value` lines (first `=` only,
@@ -689,7 +704,7 @@ under the workspace's own CodeFlow folder for inspectability.
 **Markers**: none.
 
 ### REVIEW-005 Repository web URL reconstruction and external-link opening
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/weburl.go` · `backend/providers/detection.go` (`WebEncode`, `GitHubWebURL`, `AzureWebURL`)
 **Behaviour**: `repo_web_url` re-derives the repo's home page from its **live git remote** (not the
 stored link columns, which may hold an Azure GUID or be briefly stale for a repo linked this
 session) — GitHub: `https://{host}/{owner}/{repo}`; Azure:
@@ -704,10 +719,15 @@ local handler.
 repo name containing another URL-unsafe character is not handled here (contrast `06-providers.md`'s
 `encode_segment`, which this function does not use).
 **Frontend dependency**: `openRepoInBrowser`, `openExternalUrl` — see `01-ipc-surface.md`.
+**In the Go port** only `repo_web_url` is a command, and it carries the refusal: the renderer's
+`openRepoInBrowser` calls it and hands the URL to the shell, and the `http(s)`-only guard now lives
+in the host service, which is the only thing that can open anything at all. A remote on an
+Enterprise host resolves only if that host is connected (REVIEW-003), and an `origin` that resolves
+wins over a later remote that also does — the same order `auto_link_project` scans in.
 **Markers**: none.
 
 ### REVIEW-006 `list_pull_requests` dispatch
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/commands.go` (`registerPullRequests`) · `backend/providers/host.go` (`Deps.hostForProject`)
 **Behaviour**: loads the project, dispatches via `linked_repo` to `list_pull_requests`
 (`PROV-025`) or `list_pull_requests` (`PROV-007`), after resolving the org's PAT or the
 host's token.
@@ -718,7 +738,7 @@ Azure's undocumented default).
 **Markers**: none.
 
 ### REVIEW-007 `resolve_pr_link` and `find_project_for_link`: pasted-URL resolution
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/prlinkresolve.go`
 **Behaviour**: parses `url` via `PrLink` (`06-providers.md` `PROV-042`); if unrecognized,
 returns `Unrecognized` before any network call. If recognized but no credential is saved for its
 host/org, returns `NeedsToken`. Otherwise reads the PR from the host, then `find_project_for_link`
@@ -741,7 +761,7 @@ pass 2 (which repairs the columns) in that case.
 **Markers**: none.
 
 ### REVIEW-008 `link_credentials` and `fetch_pr_and_diff`: the repo-less read primitives
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/host.go` (`Deps.hostForLink`, `PullRequestHost`)
 **Behaviour**: `link_credentials` re-parses the link (erroring `"That isn't a pull-request link
 CodeFlow can read"` if it doesn't match) and resolves the one credential its host/org needs.
 `fetch_pr_and_diff` reads the PR and its unified diff purely from the host's API — GitHub via
@@ -756,7 +776,7 @@ CodeFlow can read"` if it doesn't match) and resolves the one credential its hos
 **Markers**: none.
 
 ### REVIEW-009 `link_review_workspace`: the ad-hoc directory for a repo-less review
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/pipeline.go` (`linkReviewWorkspace`, `linkSlug`, `NoCloneContext`)
 **Behaviour**: see "Review from a link" step 4 above for the full layout/content.
 **Inputs / outputs**: `&PrLinkTarget, &PullRequestSummary, diff: string` → `string`
 (the directory path).
@@ -766,7 +786,7 @@ reviewed again.
 **Markers**: none.
 
 ### REVIEW-010 `review_pr_from_link` end to end
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/commands_run.go` (`RunFromLink`)
 **Behaviour**: see "Review from a link" above for the full ten-step trace.
 **Inputs / outputs**: `url, job_id, level, workspace_id: string, agent_provider/agent_model/
 agent_prompt: string?` → `string` (the review markdown, unaugmented — no
@@ -777,7 +797,7 @@ persistence at all, success or failure.
 **Markers**: none.
 
 ### REVIEW-011 Repo-less reads: `pr_link_pull_request`, `pr_link_comment_threads`, `pr_link_decision`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/commands.go` (`registerPRLinks`)
 **Behaviour**: each calls `link_credentials` then dispatches straight to the matching provider read
 — `get_pull_request`/`viewer_decision`/`list_pr_comment_threads` — with no further logic of its own.
 **Inputs / outputs**: `url: string` → the provider's own return type.
@@ -786,7 +806,7 @@ persistence at all, success or failure.
 **Markers**: none.
 
 ### REVIEW-012 `act_on_pr_link`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/commands.go` · `backend/providers/host.go` (`PullRequestHost.Act`)
 **Behaviour**: see Publishing above.
 **Inputs / outputs**: `url, action, body: string?` → `PullRequestSummary`.
 **Edge cases**: an unrecognized `action` string errors before any network call.
@@ -794,7 +814,7 @@ persistence at all, success or failure.
 **Markers**: executed live on Azure only, error path observed (2026-08-01 — see the command entry).
 
 ### REVIEW-013 `post_pr_link_review_comment`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/commands_publish.go`
 **Behaviour**: see Publishing above — always opens a new thread per finding, no reconciliation, every
 item attempted regardless of prior failures.
 **Inputs / outputs**: `url, items: IReadOnlyList<PostFindingItem>, post_summary: bool, summary: string?`
@@ -835,7 +855,7 @@ git data.
 **Markers**: none.
 
 ### REVIEW-016 `create_pull_request`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/commands.go` · `backend/providers/host.go` (`PullRequestHost.Create`)
 **Behaviour**: see Publishing above.
 **Inputs / outputs**: `project_id, title, description, source_branch, target_branch, draft: bool` →
 `PullRequestSummary`.
@@ -844,7 +864,7 @@ git data.
 **Markers**: `VERIFIED-LIVE` (2026-08-01 live run — see `90-ambiguities.md`).
 
 ### REVIEW-017 `list_pr_comment_threads`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/commands.go` · `backend/providers/host.go` (`PullRequestHost.Threads`)
 **Behaviour**: loads the project, dispatches via `linked_repo` to `list_pr_comment_threads`
 (`PROV-037`) or `list_pr_comment_threads` (`PROV-018`).
 **Inputs / outputs**: `project_id, pr_id: long` → `IReadOnlyList, string>`.
@@ -853,7 +873,7 @@ git data.
 **Markers**: none.
 
 ### REVIEW-018 `review_pull_request`: setup and PR lookup
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/run.go` (`Run`, `findPull`) · `backend/review/pipeline.go` (`reviewConfig`)
 **Behaviour**: see "The review run" steps 1–3 above.
 **Inputs / outputs**: `project_id, pr_id: long, job_id, level: string, agent_provider/agent_model/
 agent_prompt: string?` → (continues into `REVIEW-019`–`REVIEW-023`).
@@ -862,8 +882,12 @@ agent_prompt: string?` → (continues into `REVIEW-019`–`REVIEW-023`).
 **Markers**: none.
 
 ### REVIEW-019 `review_pull_request`: fetch and head-ref resolution
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/run.go` (`headRef`) · `backend/git/reviewrefs.go` (`PullRequestHeadRefspec`, `ResolveSHA`)
 **Behaviour**: see "The review run" steps 4–5 above.
+**In the Go port** the fetched ref is **resolved before it is used**: a fetch reporting success is
+not evidence the ref arrived, and a review pointed at one that does not resolve failed two steps
+later with a message naming a branch nobody had typed. One `rev-parse` settles it, and the fall
+back is the same source branch a failed fetch falls back to.
 
 **The pre-review fetch asks only for the refs the review reads.** It was a bare `git fetch origin` —
 every branch and tag the remote has, in order to diff two of them — and it is the slowest step in
@@ -889,7 +913,7 @@ error if nothing does.
 **Markers**: none.
 
 ### REVIEW-020 `review_pull_request`: head-SHA compare and the no-op re-review
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/run.go` (`unchangedSince`, `previousRun`) · `backend/review/store.go` (`LatestRun`)
 **Behaviour**: see "The review run" steps 6–8 above — the `"🔁 Sin cambios..."` short-circuit and the
 `changed_files` computation.
 **Inputs / outputs**: n/a.
@@ -900,7 +924,7 @@ diff step, if the ref is genuinely unresolvable).
 **Markers**: none.
 
 ### REVIEW-021 `review_pull_request`: diff, contexts, MCP config, the AI call, cancellation
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/run.go` (`Run`, `reviewContexts`, `isCancelled`) · `backend/git/reviewrefs.go` (`BranchDiffFiles`, `ChangedFilesBetween`)
 **Behaviour**: see "The review run" steps 9–14 above; the AI call itself is `05-ai-engines.md`
 `AI-023`.
 **Inputs / outputs**: n/a.
@@ -910,7 +934,7 @@ of any kind.
 **Markers**: none.
 
 ### REVIEW-022 `review_pull_request`: success/failure branches and `job_history`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/pipeline.go` (`fileJob`)
 **Behaviour**: see "The review run" steps 15–16 above.
 **Inputs / outputs**: n/a.
 **Edge cases**: both the memory write (`persist_review_run`) and the `job_history` write are
@@ -919,7 +943,7 @@ best-effort — neither failure changes what the caller receives.
 **Markers**: none.
 
 ### REVIEW-023 `persist_review_run`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/run.go` (`persist`) · `backend/review/store.go` (`AddRun`, `CountRuns`)
 **Behaviour**: see "The review run" → "`persist_review_run`" above for the full nine-step trace.
 **Inputs / outputs**: `(conn, job_id, project, workspace_id, pr, level, engine_label, model,
 diff_text, head_sha, changed_files: IReadOnlyList<string>?, text: string)` → `string` (the augmented
@@ -930,7 +954,7 @@ prepended — is load-bearing for the final rendered shape.
 **Markers**: none.
 
 ### REVIEW-024 `parse_findings`: header/block segmentation and field extraction
-**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs`
+**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` · `backend/review/memory.go` (`ParseFindings`, `SeverityOf`)
 **Behaviour**: see "Finding parsing" above.
 **Inputs / outputs**: `review_md: string` → `IReadOnlyList<MemoryFinding>`.
 **Edge cases**: a finding block with no `📍`/`🎯` field simply leaves `archivo`/`lineas`/`confianza`
@@ -940,7 +964,7 @@ as `None` — never an error, since the model's own adherence to the format is n
 **Markers**: `VERBATIM` (the header/location/confidence regexes, shared with `XLANG-001`).
 
 ### REVIEW-025 `parse_location`: cleaning and file/line splitting
-**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs`
+**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` · `backend/review/memory.go` (`parseLocation`)
 **Behaviour**: see "Finding parsing" → "Location" above.
 **Inputs / outputs**: `raw: string` → `(string?, string?)` (`(archivo, lineas)`).
 **Edge cases**: a Windows drive-letter path (`C:\foo\bar.cs`) with no trailing line number would
@@ -950,7 +974,7 @@ guarded against, but not observed to occur given the prompt always asks for a re
 **Markers**: `VERBATIM`.
 
 ### REVIEW-026 `finding_identity` / `identity`: the reconciliation and posting key
-**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs`
+**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` · `backend/review/memory.go` (`FindingIdentity`, `identityOf`)
 **Behaviour**: see "Finding parsing" → "Identity" above.
 **Inputs / outputs**: `(archivo: string?, categoria: string)` → `string` key (`finding_identity`,
 `pub`); `(&MemoryFinding)` → `string` key with the subtitle fallback (`identity`, private).
@@ -959,7 +983,7 @@ guarded against, but not observed to occur given the prompt always asks for a re
 **Markers**: none (see `BUG-REVIEW-b` for the consequence of the non-injectivity).
 
 ### REVIEW-027 `reconcile`: matching current findings against the previous run
-**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs`
+**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` · `backend/review/reconcile.go` (`Reconcile`, pass 1)
 **Behaviour**: see "Reconciliation" → "Pass 1" above — the three-way branch (new / reappeared-as-new
 / persists) and its exact field assignments.
 **Inputs / outputs**: part of `reconcile(prev, current, prev_iter, changed_files) -> (IReadOnlyList<MemoryFinding>,
@@ -970,7 +994,7 @@ rather than reopening the one that existed before it was marked resolved.
 **Markers**: `BUG-REVIEW-b`.
 
 ### REVIEW-028 `reconcile`: carrying forward unmatched previous findings
-**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs`
+**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` · `backend/review/reconcile.go` (pass 2, `outOfScope`)
 **Behaviour**: see "Reconciliation" → "Pass 2" above — the `file_touched` computation and the
 resolved / persists-untouched / carried-untouched three-way split.
 **Inputs / outputs**: `prev: IReadOnlyList<MemoryFinding>, current: IReadOnlyList<MemoryFinding>, prev_iter: int,
@@ -982,7 +1006,7 @@ at, or which `level` the current run used — see `AMBIGUOUS-REVIEW-b`.
 **Markers**: `AMBIGUOUS-REVIEW-b`.
 
 ### REVIEW-029 `file_in_changed`: suffix-tolerant path matching
-**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs`
+**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` · `backend/review/reconcile.go` (`FileInChanged`)
 **Behaviour**: normalizes both the finding's file and every entry of `changed` (strip a leading `/`,
 lowercase), then matches if either is an exact match or a suffix of the other.
 **Inputs / outputs**: `(finding_file: string, changed: IReadOnlyList<string>)` → `bool`.
@@ -993,7 +1017,7 @@ require a full path component boundary — not observed to be guarded against.
 **Markers**: none.
 
 ### REVIEW-030 `resolved_history_section` and `delta_banner`
-**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs`
+**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` · `backend/review/render.go` (`DeltaBanner`, `ResolvedHistorySection`)
 **Behaviour**: see "Reconciliation" → "Traceability rendering" above for the exact, `VERBATIM`
 Spanish templates.
 **Inputs / outputs**: `IReadOnlyList<MemoryFinding>` → `string?` (history) / `&ReviewDelta` → `string`
@@ -1008,7 +1032,7 @@ expected to skip over (it sits before/after the finding blocks, not inside one).
 **Markers**: `VERBATIM`.
 
 ### REVIEW-031 `MemoryFinding.is_active` and the `estado` lifecycle
-**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs`
+**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` · `backend/review/memory.go` (`MemoryFinding.IsActive`)
 **Behaviour**: `estado ∈ {"abierto", "posteado", "resuelto", "falso_positivo", "ignorado"}`;
 `is_active()` is `true` only for the first two. Nothing in this file (or `src/CodeFlow.App/Review/ReviewCommands.cs`) ever deletes
 a `MemoryFinding` row — every state transition is additive/mutating, never a removal.
@@ -1029,7 +1053,7 @@ in place field-preserving, so the fields this port has not modelled (`delta`, `t
 **Markers**: none.
 
 ### REVIEW-032 `post_pr_review_comment`: selection, identity lookup, and the stored run's `meta`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/posting.go` (`indexOf`, `AnalysedHead`) · `backend/review/commands_publish.go`
 **Behaviour**: see Publishing → `post_pr_review_comment` above, "Loading the run" and "Selection &
 identity matching".
 **Inputs / outputs**: `project_id, pr_id: long, run_id: string, items: IReadOnlyList<PostFindingItem>,
@@ -1041,7 +1065,7 @@ every item then posts as a brand-new thread with no stored finding to reconcile 
 consulted).
 
 ### REVIEW-033 `post_pr_review_comment`: per-provider posting and reply wording
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/posting.go` (`replyText`) · `backend/providers/publish.go` (`OpenThread`, `Reply` on both hosts)
 **Behaviour**: see Publishing → `post_pr_review_comment` above, "Per-provider posting" — the exact,
 `VERBATIM` Spanish reply strings for both providers, and their divergent wording (Azure's italics
 plus "Marcado como fixed" suffix vs. GitHub's plain text).
@@ -1053,7 +1077,7 @@ PR's **current** head, independent of the diff the finding's line numbers were c
 **Markers**: `VERIFIED-LIVE` (2026-08-01 live run — see `90-ambiguities.md`); `BUG-REVIEW-a`.
 
 ### REVIEW-034 `apply_post_outcome`: per-item bookkeeping
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/posting.go` (`applyPostOutcome`)
 **Behaviour**: see Publishing → `post_pr_review_comment` above, "`apply_post_outcome`".
 **Inputs / outputs**: `(&mut [MemoryFinding], idx: int?, outcome: long?,
 i: int, &mut IReadOnlyList<string>)` → `()` (mutates `findings`/`failures` in place).
@@ -1065,7 +1089,7 @@ marker, since it requires an item whose file+category doesn't match anything in 
 not reachable through ordinary UI use of a run's own findings list).
 
 ### REVIEW-035 `post_pr_review_comment`: write-back and partial-failure aggregation
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/review/posting.go` (`PublishFindings`) · `backend/review/store.go` (`Store.WriteFindings`)
 **Behaviour**: after every item (and the optional summary) has been attempted, the full `findings`
 slice — including every `thread_id`/`estado` change from `apply_post_outcome` — is serialized and
 written with the store(run_id, json)` (`STORE-013`), unconditionally, even
@@ -1082,7 +1106,7 @@ error string.
 **Markers**: `VERIFIED-LIVE` (2026-08-01 live run — see `90-ambiguities.md`).
 
 ### REVIEW-036 `pr_review_decision`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/commands.go` · `backend/providers/host.go` (`PullRequestHost.Decision`)
 **Behaviour**: see Publishing above.
 **Inputs / outputs**: `project_id, pr_id: long` → `string`.
 **Edge cases**: none beyond `PROV-015`/`PROV-035`.
@@ -1090,7 +1114,7 @@ error string.
 **Markers**: none.
 
 ### REVIEW-037 `act_on_pull_request`
-**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs`
+**Implementation**: `src/CodeFlow.App/Providers/ProviderCommands.cs` · `backend/providers/commands.go` (`Deps.actOnProjectPR`) · `backend/activity/activity.go` (`Store.RecordJob`)
 **Behaviour**: see Publishing above.
 **Inputs / outputs**: `project_id, pr_id: long, action: string, body: string?` →
 `PrActionOutcome { pr`.
@@ -1101,7 +1125,8 @@ already succeeded, leaving the PR changed on the host with no local record of it
 **Markers**: `VERIFIED-LIVE` (2026-08-01 live run — see `90-ambiguities.md`).
 
 ### REVIEW-038 The stats line under a review, and what it never reaches
-**Implementation**: `src/CodeFlow.App/Review/ReviewRun.cs` (`Details`, `PersistAsync`) ·
+**Implementation**: `backend/review/pipeline.go` (`footer`, `humanDuration`) ·
+`src/CodeFlow.App/Review/ReviewRun.cs` (`Details`, `PersistAsync`) ·
 `src/CodeFlow.App/Ai/AiText.cs` (`StampFooter`) ·
 `renderer/src/lib/ui/runStats.ts` · `renderer/src/components/common/RunStats.tsx`
 **Behaviour**: `ReviewRun` — not `AiOperations` — stamps the footer, **last**, onto
@@ -1129,6 +1154,12 @@ and the two under one name reported different things (249 570 against 245 424 on
 A link review has no `DiffCoverage` and no reconciliation, so it stamps the level and the duration
 alone, and stores nothing.
 
+**In the Go port** the engine's own token usage is **not** in the footer and not stored: the run
+result this port carries has no usage figures on it yet (`AI-017`'s second half is unported), and a
+zero would read as a free run rather than an unmeasured one. Everything else is there — the kind,
+the timestamp, the level, the whole-operation duration, the coverage and the finding counts — in
+the same `·`-separated single line, with no segment containing a `·`.
+
 **It is never published.** Every path that composes a comment for the host builds its text from the
 findings — `formatFindingAsComment`, `formatSummaryComment` — and neither reads the footer;
 `ReviewPosting` never sees it.
@@ -1141,7 +1172,7 @@ landed after it: the panel matched nothing, and the review tab had shown no stat
 **Markers**: none
 
 ### REVIEW-039 What a review may reach for, and what it is not asked to re-read
-**Implementation**: `src/CodeFlow.App/Review/ReviewRun.cs` (`Toolset`, `Narrow`, `Routed`)
+**Implementation**: `src/CodeFlow.App/Review/ReviewRun.cs` (`Toolset`, `Narrow`, `Routed`) · `backend/ai/review.go` (`ReviewTools`)
 **Behaviour**: two decisions the review pipeline makes for itself, both downstream of `GIT-033`
 putting the surrounding code in the prompt.
 
@@ -1172,7 +1203,7 @@ because reviewing nothing is never the right reading of that.
 **Markers**: none
 
 ### REVIEW-040 A finding still open that this run never restated is named, not just counted
-**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` (`PersistingSection`)
+**Implementation**: `src/CodeFlow.App/Review/ReviewMemory.cs` (`PersistingSection`) · `backend/review/render.go` (`PersistingSection`)
 **Behaviour**: appended to a re-review's body, before the resolved history: every finding in
 `abierto` or `posteado` whose identity does not appear in what the model wrote this run.
 

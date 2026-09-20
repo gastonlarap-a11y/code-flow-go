@@ -24,7 +24,23 @@ contract below lives outside those three files, and most are self-documented wit
 ---
 
 ### XLANG-001 The PR review finding format is a three-way contract
-**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs` (producer) · `src/CodeFlow.App/Review/ReviewMemory.cs` (sidecar parser) · `renderer/src/lib/parseAnalysis.ts` (TypeScript parser)
+**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs` (producer) · `src/CodeFlow.App/Review/ReviewMemory.cs` (sidecar parser) · `frontend/src/lib/parseAnalysis.ts` (TypeScript parser) · `backend/review/memory.go` (Go parser) · `frontend/src/lib/parseAnalysis.ts`
+**Pinned by a test that spans both languages**: `backend/review/testdata/crosslang-review.md` is read
+by `backend/review/memory_test.go` and by `frontend/src/lib/parseAnalysis.crosslang.test.ts`, and the
+two assert the same findings — same ids, same severities, same anchor. One file, not a copy each:
+two copies drift in exactly the way this contract exists to prevent.
+
+**And the producer is pinned too, since Phase 9.** The fixture pins the two *parsers* against each
+other; it says nothing about the prompt that causes the format to exist, which is a text file no test
+read. Rewording the finding header in `DEFAULT_PR_REVIEW_STANDARD.txt` therefore left every test in
+this repository green while live reviews silently produced zero findings — the exact failure the
+sentence above warns about, arriving through the one door the fixture does not cover.
+`backend/review/promptcontract_test.go` closes it: every literal the parser matches is asserted
+present in both standards, an answer shaped the way the standard demonstrates is run through
+`ParseFindings`, and the 58-line finding-format block the two standards share is asserted
+byte-identical — which it must be, because `ReviewMemory` reconciles a ticket review and a
+pull-request review with one parser, and two dialects would make re-review report every finding as
+new. Found by the Phase 9 inventory audit (`tools/inventory`), as `Ai/PromptsTests`.
 **Behaviour**: `DEFAULT_PR_REVIEW_STANDARD` instructs the model to emit findings in a Spanish,
 emoji-keyed markdown format. Two independent parsers consume it — one in the sidecar for review-memory
 reconciliation, one in TypeScript for rendering. All three must agree or a review silently
@@ -84,7 +100,7 @@ slug cannot group with its English twin across reviews). The subtitle is inferre
 first non-empty line after the header and before `📍`/`💭`.
 **Edge cases**: `Ubicaci[oó]n` accepts both the accented and unaccented spelling on both sides; the
 two trailing-section headers accept a dropped accent (`Lo que esta bien`).
-**Frontend dependency**: `renderer/src/lib/parseAnalysis.ts`, which every review-rendering component uses.
+**Frontend dependency**: `frontend/src/lib/parseAnalysis.ts`, which every review-rendering component uses.
 **Markers**: `VERBATIM` — and the reason `AGENTS.md`'s English-only rule is exempted for
 prompt text. Translating any of this changes what the model emits and breaks both parsers at
 once, and every stored `review_runs` row becomes unparseable.
@@ -108,7 +124,7 @@ markdown is the real contract; the brief is wrong on this point (`90-ambiguities
 ---
 
 ### XLANG-002 The checkout-conflict error prefix
-**Implementation**: `src/CodeFlow.App/Git/Branches.cs` · `renderer/src/state/repoStore.ts`
+**Implementation**: `src/CodeFlow.App/Git/Branches.cs` · `backend/shared/sentinel/sentinel.go` (the prefix) · `backend/git/commands.go` (applied at the command boundary) · `frontend/src/state/repoStore.ts`
 **Behaviour**: A checkout blocked by local changes returns an error string prefixed with a
 sentinel so the frontend can offer to stash instead of showing a failure banner.
 
@@ -126,7 +142,7 @@ changing the trailing space — turns a recoverable conflict into an unhandled f
 ---
 
 ### XLANG-003 The AI run markers
-**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs` · `src/CodeFlow.App/Ai/AiRunRegistry.cs` · `renderer/src/lib/claudeError.ts` · `renderer/src/state/aiRunStore.ts`
+**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs` · `src/CodeFlow.App/Ai/AiRunRegistry.cs` · `backend/ai/signals.go` (the markers) · `backend/ai/engine_cli.go`, `backend/ai/engine_http.go` (where they are raised) · `frontend/src/lib/claudeError.ts` · `frontend/src/state/aiRunStore.ts`
 **Behaviour**: Four sentinel prefixes classify an error string as it crosses the IPC boundary,
 so the frontend can render a dedicated notice rather than a red failure banner.
 
@@ -174,7 +190,7 @@ it is not a duplicated literal, but it is a downstream dependency on the untagge
 ---
 
 ### XLANG-004 The AI task keys and the settings-key templates
-**Implementation**: `src/CodeFlow.App/Ai/AiRouting.cs` (`Tasks`) · `renderer/src/lib/aiTasks.ts`
+**Implementation**: `src/CodeFlow.App/Ai/AiRouting.cs` (`Tasks`) · `backend/ai/routing.go` · `frontend/src/lib/aiTasks.ts`, whose own comment says "Must match the sidecar's `AiTask` keys — these strings are the contract"
 **Behaviour**: Ten task keys form the settings namespace for per-task AI routing. The
 frontend declares them independently and its own comment states they "must match the sidecar's
 `AiTask` keys".
@@ -195,13 +211,13 @@ ai_provider_{task}          // which provider handles this task; blank = inherit
 
 **Edge cases**: `fix` is marked `agenticOnly` in the frontend, which hides non-agentic providers
 from that row. There is no corresponding backend guard — the constraint is frontend-only.
-**Frontend dependency**: `renderer/src/lib/aiTasks.ts`, `src/components/settings/TaskRouting.tsx`.
+**Frontend dependency**: `frontend/src/lib/aiTasks.ts`, `src/components/settings/TaskRouting.tsx`.
 **Markers**: `VERBATIM`. A renamed key silently orphans a user's stored routing.
 
 ---
 
 ### XLANG-005 The provider and model resolution cascade
-**Implementation**: `src/CodeFlow.App/Ai/AiCommands.cs` (`provider_for`, `load_ai_config`) · `renderer/src/state/aiProviderStore.ts` (`loadRouting`)
+**Implementation**: `src/CodeFlow.App/Ai/AiCommands.cs` (`provider_for`, `load_ai_config`) · `backend/ai/routing.go` · `frontend/src/state/aiProviderStore.ts` (`loadRouting`)
 **Behaviour**: The frontend re-implements the backend's resolution chain so the settings UI can
 show which provider and model a task will actually use. Its own comment states the intent —
 "mirroring the backend's fallback chain so the UI can't disagree with what actually runs".
@@ -234,7 +250,7 @@ Binary and tools resolve alongside: `{provider}_binary_path` → `engine.default
 ---
 
 ### XLANG-006 Default binary per provider
-**Implementation**: `src/CodeFlow.App/Ai/Engines/Claude.cs`, `src/CodeFlow.App/Ai/Engines/Codex.cs`, `src/CodeFlow.App/Ai/Engines/Gemini.cs`, `src/CodeFlow.App/Ai/Engines/OpenCode.cs`, `src/CodeFlow.App/Ai/Engines/OpenAi.cs`, `src/CodeFlow.App/Ai/Engines/Ollama.cs` · `renderer/src/lib/aiProviders.ts`
+**Implementation**: `src/CodeFlow.App/Ai/Engines/Claude.cs`, `Codex.cs`, `Gemini.cs`, `OpenCode.cs`, `OpenAi.cs`, `Ollama.cs` — six files in 2.x, two in Go: `backend/ai/engine_cli.go` (the four CLIs) and `backend/ai/engine_http.go` (OpenAI and Ollama), with `backend/ai/engine_claude.go` for the one whose argv differs · `frontend/src/lib/aiProviders.ts`
 **Behaviour**: The Settings screen shows the default binary name (or endpoint) when the user has
 not set a path. Both sides currently agree exactly:
 
@@ -255,7 +271,7 @@ Note that the `gemini` provider id maps to the `agy` (Antigravity) binary, not t
 ---
 
 ### XLANG-007 The bundled static model lists live in the frontend
-**Implementation**: `renderer/src/lib/aiProviders.ts`
+**Implementation**: `frontend/src/lib/aiProviders.ts` — the renderer alone, which is the point of the entry: no Go file carries these lists and none should
 **Behaviour**: Model discovery has three strategies — native command, API catalogue, and a
 bundled static list. The **static list is frontend data**, not backend data: there is no the sidecar
 counterpart to reconcile against. It is recorded here because a reader looking for "where the
@@ -265,7 +281,7 @@ fallback model list lives" will otherwise search the C# core and find nothing.
 ---
 
 ### XLANG-008 The advertised Accept-Encoding
-**Implementation**: `src/CodeFlow.App/ApiClient/HttpSend.cs` · `renderer/src/lib/api/send.ts`
+**Implementation**: `src/CodeFlow.App/ApiClient/HttpSend.cs` · `backend/apiclient/decode.go` (`advertisedEncodings`) and `backend/apiclient/httpsend.go` (where it is set) · `frontend/src/lib/api/send.ts`
 **Behaviour**: The API client's request preview shows the implicit headers the backend will add.
 `Accept-Encoding` is duplicated so the preview does not require a round trip.
 
@@ -281,7 +297,7 @@ gzip, br, deflate
 ---
 
 ### XLANG-009 The extension-to-MIME table
-**Implementation**: `src/CodeFlow.App/ApiClient/ApiCommands.cs` (`guess_mime`) · `renderer/src/components/api/BodyPanel.tsx` (`MIME_BY_EXTENSION`)
+**Implementation**: `src/CodeFlow.App/ApiClient/ApiCommands.cs` (`guess_mime`) · `backend/apiclient/files.go` · `frontend/src/components/api/BodyPanel.tsx` (`MIME_BY_EXTENSION`)
 **Behaviour**: Duplicated deliberately — the frontend's own comment explains that asking the
 backend would cost a whole file read, because `api_read_file_base64` is the only command that
 reports a MIME and it returns the bytes with it.
@@ -309,8 +325,11 @@ effect but not in shape.
 ---
 
 ### XLANG-010 Structural type mirroring
-**Implementation**: `src/CodeFlow.App/ApiClient/ApiModels.cs` and `src/CodeFlow.App/Workspaces/WorkspaceModels.cs` (both carry explicit "mirrored one-for-one"
-comments) · `src/types/api.ts` (71 exported types) · `src/types/domain.ts` (43 exported types)
+**Implementation**: `src/CodeFlow.App/ApiClient/ApiModels.cs` and `src/CodeFlow.App/Workspaces/WorkspaceModels.cs` (both carried explicit "mirrored one-for-one"
+comments) · `backend/apiclient/models.go` and `backend/apiclient/httpmodels.go`, which carry the
+same declaration in Go — "mirrored field-for-field in `frontend/src/types/api.ts`" — and are what
+the `mirror` sweep below finds · `frontend/src/types/api.ts` (71 exported types) ·
+`frontend/src/types/domain.ts` (43 exported types)
 **Behaviour**: The API client's ~20 wire-contract types and the `api_*` database row types are
 mirrored field-for-field in TypeScript, with the field *names* forming the contract — the shell
 serialises them directly. `src/types/domain.ts:173` similarly mirrors the the sidecar `MemoryFinding`.
@@ -323,19 +342,19 @@ is declared, not incidental.
 ---
 
 ### XLANG-011 The API tree cascade delete is reimplemented client-side
-**Implementation**: SQLite `ON DELETE CASCADE` in the `api_*` schema · `renderer/src/state/apiTreeStore.ts`
+**Implementation**: SQLite `ON DELETE CASCADE` in the `api_*` schema, `backend/storage/migrations.go` · the in-memory half in `frontend/src/state/apiTreeStore.ts` · the Go reader `backend/apiclient/treestore.go`
 **Behaviour**: The database cascades deletes across collections → folders → requests. The
 frontend re-implements the same cascade in memory so a delete does not require reloading the
 whole tree. If the schema's cascade rules change, the in-memory version silently diverges and
 the UI shows rows that no longer exist.
 **Markers**: `VERBATIM` (the cascade *shape*, not a literal string). The renderer half is pinned
-by `renderer/src/state/apiTreeStore.test.ts`, including the detach-not-close handoff to
+by `frontend/src/state/apiTreeStore.test.ts`, including the detach-not-close handoff to
 `apiTabsStore`.
 
 ---
 
 ### XLANG-012 The refused-credential error prefix
-**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` (`AzureException.RefusedPrefix`) · `renderer/src/state/prStore.ts`
+**Implementation**: `src/CodeFlow.App/Providers/Azure/AzureClient.cs` (`AzureException.RefusedPrefix`) · `backend/shared/sentinel/sentinel.go` (the prefix) · `backend/app/registry.go` (`providerCredentials`, which translates the store's refusal into the provider package's own error) · `backend/providers/commands.go` (applied at the command boundary, never at the throw site) · `frontend/src/state/prStore.ts`
 **Behaviour**: An Azure DevOps call refused for the credential — `401` or `403` — returns an error
 string prefixed with a sentinel, so the frontend can offer "replace the token" instead of a Retry
 that will fail identically.
@@ -377,7 +396,7 @@ into an unhandled failure.
 ---
 
 ### XLANG-018 The refused-database error prefix
-**Implementation**: `src/CodeFlow.App/Dbml/IDbmlIntrospector.cs` (`DbmlConnectionException.Marker`) · `renderer/src/lib/dbml/connectionError.ts`
+**Implementation**: `src/CodeFlow.App/Dbml/IDbmlIntrospector.cs` (`DbmlConnectionException.Marker`) · `frontend/src/lib/dbml/connectionError.ts` · `backend/dbml/introspect.go` (`ErrConnectionRefused`, `refused`, `scrub`), `backend/dbml/commands.go` (`asCommandError`)
 **Behaviour**: A database the schema designer could not reach, or that refused the login, returns an
 error string prefixed with a sentinel, so the frontend can show the driver's own diagnosis — a wrong
 port, a bad password, a server that is not running — instead of "could not import".
@@ -401,7 +420,7 @@ drivers put it in their own exception text; only the driver's sentence survives 
 ---
 
 ### XLANG-013 The self-approval error prefix, and the GitHub sentence behind it
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` (`GitHubException.SelfApprovalPrefix`) · `renderer/src/state/prStore.ts`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubClient.cs` (`GitHubException.SelfApprovalPrefix`) · `backend/providers/github.go` (`githubSelfApprovalPhrase`, `GitHubError.SelfApproval`) · `backend/providers/commands.go` (the two `act_on_*` boundaries) · `frontend/src/state/prStore.ts`
 **Behaviour**: GitHub answers `422` when the reviewer is the pull request's own author. That call
 returns an error string prefixed with a sentinel, so the frontend can say what happened instead of
 showing the API's JSON error envelope.
@@ -446,7 +465,7 @@ changes it.
 ---
 
 ### XLANG-014 The stale-review error prefix
-**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubHost.cs` (`StaleReviewPrefix`) · `renderer/src/state/prStore.ts`
+**Implementation**: `src/CodeFlow.App/Providers/GitHub/GitHubHost.cs` (`StaleReviewPrefix`) · `frontend/src/state/prStore.ts` · `backend/providers/publish.go` (`gitHubHost.EnsureUnchanged`) · `frontend/src/state/prStore.ts`
 **Behaviour**: A findings batch whose anchors were computed against a commit that is no longer the
 pull request's head is refused, and the error carries a sentinel so the frontend can say "review it
 again" instead of offering a Retry that will refuse identically.
@@ -471,7 +490,7 @@ to compare, so its half of `BUG-REVIEW-a` is still open and is marked as such in
 ---
 
 ### XLANG-015 The nothing-to-analyse error prefix
-**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs` (`NothingToAnalyzePrefix`) · `src/CodeFlow.App/Ai/AiTurn.cs` · `renderer/src/lib/analyzeRefusal.ts` · `renderer/src/state/jobsStore.ts`
+**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs` (`NothingToAnalyzePrefix`) · `src/CodeFlow.App/Ai/AiTurn.cs` · `frontend/src/lib/analyzeRefusal.ts` · `frontend/src/state/jobsStore.ts` · `backend/ai/changes.go` (`ErrNothingToAnalyze`), `backend/tickets/commands.go` (`reviewSentinels`)
 **Behaviour**: A pre-commit analysis of a clean working tree is refused before the model is invoked,
 and the error carries a sentinel so the frontend shows an empty state rather than a failure banner.
 
@@ -505,15 +524,23 @@ made. History is for things that happened.
 
 **Markers**: `VERBATIM` (the prefix). Electron's own
 `Error invoking remote method 'codeflow:invoke'` wrapper used to reach the screen along with it;
-that is stripped at the bridge (`renderer/src/lib/bridge/host.ts`) and is not part of this contract.
+that is stripped at the bridge (`frontend/src/lib/bridge/host.ts`) and is not part of this contract.
 
 ---
 
 ### XLANG-016 The acceptance-criteria verdict block
-**Implementation**: `src/CodeFlow.App/Ai/Prompts/DEFAULT_TICKET_REVIEW_STANDARD.txt` · `src/CodeFlow.App/Tickets/TicketVerdict.cs` · `renderer/src/lib/parseTicketVerdict.ts`
+**Implementation**: `src/CodeFlow.App/Ai/Prompts/DEFAULT_TICKET_REVIEW_STANDARD.txt` · `src/CodeFlow.App/Tickets/TicketVerdict.cs` · `frontend/src/lib/parseTicketVerdict.ts` · `backend/tickets/verdict.go` (`ParseVerdict`, `SplitReview`)
 **Behaviour**: a ticket review closes with two sections whose headers and field labels are payload,
 not prose. Two parsers match on them, one per language, and the prompt is what makes the model emit
 them.
+
+**The prompt is the third party, and since Phase 9 it is pinned like the other two.**
+`backend/tickets/promptcontract_test.go` asserts that every literal `verdict.go` matches — both `##`
+headers, `### AC-1:`, and all seven field labels — is present in
+`DEFAULT_TICKET_REVIEW_STANDARD.txt`, and runs the prompt's own worked example through
+`ParseVerdict`. Without it, renaming a header in the prompt is a change no test can see: the
+fixtures keep parsing, the renderer keeps rendering, and the coverage section is silently empty for
+every ticket from then on. Found by the Phase 9 inventory audit (`tools/inventory`).
 
 ```
 ## VERIFICACIÓN DE CRITERIOS DE ACEPTACIÓN
@@ -555,10 +582,17 @@ labels `Veredicto:` / `Evidencia:` / `Cobertura:` / `Faltante:` / `Fuera de alca
 The accents are part of them; both parsers accept a dropped one on the two `##` headers only, the
 same allowance `parseAnalysis.ts` makes for `Ubicacion`.
 
+**Go port**: the two parsers read **one file**, `backend/tickets/testdata/crosslang-verdict.md`, from
+`backend/tickets/verdict_test.go` and `frontend/src/lib/parseTicketVerdict.crosslang.test.ts`. A
+fixture copied to each side would drift in exactly the way this contract exists to prevent, and the
+drift is silent: two parsers that disagree do not fail, they answer different things about whether a
+criterion was met. The same file also carries two ordinary findings, which is what proves the
+`XLANG-001` collision defence on the **unsplit** text.
+
 ---
 
 ### XLANG-017 The ticket-review refusal prefixes
-**Implementation**: `src/CodeFlow.App/Tickets/TicketReview.cs` (`NotLinkedPrefix`, `SyncFailedPrefix`) · `renderer/src/lib/analyzeRefusal.ts`
+**Implementation**: `src/CodeFlow.App/Tickets/TicketReview.cs` (`NotLinkedPrefix`, `SyncFailedPrefix`) · `frontend/src/lib/analyzeRefusal.ts` · `backend/tickets/review.go` (`ErrNoTicketLinked`, `ErrTicketUnreadable`), `backend/tickets/commands.go` (`reviewSentinels`)
 **Behaviour**: two sentinels in the family of `NOTHING_TO_ANALYZE: `, both with a trailing space.
 
 `TICKET_NOT_LINKED: ` — the branch has no ticket. A **state**, not a failure: the section shows how
@@ -577,6 +611,37 @@ calm empty state is how a review silently stops running.
 
 **Markers**: `VERBATIM` (both prefixes). They depend on the same `jobsStore.run` normalisation
 `XLANG-015` documents.
+
+---
+
+### XLANG-019 The update availability and its five reasons
+**Implementation**: `src/CodeFlow.App/Update/UpdateService.cs` · `frontend/src/lib/bridge/updater.ts`
+(`Availability`, `UpdateUnavailableReason`, `UpdateCheckError`) · `frontend/src/state/updateStore.ts` ·
+`backend/update/check.go` (`Availability`, the five `reason*` constants)
+**Behaviour**: `update_check` answers a snake_case `Availability` and **never rejects**. Three
+outcomes travel in one shape, and the renderer tells them apart by two fields:
+
+| `available` | `reason` | What the renderer does |
+|---|---|---|
+| `true` | `""` | Offers the update; reads `version`, `notes`, `date`, `asset_*`, `install_kind`. |
+| `false` | `""` | Resolves `null` — up to date. |
+| `false` | one of the five | Throws `UpdateCheckError(reason)`; the panel maps it to a sentence. |
+
+The middle row is the one the whole shape exists for. Reporting "up to date" for a request that
+never reached GitHub is indistinguishable from the truth at a glance and wrong in the way that
+matters, so "could not check" has to be a third answer rather than a swallowed failure.
+
+**Inputs / outputs**: the five reasons are `no-credential`, `unauthorized`, `no-release`,
+`no-asset`, `unreachable`. `install_kind` is `"auto" | "manual"` and is a property of the platform,
+not of the release — it is set on every answer, including the unavailable ones, because the
+renderer's type has no room for its absence.
+**Edge cases**: `notes` and `date` are read for truthiness and replaced by the modal's own fallback,
+so empty and absent mean the same thing — but `install_kind` is read unconditionally, so a missing
+key renders "undefined". Every field is therefore a value with no `omitempty`.
+**Markers**: `VERBATIM` (the ten field names and the five reason strings). A reason reworded on
+either side becomes a missing translation rather than a compile error, and a field renamed on the Go
+side compiles and arrives as `undefined`. Pinned by `TestTheAvailabilityCrossesInTheRenderersShape`
+and `TestAnUnavailableAnswerCarriesWhyAndTheRunningVersion`.
 
 ---
 

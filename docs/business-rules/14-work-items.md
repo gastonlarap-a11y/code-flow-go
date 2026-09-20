@@ -53,7 +53,7 @@ sprint. It is recorded here because the design only makes sense against it:
 ## Rules
 
 ### WI-001 Ticket identity
-**Implementation**: `TicketStore.IdFor`
+**Implementation**: `TicketStore.IdFor` · `backend/tickets/paths.go` (`ID`)
 **Behaviour**: a ticket is keyed `{provider}:{org}:{project}:{external_id}`, composed in the store
 rather than by callers so the primary key and `idx_tickets_identity` cannot disagree about what
 "the same ticket" means.
@@ -62,7 +62,7 @@ rather than by callers so the primary key and `idx_tickets_identity` cannot disa
 **Frontend dependency**: `Ticket.id`, used as the argument to every by-id command.
 
 ### WI-002 Where a ticket's files live
-**Implementation**: `TicketPaths`, `AppPaths.TicketsRoot`
+**Implementation**: `TicketPaths`, `AppPaths.TicketsRoot` · `backend/tickets/paths.go` (`Slug`, `MirrorPath`, `Root`)
 **Behaviour**: `{root}/{org}/{project}/{id}-{slug}`, where root is the `tickets_root_dir` setting
 and falls back to `{BaseDirectory}/tickets`. Blank counts as unset. The id leads the directory name
 so directories sort and complete by the number a person quotes, and a retitled ticket keeps its
@@ -82,7 +82,7 @@ invariant mode in a different place.
 **Frontend dependency**: `Ticket.mirror_path`.
 
 ### WI-022 A mirror never moves
-**Implementation**: `TicketPaths.MirrorFor`, `TicketSync.RunAsync`
+**Implementation**: `TicketPaths.MirrorFor`, `TicketSync.RunAsync` · `backend/tickets/paths.go` (`MirrorFor`)
 **Behaviour**: a ticket already mirrored keeps the directory recorded in its `mirror_path`; a fresh
 name is computed only the first time it is seen. Blank counts as never mirrored.
 **Edge cases**: the directory used to be recomputed from the current title on **every** sync, so
@@ -96,7 +96,7 @@ It is also what makes the case change in `WI-002` safe: existing directories are
 nothing already on disk is renamed.
 
 ### WI-003 The mirror owns four names and no more
-**Implementation**: `TicketMirror.Write`
+**Implementation**: `TicketMirror.Write` · `backend/tickets/mirror.go` (`WriteMirror`)
 **Behaviour**: rewrites exactly `ticket.md`, `acceptance-criteria.md`, `raw.json` and
 `attachments/`. Creates `notes/` empty on first sync and never writes to it again. There is no
 recursive delete anywhere in the type, so anything else a user puts in the directory survives **by
@@ -107,7 +107,7 @@ can legitimately carry two files called `captura.png`.
 **Frontend dependency**: none; this is for the user and for the AI to read as files.
 
 ### WI-004 Attachments are downloaded and relinked
-**Implementation**: `TicketSync.DownloadAsync`, `TicketMirror.Relink`
+**Implementation**: `TicketSync.DownloadAsync`, `TicketMirror.Relink` · `backend/tickets/sync.go` (`downloadAttachments`), `backend/tickets/mirror.go` (`Relink`)
 **Behaviour**: every `AttachedFile` relation is fetched within a 16 MB per-sync budget and the
 `<img>` sources in the rendered Markdown are rewritten to the local copies.
 **Edge cases**: an attachment that fails or does not fit is **named in `ticket.md`** rather than
@@ -115,7 +115,7 @@ silently absent — a screenshot the model cannot see is a fact worth stating. O
 never fails the sync.
 
 ### WI-005 Which account a project's tickets come from
-**Implementation**: `TicketAccounts.Resolve`
+**Implementation**: `TicketAccounts.Resolve` · `backend/tickets/accounts.go` (`ResolveAccount`)
 **Behaviour**: the organisation is `workspaces.ado_org` → `projects.ado_org` → the single configured
 connection → `none`. The board project follows the same "explicit choice wins" order:
 `workspaces.ado_project` → `projects.ado_project`. Neither is inferred from the repository once a
@@ -135,7 +135,7 @@ the organisation it was listed from addresses nothing.
 `settings.ticketAccountProject`, whose list comes from the existing `ado_list_projects` command.
 
 ### WI-023 One review panel, two axes
-**Implementation**: `review_changes` (`TicketCommands.ReviewAsync`), `AiTurn.AnalyzeChangesAsync`, `TicketReview.RunAsync`, `Ai/ReviewScope.cs`, `AnalyzeSection`, `aiPanelStore`
+**Implementation**: `review_changes` (`TicketCommands.ReviewAsync`), `AiTurn.AnalyzeChangesAsync`, `TicketReview.RunAsync`, `Ai/ReviewScope.cs`, `AnalyzeSection`, `aiPanelStore` · `backend/tickets/review.go` (`ReviewChanges`, `diffFor`), `backend/ai/changes.go` (`AnalyzeChanges`, `ReviewAgainstTicket`, `ScopeLine`)
 **Behaviour**: a review of local changes is described by two independent choices — **which diff**
 (`scope`: the uncommitted tree, or everything the branch contributes over a base) and **whether the
 work item is judged too** (`withTicket`). Each combination keeps its own prompt, routing key and
@@ -162,7 +162,7 @@ would have been describing the wrong diff.
 **Frontend dependency**: `reviewChanges`, `aiPanelStore.scope` / `.withTicket`.
 
 ### WI-024 Judging uncommitted work against criteria carries a caveat
-**Implementation**: `ReviewScopes.CriteriaCaveat`
+**Implementation**: `ReviewScopes.CriteriaCaveat` · `backend/ai/changes.go` (`CriteriaCaveat`)
 **Behaviour**: with `scope: working` **and** a ticket, the payload carries an explicit instruction:
 the branch's earlier commits are not being shown, so absence of evidence is not evidence of absence —
 answer `no verificable`, never `no cumple`. Empty for a branch scope, which has the evidence.
@@ -175,7 +175,7 @@ carries the `no verificable` doctrine (`WI-012`); the caveat is what activates i
 present for one scope and absent for the other.
 
 ### WI-026 A ticket that does not describe the change is said so, first
-**Implementation**: `DEFAULT_TICKET_REVIEW_STANDARD` (§"Before anything else"), `TicketCoverage.Relevant`, `TicketVerdictPanel`
+**Implementation**: `DEFAULT_TICKET_REVIEW_STANDARD` (§"Before anything else"), `TicketCoverage.Relevant`, `TicketVerdictPanel` · `backend/tickets/verdict.go` (`Coverage.Relevant`)
 **Behaviour**: the review judges **relevance before criteria**. When the linked work item has no real
 connection to the files the diff touches, it answers `Relevancia: no corresponde`, sets
 `Cobertura: no verificable`, does **not** grade the criteria, and names what the ticket is about
@@ -204,6 +204,7 @@ other rules each came out of a real failure.
 
 ### WI-022 A verdict reaches the board only because somebody pressed a button
 **Implementation**: `Tickets/TicketComment.cs` · `Providers/Azure/AzureWorkItemClient.AddCommentAsync` ·
+`backend/tickets/comment.go` (`Comment`, `ToHTML`) · `backend/providers/azureworkitems.go` (`AddComment`) ·
 `components/ai/TicketVerdictPanel.tsx` (`PublishVerdict`) · `state/ticketStore.ts` (`comment`)
 **Behaviour**: `comment_ticket(ticketId, body)` posts `body` as a comment on the linked work item and
 answers with its URL. It is never called by a review finishing. A review is run many times while work
@@ -226,7 +227,7 @@ which is gated behind its own variable naming the exact work item it may write t
 run stays read-only.
 
 ### WI-021 A ticket on screen always says which branch's work it is
-**Implementation**: `TicketStore.List`, `TicketWithLinks`, `TicketDetail`, `WorkItemsView`, `ticketStore.load`
+**Implementation**: `TicketStore.List`, `TicketWithLinks`, `TicketDetail`, `WorkItemsView`, `ticketStore.load` · `backend/tickets/store.go` (`List`)
 **Behaviour**: `list_tickets` takes a **project** and returns each of its tickets with the
 `(project, branch)` pairs it is linked to, project **name** included. The detail pane prints that
 under the title — in the accent colour when it matches the open repository and branch, muted and
@@ -294,7 +295,7 @@ restarted. Changing the organisation clears the project in the same write, becau
 belongs to the organisation it was listed from.
 
 ### WI-006 The branch heuristic is a suggestion
-**Implementation**: `TicketBranchRef.Detect`
+**Implementation**: `TicketBranchRef.Detect` · `backend/tickets/branchref.go` (`SuggestForBranch`)
 **Behaviour**: recognises `AB#1234`, a Jira key (upper case only), and a leading number on the
 branch's own last segment.
 **Edge cases**: upper case is required for a Jira key because accepting lower case matches `utf-8`
@@ -305,7 +306,7 @@ from a work-item number and rejecting four-digit ids would reject the common rea
 explicit link, so no review is ever judged against a ticket nobody chose.
 
 ### WI-007 Criteria extraction has two modes and a floor
-**Implementation**: `TicketCriteriaReader.Read`
+**Implementation**: `TicketCriteriaReader.Read` · `backend/tickets/criteria.go` (`ReadCriteria`), `backend/tickets/html.go` (`SubstanceLength`)
 **Behaviour**: walks the configured field order — `ticket_criteria_fields:{org}:{project}`,
 defaulting to `Microsoft.VSTS.Common.AcceptanceCriteria` then `System.Description` — and takes the
 first field that clears the substance floor and is not a template. A field carrying a list yields
@@ -317,11 +318,18 @@ content, and counting the former calls an empty box a requirement. Prose is neve
 numbered criteria: doing it by regex cuts rules in half and the model then reports failures that
 belong to the splitting. A nested bullet extends the criterion above it rather than becoming its
 own, because a sub-case qualifies the rule it sits under.
+**Go port**: the HTML→Markdown conversion is hand-written (`backend/tickets/html.go`) rather than
+taken from a library, for the same reason `WI-002`'s fold table is explicit: what arrives is not
+arbitrary HTML, it is what one editor emits, and the whole of it is headings, emphasis, lists,
+links, images, code and tables. One rule of it had to be written rather than ported, because C#'s
+parser had it for free: a bare `<` in prose — *"si a < b entonces"* — opens nothing, and a scan that
+treats it as a tag swallows the sentence up to the paragraph's own `>`. A tag starts only at a `<`
+followed by a letter or `/`, closed by a `>` with no second `<` before it.
 **Frontend dependency**: `TicketCriteria.mode` and `.field` — the picker shows which field a
 ticket's requirements would come from before anything is linked.
 
 ### WI-008 A field repeated across tickets is a form, not an answer
-**Implementation**: `TicketCriteriaReader.IsTemplate`, `TicketStore.OthersOfType`
+**Implementation**: `TicketCriteriaReader.IsTemplate`, `TicketStore.OthersOfType` · `backend/tickets/criteria.go` (`IsTemplate`), `backend/tickets/store.go` (`OthersOfType`)
 **Behaviour**: a candidate field whose tag-stripped text matches the same field on another cached
 ticket of the same board and type is skipped. Compared against at most 20 others.
 **Edge cases**: with no other ticket cached the comparison says nothing and excludes nothing —
@@ -329,7 +337,7 @@ guessing without a corpus would drop a real requirement the first time a board i
 exactly when nobody would suspect the extraction. A cached payload that will not parse is ignored.
 
 ### WI-009 Sync runs on three triggers, never on a timer
-**Implementation**: `TicketSync.RunAsync`
+**Implementation**: `TicketSync.RunAsync` · `backend/tickets/sync.go` (`Sync`)
 **Behaviour**: on link, on an explicit refresh, and best-effort immediately before a review so the
 criteria being judged are current. A background poll would spend a PAT's rate budget on tickets
 nobody is looking at.
@@ -339,7 +347,7 @@ into a failed command. What the app reads is the cache; the mirror is for people
 An `external_id` that is not a number is rejected before any request.
 
 ### WI-010 A work item address is accepted in four shapes
-**Implementation**: `WorkItemLink.Parse`
+**Implementation**: `WorkItemLink.Parse` · `backend/providers/workitemlink.go` (`ParseWorkItemLink`)
 **Behaviour**: the work-item page on `dev.azure.com` or `{org}.visualstudio.com`, any board URL
 carrying `?workitem=`, and a bare id or `AB#`. Organisation and project come back null for a bare
 id, and the caller fills them from the workspace.
@@ -379,7 +387,7 @@ instead of trusting it. What the ticket standard adds is its own — the ticket 
 anti-assumption prohibitions and the two closing sections of `XLANG-016`.
 
 ### WI-013 A ticket review is stored in its own table
-**Implementation**: `TicketReviewStore`, `ticket_review_runs`
+**Implementation**: `TicketReviewStore`, `ticket_review_runs` · `backend/tickets/store.go` (`AddReview`, `ReviewsForBranch`)
 **Behaviour**: one row per finished review, holding the markdown, the parsed criteria, the coverage
 word, the findings in **the same JSON shape as `review_runs.findings`**, and the diff it judged.
 **Edge cases**: not a row in `review_runs`, and the reason is structural: that table's `pr_id` is
@@ -392,7 +400,7 @@ markdown, so one bad row cannot take the history list down.
 **Frontend dependency**: `TicketReviewResult`, `list_ticket_reviews`.
 
 ### WI-014 The review reads the branch's whole contribution, against a base you chose
-**Implementation**: `TicketReview.RunAsync`, `Diff.BranchContribution`, `renderer/src/lib/branches.ts`
+**Implementation**: `TicketReview.RunAsync`, `Diff.BranchContribution`, `renderer/src/lib/branches.ts` · `backend/tickets/review.go` (`reviewAgainstTicket`), `backend/git/branchcontribution.go` (`BranchContribution`)
 **Behaviour**: the diff is the merge base of the chosen base branch against the current **working
 tree** — one comparison, so a file touched in a commit and again uncommitted appears once. The prompt
 says so, because "this change is already committed" is not a distinction the model can make from the
@@ -416,7 +424,7 @@ is the review and the other one is not styled as dangerous: a review that finds 
 case.
 
 ### WI-016 The user's notes reach the review
-**Implementation**: `TicketMirror.ReadNotes`, `AiOperations.ReviewBranchAgainstTicketAsync`
+**Implementation**: `TicketMirror.ReadNotes`, `AiOperations.ReviewBranchAgainstTicketAsync` · `backend/tickets/mirror.go` (`ReadNotes`)
 **Behaviour**: the `.md` / `.txt` files in the mirror's `notes/` are read and passed to the model
 under `USER NOTES ON THIS TICKET:`, within a 20 000-character budget.
 **Edge cases**: reading is not writing — `WI-003` still holds, and nothing here creates, deletes or
@@ -426,7 +434,7 @@ unsaid is exactly what a review judging "does this deliver it" is missing, which
 that exists for the user is also the one the model is told about.
 
 ### WI-017 The ticket block has its own prompt budget, and the criteria have none
-**Implementation**: `AiOperations.ReviewBranchAgainstTicketAsync` (`MaxTicketChars`, `MaxTicketNotesChars`)
+**Implementation**: `AiOperations.ReviewBranchAgainstTicketAsync` (`MaxTicketChars`, `MaxTicketNotesChars`) · `backend/ai/changes.go` (`maxTicketChars`, `maxTicketNotesChars`)
 **Behaviour**: the ticket's prose is capped at 40 000 characters and the notes at 20 000; the diff
 keeps the 250 000 `PromptDiff` already budgets. The **acceptance criteria are never capped**.
 **Edge cases**: before this, the diff spent a deliberate budget and the ticket was concatenated after

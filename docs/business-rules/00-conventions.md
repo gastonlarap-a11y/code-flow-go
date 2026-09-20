@@ -96,19 +96,23 @@ document. An inline marker and its ledger row always agree because neither was r
 
 ## Source of truth for counts
 
+Counted over the Go tree since Phase 9. Where a figure moved, the 2.x one is kept beside it: this
+document's job is that nobody re-derives a number, and a figure with no predecessor reads like a
+correction when it is a port.
+
 | Fact | Value | How it was established |
 |---|---|---|
-| implementation files | 65 | `find `src/CodeFlow.App/` -name '*.rs' \| wc -l` |
-| the sidecar lines | 22 730 | `wc -l` over the same set |
-| Commands registered | 236 | 219 from the port's own parse (`analyze_working_changes` is gone), plus the 17 of `Tickets/TicketCommands.cs` |
-| Commands defined | 236 | same set, in both directions |
-| Commands invoked by the frontend | 232 | 216 plus the same 16 wrappers |
-| Dead commands | 1 | `debug_is_running` |
-| Event names | 13 | `.emit(` call sites |
+| implementation files | 171 | `find backend -name '*.go' ! -name '*_test.go'`. 2.x: 65 C# files |
+| implementation lines | 37 887 | `wc -l` over the same set. 2.x: 22 730 |
+| Commands registered | 235 | `bridge.Registry.Len()` over `app.BuildRegistry`, asserted by `backend/app/contract_test.go`. 2.x: 236, before `analyze_working_changes` went |
+| Commands invoked by the frontend | 246 | the `invoke<…>("name"` call sites in `commands.ts`, `apiCommands.ts` and `bridge/updater.ts`, re-derived on every test run. 2.x: 232, counted before the updater's three were included |
+| Commands deferred on purpose | 11 | nine `debug_*`, two `api_grpc_*`; asserted to stay **un**registered |
+| Dead commands | 1 | `debug_is_running` — no call site, no registration, no wrapper (DBG-037) |
+| Event names | 13 + 1 | the 13 with a wrapper in `lib/ipc/events.ts`, plus `update:progress`, subscribed inline by `lib/bridge/updater.ts` |
 | Event (name, producer) pairs | 19 | the four `debug:*` and the two `api:*` names have two producers each |
 | Emit call sites | 23 | — |
 | Rows in the event table | 20 | 19 pairs, with `git:progress` split into its stdout and stderr sites |
-| Tables | 21 | `CREATE TABLE IF NOT EXISTS` in `src/CodeFlow.App/Storage/Schema.cs` |
+| Tables | 23 | `CREATE TABLE` in `backend/storage`. 2.x: this document said 21 and `sqlite_master` held 23 (see `03-storage.md`) |
 | extracted case functions | **133** across 25 files | 128 ` + 5 ` |
 | Secret-scan rules | **15** | 14 `new Rule(...)`(…)` literals plus the appended `generic` rule, `src/CodeFlow.App/Security/SecretScan.cs` |
 

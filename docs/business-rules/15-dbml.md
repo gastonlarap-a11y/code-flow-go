@@ -75,7 +75,7 @@ unpacks it into the positioned `message (line:column)` the editor shows. That un
 ## Rules
 
 ### DBML-001 A document is found by walking the folder, not by asking git
-**Implementation**: `src/CodeFlow.App/Dbml/DbmlDocuments.cs`
+**Implementation**: `src/CodeFlow.App/Dbml/DbmlDocuments.cs` · `backend/dbml/documents.go` (`ListDocuments`)
 **Behaviour**: `dbml_list_documents` walks `rootPath` for files ending in `.dbml`, compared
 case-insensitively, and returns them project-relative, sorted, with `/` separators on every
 platform. It prunes rather than filters: a directory in `PrunedDirectories` (`.git`, `node_modules`,
@@ -93,6 +93,11 @@ for: that one takes an open `LibGit2Sharp.Repository` because it prunes through
 `Repository.Ignore.IsPathIgnored`, and a schema designer has to work in a plain folder (`GIT-039`).
 The fixed prune list is the substitute for gitignore rules, and it means a `.dbml` under
 `node_modules` — a dependency's, not the user's — is never offered.
+
+**Go port**: the "skip symlinked directories" half comes free, because `filepath.WalkDir` reads
+entries through `lstat` and a link to a directory is therefore not a directory to it. The rule is
+still worth stating — it is what stops one document being reported under two paths, and each path
+is a distinct layout key — so it is pinned by two tests rather than left to the library.
 
 ---
 
@@ -152,7 +157,8 @@ and the column beside it is where the diagram needs the width. Shortcut `Mod+5` 
 ---
 
 ### DBML-005 Positions persist per document, and outlive their tables
-**Implementation**: `src/CodeFlow.App/Dbml/DbmlLayoutStore.cs` · `src/CodeFlow.App/Dbml/DbmlCommands.cs` ·
+**Implementation**: `backend/dbml/store.go` (`LoadLayout`, `SavePositions`, `ClearLayout`) ·
+`src/CodeFlow.App/Dbml/DbmlLayoutStore.cs` · `src/CodeFlow.App/Dbml/DbmlCommands.cs` ·
 `src/CodeFlow.App/Storage/Schema.cs` (`dbml_layouts`)
 **Behaviour**: Only positions a person set are stored, one row per `(project_id, rel_path,
 table_key)`; every other table is placed by the auto-layout (`DBML-007`) each render. A save is a
@@ -374,7 +380,7 @@ heuristics — an awkward plural in a schema is a field name, never a wrong rela
 ---
 
 ### DBML-016 The assistant is one command with three modes, and reaches for nothing
-**Implementation**: `src/CodeFlow.App/Dbml/DbmlAssistant.cs` · `src/CodeFlow.App/Ai/Prompts/DBML_*_PROMPT.txt`
+**Implementation**: `src/CodeFlow.App/Dbml/DbmlAssistant.cs` · `src/CodeFlow.App/Ai/Prompts/DBML_*_PROMPT.txt` · `backend/dbml/assist.go` (`Assist`, `promptFor`)
 **Behaviour**: `dbml_assist` takes `mode`, the document's text, and an instruction. The mode selects
 one of three embedded system prompts and nothing else: `edit` is asked for the whole document
 rewritten, with no prose and no fence; `review` judges the design; `explain` describes it. The two
@@ -539,7 +545,7 @@ button is never disabled.
 ---
 
 ### DBML-023 A connection is a thing on the machine, and reading is all it can do
-**Implementation**: `src/CodeFlow.App/Dbml/DbmlConnectionStore.cs` · `Dbml/Introspectors/`
+**Implementation**: `src/CodeFlow.App/Dbml/DbmlConnectionStore.cs` · `Dbml/Introspectors/` · `backend/dbml/store.go` (`UpsertConnection`, `DeleteConnection`), `backend/dbml/commands.go` (`SaveConnection`, `DeleteConnection` — the ordering)
 **Behaviour**: Four engines can be read: PostgreSQL, SQL Server, MySQL/MariaDB and SQLite. A saved
 connection carries what is needed to reach one — driver, host, port, database, username, TLS, and
 `file_path` for the engine that is a file rather than a server.
@@ -561,7 +567,7 @@ that does not exist.
 ---
 
 ### DBML-024 The password is the one thing that never crosses the boundary
-**Implementation**: `src/CodeFlow.App/Security/CredentialStore.cs` (`DbPasswordKey`) · `Dbml/DbmlCommands.cs`
+**Implementation**: `src/CodeFlow.App/Security/CredentialStore.cs` (`DbPasswordKey`) · `Dbml/DbmlCommands.cs` · `backend/security/credentials.go` (`DBPasswordKey`), `backend/app/registry.go` (`dbPasswords`), `backend/dbml/commands.go`
 **Behaviour**: `db_connections` has **no password column**. The secret goes to the OS credential
 store under `db-password:{id}` and is read only inside the sidecar, to build a connection string that
 never leaves the process. `DbmlConnection` — the record that crosses IPC in both directions — has no
@@ -579,10 +585,17 @@ their exception, which would otherwise carry the password into a toast, a log an
 in `13-cross-language-contracts.md`.
 **Markers**: `VERBATIM` on the key format and on the sentinel.
 
+**Go port**: `Connection` — the type that crosses the bridge — has no password field, so the rule is
+enforced by the type rather than by every handler remembering it, and
+`TestSavingAConnectionThroughTheBridgeNeverEchoesThePassword` marshals a saved connection and
+asserts neither the word nor the secret appears. The two orderings (row before credential on save,
+credential before row on delete) are pinned by tests that assert **what the credential store was
+asked, in what order**, since neither ordering is observable from the result alone.
+
 ---
 
 ### DBML-025 The sidecar reports a schema; the renderer writes the document
-**Implementation**: `src/CodeFlow.App/Dbml/DbmlSnapshotBuilder.cs` · `renderer/src/lib/dbml/emitDbml.ts`
+**Implementation**: `src/CodeFlow.App/Dbml/DbmlSnapshotBuilder.cs` · `renderer/src/lib/dbml/emitDbml.ts` · `backend/dbml/snapshot.go` (`snapshotBuilder`)
 **Behaviour**: `dbml_introspect_database` answers with a **structured snapshot**, not DBML text, and
 `emitDbml` turns it into a document. So DBML emission lives in exactly one place — a pure function a
 node test can call — instead of once per engine in C#, where nothing could test it without a server
@@ -607,7 +620,7 @@ from a foreign key alone would be a guess the database did not make.
 ---
 
 ### DBML-026 Each engine's catalogue, and what it takes to read it correctly
-**Implementation**: `src/CodeFlow.App/Dbml/Introspectors/`
+**Implementation**: `src/CodeFlow.App/Dbml/Introspectors/` · `backend/dbml/engines.go` (PostgreSQL, SQL Server, MySQL), `backend/dbml/sqlite.go`, `backend/dbml/introspect.go` (the dialling and the pooling rule)
 **Behaviour**: Four query sets behind one interface. **PostgreSQL** reads columns from
 `information_schema` and everything else from `pg_catalog`, because that is the only place member
 *order* survives — a composite foreign key read through `constraint_column_usage` comes back with its
@@ -637,6 +650,28 @@ table's `sql` is read. PostgreSQL's increment flag is `is_identity = 'YES' OR CO
 arrive as `(N'…')`; the `N` Unicode prefix is stripped with the parentheses, or it reached the diagram
 as part of the value. Both were found by running these introspectors against real servers
 (`ServerIntrospectorTests`), which no synthetic row set could have caught.
+
+**Go port.** Four drivers, all free and permissively licensed — `jackc/pgx` (MIT),
+`go-sql-driver/mysql` (MPL-2.0), `microsoft/go-mssqldb` (MIT) and the `modernc.org/sqlite` (BSD-3)
+this process already carried for its own database. None of the Azure packages `go-mssqldb` lists
+reaches the build: `go list -deps` over this package names zero of them.
+
+Three things this port decided or corrected:
+
+- **`AUTOINCREMENT` is not read from the stored DDL.** It cannot apply to a column that is not
+  already a rowid alias, so it adds nothing to the `increment` boolean the alias rule already
+  settles — and reading it table-wide would have marked every column of such a table as
+  incrementing. The rowid rule itself (a primary key of exactly one `INTEGER` column) is unchanged
+  and pinned by three tests, including the `INT`/`BIGINT` near-misses.
+- **SQLite reports a `UNIQUE` declaration only as an index**, with origin `u`, because it has no
+  constraint catalogue to read one from. It is recorded as both a constraint and an index, so the
+  builder's own rules decide what the column says and what the diagram draws. Without this a
+  `email TEXT UNIQUE` column came back as not unique — the diagram losing a constraint the database
+  does enforce. Caught by a test.
+- **A constraint's backing index is dropped only when the constraint has one member.** Dropping
+  every constraint-backed index — which the first version of the builder did — loses every
+  **composite** unique key from the diagram, silently, since DBML has nowhere but an index block to
+  put one. Also caught by a test.
 
 **SQL Server requires the process to run with globalization invariant mode off.**
 `Microsoft.Data.SqlClient` refuses to open a connection under it — `Globalization Invariant Mode is

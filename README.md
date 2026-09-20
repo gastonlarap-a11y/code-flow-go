@@ -36,7 +36,7 @@ entries and the same update feed.
 
 | | 2.7.1 (Electron + .NET) | 3.0 (Go + Wails) |
 |---|---|---|
-| Installed size | 439 MB | **53 MB** (measured, macOS arm64) |
+| Installed size | 440 MB | **56 MB** (measured, macOS arm64: the `.app` bundle `task package:mac` produces) |
 | Processes | Electron main + renderer + GPU + utility, plus the .NET core | one |
 | Backend languages | TypeScript + C# | Go |
 | Renderer | bundled Chromium | the OS webview (WKWebView / WebView2) |
@@ -45,6 +45,45 @@ A whole class of defects disappears with the sidecar: the named-pipe address bug
 ending the app, the "core is down" state and the 64 MiB frame cap all lived in a transport that no
 longer exists. The cost is the webview: Electron shipped its own Chromium, so the UI was identical
 on both platforms; Wails uses the system's, which is why there is a minimum macOS below.
+
+## What got faster, and what did not
+
+Measured on this machine by `task parity -- -time`, which sends the same request to the installed
+2.7.1 core and to 3.0 and times both. 2.7.1's figure includes one round trip over its unix socket,
+because that is what the command cost a user; 3.0's is an in-process call, because there is no
+transport left to include.
+
+| Request | 2.7.1 | 3.0 | |
+|---|---:|---:|---|
+| `list_workspaces` (empty) | 2.39 ms | **82 µs** | 29× |
+| `api_load_tree` | 4.42 ms | **229 µs** | 19× |
+| `get_setting` (absent) | 233 µs | **35 µs** | 7× |
+| an unknown command | 6.95 ms | **1 µs** | — |
+| `get_status` | 12.6 ms | **9.7 ms** | 1.3× |
+| `list_branches` | 5.67 ms | 8.06 ms | **0.7×** |
+| `get_staged_diff` | 1.99 ms | 8.49 ms | **0.2×** |
+| `get_working_diff` | 8.05 ms | 22.7 ms | **0.4×** |
+| `get_commit_diff` | 748 µs | 14.8 ms | **0.05×** |
+
+**Everything that reads the database or answers from memory is an order of magnitude faster**, and
+for one reason: it is a function call now. The transport was most of what those commands cost.
+
+**Everything that touches git is slower**, for the reason named in `backend/git`'s package comment:
+this port replaced libgit2 with the `git` command line, so each git read is a process spawn — about
+5–7 ms on macOS before git does any work. The fixture these numbers come from holds five files, so
+what the git rows measure is almost entirely that fixed cost. On a large repository the work
+dominates and the gap should narrow; **that has not been measured**, and until it is, the honest
+claim is the narrow one: the port pays a per-command spawn, not that it is slower on real
+repositories.
+
+One consequence is worth knowing because it multiplies: `get_working_diff` renders each untracked
+file with its own `git diff --no-index`, so a tree with fifty new files spawns fifty processes. It
+is correct and it is what makes untracked content appear in the diff at all, but it is linear in
+something a user controls.
+
+Cold start, idle memory and a 100 000-file repository are **not** in the table: they need the window
+open on each operating system, and they are part of the manual acceptance pass rather than something
+this machine can answer alone.
 
 ## Requirements
 
@@ -79,9 +118,19 @@ Run with `task <name>` (or `wails3 task <name>`, which bundles the runner).
 | `task frontend:check` | `pnpm typecheck` and `pnpm test` |
 | `task smoke` | Runs the built binary's own environment probes |
 
-`bin/CodeFlow --smoke-test` answers "is this binary viable on this machine?" — it checks that git is
-reachable and that a repository can be created and read back — and exits 0 or 1. CI runs it on both
-operating systems against the binary it just built.
+`bin/CodeFlow --smoke-test` answers "is this binary viable on this machine?" and exits 0 or 1. Three
+probes, the same three 2.x had, each doing the thing rather than checking the library loads:
+
+- **git** — `git --version`, then a repository initialised and read back in a temp directory with an
+  isolated `HOME`, which is what a locked-down laptop actually fails;
+- **storage** — a database opened and every migration run against it, because `modernc.org/sqlite`
+  is SQLite transpiled to Go and its failures are platform-shaped;
+- **pty** — a pseudo-terminal allocated and handed back. The terminal has no fallback: if the OS
+  refuses, the panel simply never opens.
+
+CI runs it on both operating systems against the binary it just built, and the release workflow runs
+it against each installer before uploading — a probe missing here is a class of broken build that
+ships.
 
 ## Layout
 

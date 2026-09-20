@@ -22,6 +22,25 @@ calling each one actually does. The tree/environment/history/cookie stores the C
 forward into are owned by `03-storage.md` — those commands are described here only as thin
 forwarders, not re-specified.
 
+**Go port**: the stores are `backend/apiclient/treestore.go` and `datastore.go`, registered by
+`RegisterStore`; the two file readers are `files.go`. The transports register separately and
+deliberately need no database, so they answer on an install whose storage failed — which is also
+when somebody is most likely to be importing a collection.
+
+Two decisions the port made that the original left implicit, both narrowing what a command may
+write:
+
+- **`api_update_environment` does not carry `is_global`.** The column is the seeding's own: a second
+  `is_global = 1` row makes `ensure_globals_environment` skip that workspace for ever, and clearing
+  the flag on the only one leaves it with no always-in-scope variables and no way back from the UI.
+  Neither is a state a rename should be able to reach, so the `UPDATE` names only `name`,
+  `variables` and `sort_order`.
+- **`api_read_file_base64` guesses its MIME type from an explicit table, not from the host's
+  registry.** `mime.TypeByExtension` reads whatever the machine has registered, so the same file
+  attached from two machines would go out under two `Content-Type` values. The table is the same
+  bet on determinism the ticket slug's fold table makes (`WI-002`). An unknown extension is
+  `application/octet-stream`, which is the honest answer rather than a guess.
+
 ## Commands
 
 Grouped as they appear in `src/CodeFlow.App/ApiClient/ApiCommands.cs`, in file order. Source lines point at the `pub fn`.
@@ -162,6 +181,39 @@ Not mirrored to TS, and not meant to be — pure the sidecar runtime state, desc
 GraphQL is not a distinct transport — it is `HttpSendRequest` with a JSON `body_text` sent to a
 single endpoint by POST, per `src/CodeFlow.App/ApiClient/HttpSend.cs` ("HTTP (and therefore GraphQL — it is a POST with a JSON
 body) transport"). There is no GraphQL-specific code in this file at all.
+
+**Go port.** One source file per concern rather than one for all of them, because three of these
+have published vectors and are worth reading on their own:
+
+| Rules | Go |
+|---|---|
+| `API-001`…`006`, `API-015`…`018`, `API-020`, `API-024` | `backend/apiclient/httpsend.go` |
+| `API-007`…`010` (Digest) | `backend/apiclient/digest.go` |
+| `API-011`…`014` (SigV4) | `backend/apiclient/sigv4.go` |
+| `API-019`, `API-021`…`023` (decoding, cookies) | `backend/apiclient/decode.go` |
+| `API-060`, `API-061` (the cancel registry) | `backend/apiclient/httpcommands.go` |
+
+All twelve cases of `test-vectors/http.vectors.json` are consumed unchanged by
+`backend/apiclient/vectors_test.go`, including Amazon's `get-vanilla` signature and RFC 2617's
+worked Digest example.
+
+Three things this port had to decide, each because Go's standard library draws a line the original's
+did not:
+
+- **`canonical_uri` reads the *escaped* path** (`URL.EscapedPath`), not Go's decoded `URL.Path`.
+  AWS requires each segment URI-encoded **twice** for every service but S3, so the encoder has to
+  run over the form that still carries its `%` — a wire path of `/a%20b` signs as `/a%2520b`, which
+  is what this document's own `% → %25` note describes. Encoding the decoded path instead yields
+  `/a%20b`: one encoding, plausible, stable, and rejected with a signature mismatch the server
+  reports as a bare 403. Caught by a test rather than by reading.
+- **The cross-host redirect stop is `http.ErrUseLastResponse`**, not a custom error. Go's client
+  treats any other error from the redirect callback as a failed request, so a sentinel there would
+  turn the one hop `keep_auth_on_redirect` exists to resume into a hard failure. The hop cap uses
+  the other branch deliberately, since failing is what it wants.
+- **`max_response_bytes` gets no backend default.** Go cannot tell an absent JSON field from an
+  explicit `0`, and `0` means *unlimited* here — so defaulting it to 50 MiB on this side would cap a
+  user who had asked for no cap. The default belongs to the settings screen, which sends the field
+  on every request. The same reasoning leaves `verify_ssl` and `follow_redirects` alone.
 
 **One `HttpClient` per send.** `build_client` (`src/CodeFlow.App/ApiClient/HttpSend.cs`) constructs a fresh client
 for every request: TLS verification (`danger_accept_invalid_certs`), the client identity, the CA
@@ -424,6 +476,31 @@ headers the transport injects below the level this code can otherwise see.
 
 ## WebSocket
 
+**Go port**: `backend/apiclient/wsconnect.go` (the socket and its pump),
+`backend/apiclient/socketio.go` (the framing, all of it pure),
+`backend/apiclient/socketioconnect.go` (the session), `backend/apiclient/streams.go` (the registry
+and the two events), `backend/apiclient/streamcommands.go` (the five commands). The WebSocket
+library is `coder/websocket`, which the tree already carried as a transitive dependency of Wails —
+so the streaming transports added no new dependency at all.
+
+Four things this port had to decide:
+
+- **The pump detaches with `context.WithoutCancel`**, the same idiom a terminal session uses for its
+  shell, rather than holding an application-lifetime context in the registry. The context a command
+  is handed dies the moment the command returns, which for `connect` is milliseconds after the
+  handshake — a pump on it would close the socket it had just opened.
+- **Reading and writing are two goroutines**, because the library permits one concurrent reader and
+  one concurrent writer and a single loop would have to poll. On a socket that says nothing for an
+  hour, polling is an hour of wasted wakeups.
+- **The registry records each connection's transport**, so `api_ws_send` aimed at a Socket.IO
+  session is refused by name instead of putting a raw frame on a wire that expects Engine.IO
+  framing — which the server drops with nobody the wiser. The original's `Connection` enum carried
+  the same information in its variants.
+- **`verify_ssl: false` keeps signature verification** (`API-027`) for free rather than by
+  construction: Go's `InsecureSkipVerify` disables identity checking and nothing else, so a
+  genuinely broken peer still fails the handshake. That is the behaviour the original had to write a
+  custom verifier to preserve, and the one MQTT's equivalent loses (`BUG-API-d`).
+
 `src/CodeFlow.App/ApiClient/WebSocketStream.cs`. The reader/writer pump (`pump`, `src/CodeFlow.App/ApiClient/WebSocketStream.cs`) is spawned and **outlives** the `connect`
 command — `connect` takes an `AppHandle` (not the short-lived `State` a command normally receives)
 specifically so the pump can keep reaching the registry and emitting events long after the command
@@ -574,16 +651,54 @@ as its own `system` message with a base64 payload (`src/CodeFlow.App/ApiClient/S
 attachment is never spliced back into the placeholder it belongs to.** This is deliberate, per the
 comment at `src/CodeFlow.App/ApiClient/SocketIoFraming.cs`: *"Reassembling it into the placeholder it belongs to is more than
 the console needs; showing it beats dropping it."* Preserve this — do not build real Socket.IO
-binary reassembly in the port unless asked.
+binary reassembly in the port unless asked. Preserved in `backend/apiclient/socketioconnect.go` and
+pinned by `TestABinaryAttachmentIsShownAsItsOwnLine`, which asserts the attachment arrives as its
+own `system` line rather than inside the event it belongs to.
 
 **`DIVERGENCE-API-a`** (module-wide, confirmed by the comment quoted above and shared by
 [MQTT](#mqtt)): **there is no automatic reconnection anywhere in this transport layer.** A dropped
 WebSocket, Socket.IO or MQTT connection surfaces as a `closed`/`error` `StreamStatusEvent` and stays
 closed until the user explicitly calls `connect` again. In an API *testing* tool this is correct
 behaviour, not a gap — silent reconnection would hide exactly the kind of instability the tool
-exists to reveal. Do not add reconnect/backoff logic in the port.
+exists to reveal. Do not add reconnect/backoff logic in the port. Held in the Go port by
+`TestNothingReconnects`, which counts the dials a server sees after it hangs up: one, and no second
+one on its own.
 
 ## MQTT
+
+**Go port**: `backend/apiclient/mqttwire.go` (the 3.1.1 and 5.0 wire format),
+`backend/apiclient/mqtt.go` (the URL, the client id, the TLS), `backend/apiclient/mqttconnect.go`
+(the two goroutines).
+
+**The protocol is written out rather than taken from a library**, which is the one place this port
+adds work to avoid a dependency. Two reasons, and the second is the deciding one:
+
+- Every Go MQTT client reconnects on its own, and `API-038` forbids exactly that. Disabling it means
+  fighting a state machine that is the library's whole selling point, on every release.
+- The original already fights its own library's defaults — the packet size, the keep-alive floor,
+  the request-queue depth — and three of this document's rules (`API-042`, `API-044`, `API-045`)
+  exist only to describe that fight. A codec that does what it is told has none of them to fight.
+
+What that costs is a few hundred lines; what it buys is that `API-044`'s asymmetry is now a
+deliberate two-line rule rather than an inherited precondition, and that nothing reconnects because
+nothing was written to.
+
+Two decisions inside it:
+
+- **The v5 property blocks are written empty and skipped on the way in.** This console asks for no
+  session expiry, no topic-alias maximum and no receive maximum, so the broker's defaults apply —
+  and decoding all forty property types in order to discard them would be forty chances to be wrong
+  about a length. What matters is landing on the byte after the block.
+- **The two goroutines share the writer behind a mutex**, because both sides write: the command side
+  publishes and subscribes, and the reader answers PUBLISH with PUBACK and PINGREQ with PINGRESP. A
+  partially written packet interleaved with another is a stream neither end can parse.
+
+A defect the tests caught, in the shared registry rather than in MQTT: `Close` cancelled the
+connection's context immediately after posting the close command, which **raced the goodbye**. On a
+WebSocket that costs a close frame; on MQTT it costs the last will — a broker that sees the socket
+drop without a DISCONNECT publishes it, so a client shutting down cleanly would announce itself as
+dead on other people's dashboards. The cancel is now a backstop that waits for the pump to finish,
+with a two-second grace period for one that is wedged.
 
 `src/CodeFlow.App/ApiClient/MqttConnection.cs`. A live MQTT connection is **two tasks**, not one (`src/CodeFlow.App/ApiClient/MqttConnection.cs`):
 
@@ -891,7 +1006,9 @@ out.
 **Frontend dependency**: none.
 **Markers**: `BUG-API-a` — the adjacent comment claims this replicates "browsers … turn a redirected
 POST into a bodiless GET", but the code downgrades every non-GET/HEAD method (PUT, PATCH, DELETE
-included), not just POST. Suspected-correct: only POST should downgrade on 301/302. Ported as-is.
+included), not just POST. Suspected-correct: only POST should downgrade on 301/302. Ported as-is in
+`backend/apiclient/httpsend.go` (`redirectedMethod`) and pinned by
+`TestTheManualPathDowngradesEveryNonGetMethod`, which drives a real PUT and DELETE through the hop.
 
 ### API-006 Redirect hop cap enforcement is duplicated, not doubled
 **Implementation**: `src/CodeFlow.App/ApiClient/HttpSend.cs`, `:337-343`
@@ -928,7 +1045,9 @@ an error naming the missing challenge / unsupported algorithm / unsupported qop.
 (RFC 7235-legal) is only recognised if Digest happens to be first in that value.
 **Frontend dependency**: none.
 **Markers**: `BUG-API-b`. Suspected-correct: split each header value on scheme boundaries before
-matching. Ported as-is.
+matching. Ported as-is in `backend/apiclient/digest.go` (`digestChallenge`) and pinned by
+`TestTheDigestChallengeParserMissesACombinedHeaderValue`, which asserts the miss rather than
+the fix — so restoring the bug is what would fail if somebody "corrected" it by accident.
 
 ### API-009 Digest hash/session/qop selection
 **Implementation**: `src/CodeFlow.App/ApiClient/HttpSend.cs`, `:1047-1072`
@@ -1100,7 +1219,10 @@ rather than erroring.
 **Frontend dependency**: none.
 **Markers**: `BUG-API-c` — `path` should follow RFC 6265 §5.1.4's default-path algorithm (derived
 from the request URI's own path) instead of always defaulting to `"/"`. Suspected-correct:
-implement that algorithm. Ported as-is.
+implement that algorithm. Ported as-is in `backend/apiclient/decode.go` (`parseSetCookie`). The
+published fixture only exercises a root-path request and so cannot tell the two behaviours apart;
+`TestTheDefaultCookiePathIsAlwaysRoot` sends `/v1/users/42` and pins the flat `/`, which is the
+case that can.
 
 ### API-024 No cookie jar in this layer
 **Implementation**: `src/CodeFlow.App/Storage/Database.cs`; `src/CodeFlow.App/ApiClient/HttpSend.cs`
@@ -1335,7 +1457,9 @@ empty-topic will (however the rest of it is populated) is treated as "no will co
 3.1.1 defines as "keepalive disabled" — and passes the value through unclamped.
 **Inputs / outputs**: `keep_alive_secs: ulong` in; a `Duration` on the matching version's options out.
 **Edge cases**: this is a consequence of rumqttc's own v5 precondition, not an independent design
-choice — do not "fix" it into v4/v5 symmetry.
+choice — do not "fix" it into v4/v5 symmetry. Preserved in `backend/apiclient/mqtt.go`
+(`keepAliveFor`), where it is now a deliberate rule rather than an inherited one, and pinned by
+`TestTheKeepAliveFloorAppliesToV5Only`.
 **Frontend dependency**: none.
 **Markers**: none.
 
