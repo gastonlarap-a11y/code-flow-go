@@ -218,6 +218,97 @@ func (s *Store) MarkFinding(ctx context.Context, runID, findingID, estado string
 	})
 }
 
+// NewRun is one finished review to file.
+//
+// The id is the job's own, reused: the run on screen and the same run reloaded from history after a
+// restart are then one thing rather than two rows that happen to look alike.
+type NewRun struct {
+	ID          string
+	ProjectID   string
+	WorkspaceID string
+	PRID        int64
+	Iter        int64
+	Level       string
+	Meta        string
+	ReviewMD    string
+	Diff        string
+	Findings    string
+}
+
+// AddRun files a finished review.
+//
+// `ON CONFLICT DO NOTHING`: a retry with the same job id is a silent no-op rather than a second row
+// (`STORE-013`). Everything here is immutable once written except the findings, which a publish
+// updates with the threads it opened.
+func (s *Store) AddRun(ctx context.Context, run NewRun) error {
+	return s.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO review_runs (id, project_id, workspace_id, pr_id, iter, level, meta, review_md, diff, findings, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO NOTHING`,
+			run.ID, run.ProjectID, run.WorkspaceID, run.PRID, run.Iter, run.Level,
+			run.Meta, run.ReviewMD, run.Diff, run.Findings, s.clock.Now())
+		if err != nil {
+			return fmt.Errorf("add the review run: %w", err)
+		}
+		return nil
+	})
+}
+
+// CountRuns is how many reviews a pull request already has. Zero means the first one, which skips
+// reconciliation entirely.
+func (s *Store) CountRuns(ctx context.Context, projectID string, prID int64) (int64, error) {
+	var count int64
+	err := s.db.Read(ctx, func(ctx context.Context, db *sql.DB) error {
+		return db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM review_runs WHERE project_id = ? AND pr_id = ?`,
+			projectID, prID).Scan(&count)
+	})
+	return count, err
+}
+
+// LatestRun is the newest review of a pull request, by when it was written.
+//
+// By `created_at` rather than by `iter`: the iteration is a counter this application maintains, and
+// a row written by an older version, or one restored from an export, can carry a number that does
+// not order with the rest.
+func (s *Store) LatestRun(ctx context.Context, projectID string, prID int64) (RunDetail, error) {
+	var run RunDetail
+	err := s.db.Read(ctx, func(ctx context.Context, db *sql.DB) error {
+		err := db.QueryRowContext(ctx,
+			`SELECT id, project_id, pr_id, iter, level, meta, review_md, diff, findings, created_at
+			   FROM review_runs WHERE project_id = ? AND pr_id = ?
+			   ORDER BY created_at DESC LIMIT 1`, projectID, prID).
+			Scan(&run.ID, &run.ProjectID, &run.PRID, &run.Iter, &run.Level, &run.Meta,
+				&run.ReviewMD, &run.Diff, &run.Findings, &run.CreatedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("read the latest review run: %w", err)
+		}
+		return nil
+	})
+	return run, err
+}
+
+// WriteFindings replaces a run's findings column after a publish.
+//
+// The **only** write that mutates a `review_runs` row after it is inserted (`STORE-013`): the
+// markdown, the diff and the meta are immutable once written, and the findings are not because a
+// publish records which thread each one now owns. A row that is gone is not an error — the user may
+// have deleted the run from another window while the batch was going out, and the comments landed
+// on the pull request either way.
+func (s *Store) WriteFindings(ctx context.Context, runID, findings string) error {
+	return s.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE review_runs SET findings = ? WHERE id = ?`, findings, runID); err != nil {
+			return fmt.Errorf("write findings: %w", err)
+		}
+		return nil
+	})
+}
+
 // DeleteRun removes one saved run.
 func (s *Store) DeleteRun(ctx context.Context, id string) error {
 	return s.exec(ctx, `DELETE FROM review_runs WHERE id = ?`, id)

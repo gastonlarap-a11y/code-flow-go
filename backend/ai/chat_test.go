@@ -67,9 +67,15 @@ func TestAChatTurnIsRecordedWithItsRouting(t *testing.T) {
 	assert.Equal(t, "ollama", reply.Provider)
 	assert.Equal(t, "2026-09-17T23:00:00Z", reply.CreatedAt,
 		"from the stored row, so a reopened conversation names the same instant")
-	assert.Positive(t, reply.ResponseTimeMs)
+	// Measured in whole milliseconds, and a round trip to a server in this process legitimately
+	// completes inside one — so the assertion is that the measurement was taken and travelled, not
+	// that it came out above zero. Asserting positivity here failed on a fast machine.
+	assert.GreaterOrEqual(t, reply.ResponseTimeMs, int64(0))
 
 	require.Len(t, turns.written, 1)
+	require.NotNil(t, turns.written[0].ResponseTimeMs)
+	assert.Equal(t, reply.ResponseTimeMs, *turns.written[0].ResponseTimeMs,
+		"the number the caller sees is the number that was stored")
 	assert.Equal(t, "what does this do?", turns.written[0].Question)
 	assert.Equal(t, "the answer", turns.written[0].Answer)
 	assert.False(t, turns.written[0].IsError)

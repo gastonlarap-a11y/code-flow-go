@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/gastonlarap-a11y/code-flow/backend/storage"
 	"github.com/google/uuid"
@@ -181,6 +182,24 @@ func (s *Store) SetWorkspaceGitIdentity(ctx context.Context, id string, name, em
 		storage.NullString(name), storage.NullString(email), id)
 }
 
+// SetWorkspaceTicketAccount writes which Azure organisation and board project this workspace's work
+// items come from (WI-005).
+//
+// **Both columns in one write**, always, because a project name without the organisation it was
+// listed from addresses nothing: changing the organisation clears the project, and the renderer
+// sends the pair. Blank is stored as NULL — an empty string here would read as a chosen board with
+// no name and fall through the resolution order to nothing anyway.
+func (s *Store) SetWorkspaceTicketAccount(ctx context.Context, id string, org, project *string) error {
+	if org != nil && strings.TrimSpace(*org) == "" {
+		org = nil
+	}
+	if project != nil && strings.TrimSpace(*project) == "" {
+		project = nil
+	}
+	return s.update(ctx, `UPDATE workspaces SET ado_org = ?, ado_project = ? WHERE id = ?`,
+		storage.NullString(org), storage.NullString(project), id)
+}
+
 // ResolveGitIdentity answers the commit identity registered for a repository on disk (WS-008).
 //
 // The join is what makes the feature work: the user configures a name and email once per
@@ -241,6 +260,33 @@ func (s *Store) ListProjects(ctx context.Context, workspaceID string) ([]Project
 			workspaceID)
 		if err != nil {
 			return fmt.Errorf("list projects: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+
+		for rows.Next() {
+			p, err := scanProject(rows.Scan)
+			if err != nil {
+				return fmt.Errorf("scan project: %w", err)
+			}
+			out = append(out, p)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// ListAllProjects returns every project in every workspace, ordered as ListProjects orders one
+// workspace's.
+//
+// The one caller is resolving a pasted pull-request link: it has a repository and no idea which
+// workspace holds the checkout, so it has to look at all of them.
+func (s *Store) ListAllProjects(ctx context.Context) ([]Project, error) {
+	out := make([]Project, 0, 16)
+	err := s.db.Read(ctx, func(ctx context.Context, db *sql.DB) error {
+		rows, err := db.QueryContext(ctx,
+			`SELECT `+projectColumns+` FROM projects ORDER BY workspace_id, sort_order, created_at`)
+		if err != nil {
+			return fmt.Errorf("list every project: %w", err)
 		}
 		defer func() { _ = rows.Close() }()
 
@@ -340,6 +386,37 @@ func (s *Store) MoveProjectToWorkspace(ctx context.Context, id, workspaceID stri
 // layout and ticket link that referenced it.
 func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	return s.update(ctx, `DELETE FROM projects WHERE id = ?`, id)
+}
+
+// ---- the pull-request host link ---------------------------------------------------------------
+//
+// Six columns, three per host, written only through the three statements below. Each link writes
+// **its own** columns and leaves the other host's alone: a project can legitimately carry both
+// (`STORE-011`), dispatch prefers GitHub when it does (`REVIEW-001`), and clearing the other side
+// here would silently change which host an existing project is reviewed on.
+
+// LinkProjectGitHub points a project at a GitHub repository.
+func (s *Store) LinkProjectGitHub(ctx context.Context, id, host, owner, repo string) error {
+	return s.update(ctx,
+		`UPDATE projects SET github_host = ?, github_owner = ?, github_repo = ? WHERE id = ?`,
+		host, owner, repo, id)
+}
+
+// LinkProjectADO points a project at an Azure DevOps repository.
+func (s *Store) LinkProjectADO(ctx context.Context, id, org, project, repoID string) error {
+	return s.update(ctx,
+		`UPDATE projects SET ado_org = ?, ado_project = ?, ado_repo_id = ? WHERE id = ?`,
+		org, project, repoID, id)
+}
+
+// UnlinkProject clears both links at once.
+//
+// All six columns, whichever was set: the renderer offers one "unlink" for a project that is linked
+// to one host as far as the user can see, and leaving the other three populated would re-link it on
+// the next dispatch.
+func (s *Store) UnlinkProject(ctx context.Context, id string) error {
+	return s.update(ctx, `UPDATE projects SET ado_org = NULL, ado_project = NULL, ado_repo_id = NULL,
+		github_host = NULL, github_owner = NULL, github_repo = NULL WHERE id = ?`, id)
 }
 
 // ---- settings ---------------------------------------------------------------------------------

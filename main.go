@@ -92,6 +92,7 @@ func main() {
 	// registry rather than a second copy of this list.
 	registry := app.BuildRegistry(app.Deps{
 		Paths:       paths,
+		Version:     version,
 		Emitter:     emitter,
 		DB:          db,
 		Credentials: security.NewStore(),

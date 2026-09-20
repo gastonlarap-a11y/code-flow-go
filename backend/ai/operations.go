@@ -13,12 +13,14 @@ import (
 const (
 	// maxDiffChars is a working diff or a file's context.
 	maxDiffChars = 20_000
-	// maxReviewDiffChars is a whole branch comparison, which is legitimately much larger than a
-	// working diff.
-	maxReviewDiffChars = 120_000
 	// maxConflictSideChars bounds one side of a conflict. A side bigger than this is better
 	// merged by hand than fed whole to a model.
 	maxConflictSideChars = 40_000
+
+	// There is no cap here for a branch comparison or a review any more. Both arrive already
+	// reshaped by `GIT-031`, which spends a budget — trimming context, excluding what has no
+	// signal, naming what it left out — where this file's old blunt cut dropped whatever fell past
+	// 120 000 characters unmarked.
 )
 
 // Operations is everything the AI commands do, behind one type so the transport branch is decided
@@ -128,7 +130,7 @@ func (o Operations) GenerateCommitMessage(ctx context.Context, runID, diff strin
 	if err != nil {
 		return "", err
 	}
-	return stripCodeFence(result.Text), nil
+	return StripCodeFence(result.Text), nil
 }
 
 // PRDescriptionDraft is a drafted title and body.
@@ -150,8 +152,12 @@ func (o Operations) GeneratePRDescription(ctx context.Context, runID, sourceBran
 	template := o.router.SharedTemplate(ctx,
 		"pr_description_template", "claude_pr_description_template", Prompt(PromptPRDescription))
 
+	// The diff arrives already reshaped for a prompt (`GIT-031`), so there is no second cut here: a
+	// blunt one at a fixed character count is exactly what that rule replaced — it took whatever
+	// fell past the limit and dropped it unmarked, so the model described the first files and
+	// nothing from the rest, with no way to tell.
 	payload := fmt.Sprintf("RAMA ORIGEN: %s\nRAMA DESTINO: %s\n\nDIFF:\n%s",
-		sourceBranch, targetBranch, truncate(diff, maxReviewDiffChars))
+		sourceBranch, targetBranch, diff)
 
 	result, err := o.Invoke(ctx, runID, TaskPRDescription, Invocation{
 		Prompt:       template,
@@ -209,7 +215,7 @@ func (o Operations) ResolveConflict(ctx context.Context, runID, filePath, base, 
 	if err != nil {
 		return "", err
 	}
-	return stripCodeFence(result.Text), nil
+	return StripCodeFence(result.Text), nil
 }
 
 // InlineEdit rewrites an editor selection (AI-027).
@@ -237,7 +243,7 @@ func (o Operations) InlineEdit(ctx context.Context, runID, relPath, fileContent,
 	if err != nil {
 		return "", err
 	}
-	return stripCodeFence(result.Text), nil
+	return StripCodeFence(result.Text), nil
 }
 
 // ApplyFindingFix lets an agent fix a review finding in the working tree (AI-026).
@@ -300,15 +306,18 @@ func truncate(text string, limit int) string {
 	return string(runes[:limit])
 }
 
-// stripCodeFence removes one outer fence (AI-018).
+// StripCodeFence removes one outer fence (AI-018).
 //
-// Applied to the three results meant to be used verbatim — a file, an editor selection, a commit
-// message — because some models wrap their answer in a fence despite being told not to, and those
-// backticks would go into the repository's history.
+// Applied to the results meant to be used verbatim — a file, an editor selection, a commit message,
+// a rewritten schema — because some models wrap their answer in a fence despite being told not to,
+// and those backticks would go into the repository's history or into the user's buffer.
 //
 // **One** fence, and only an outer one: a genuinely fenced block inside the intended content does
 // not survive a round trip, which is what the original does and what the tests pin.
-func stripCodeFence(text string) string {
+//
+// Exported because the schema assistant applies it to one of its three modes and not the other two
+// — stripping a review's first fenced block would eat a finding (`DBML-016`).
+func StripCodeFence(text string) string {
 	trimmed := strings.TrimSpace(text)
 	if !strings.HasPrefix(trimmed, "```") {
 		return trimmed

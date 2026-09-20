@@ -58,11 +58,33 @@ linters:
       # those "misspellings" are byte contracts: `NOTHING_TO_ANALYZE: ` is a sentinel the renderer
       # matches with startsWith, and "correcting" it to ANALYSE would silently break a handled
       # state. Default catches real typos and leaves spelling variants alone.
+      #
+      # The rest are Spanish words this checker reads as misspelled English. They appear in
+      # `VERBATIM` literals — the review markdown a person reads and every stored `review_runs` row
+      # already carries them — so "correcting" one would rewrite history and break a parser at the
+      # same time. Add a word here only when it is a Spanish literal the specification fixes.
       ignore-rules:
         - analyze
         - analyse
+        - intencional # "es intencional", a finding dismissed as deliberate
+        - revisiones # "### 📌 Siguen abiertos de revisiones anteriores" (REVIEW-040)
+        - autor # "- Autor:" in a link review's PULL_REQUEST.md (REVIEW-009)
+        - previos # "los commits previos de la rama", the SCOPE line (WI-023)
+        - respondas # "Nunca respondas `no cumple`", the criteria caveat (WI-024)
+        # The two `##` headers of XLANG-016 are accepted with and without their accents by both
+        # parsers, and the unaccented spelling is what one of the fixtures pins.
+        - VERIFICACION
+        - ACEPTACION
 
   exclusions:
+    paths:
+      # `build/` holds packaging assets, and `wails3 generate build-assets` writes the Go in it —
+      # dependency installers for the platform SDKs, and per-platform `main_*.go`. None of it is
+      # this application's code, all of it is overwritten by the next `wails3 update build-assets`,
+      # and linting it means either carrying someone else's style or editing files that will not
+      # keep the edit. The app's own Go is `backend/`, `tools/` and `main.go`.
+      - build/
+
     rules:
       # Tests may ignore errors from setup helpers and use weak randomness; they are not the
       # threat model, and requiring a check on every t.Setenv-adjacent call buries the assertions.
