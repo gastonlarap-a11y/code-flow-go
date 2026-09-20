@@ -1,0 +1,229 @@
+name: Release
+
+# Builds the two installers and publishes them as a GitHub release (MIGRATION-GO.md §10.5).
+#
+# **This workflow is what 2.7.x users reach 3.0 through.** Its output is read by the updater already
+# installed on their machines: `update_check` fetches `releases/latest` from this repository, picks
+# the `.dmg` or the `-Setup-` `.exe`, and refuses anything whose `<asset>.sha256` is missing or does
+# not match (BOOT-021). So three things here are contracts, not conventions:
+#
+#   - the artefact names, exactly as §5.5 fixes them — `-Setup-` is how the installer is told from
+#     the portable build, and handing over the portable one updates nothing;
+#   - a `.sha256` beside every artefact, written from inside the directory so the recorded name has
+#     no path in it;
+#   - the release is published **only after** both installers and all four digests are present. A
+#     release that goes live half-uploaded is one every user's updater refuses.
+#
+# Publishing is deliberate: the run creates a *draft* and only the final job flips it live.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the release when the build succeeds
+        type: boolean
+        default: false
+
+# Never cancel a release in flight: a half-uploaded draft is worse than a duplicate run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.27.1"
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11.20.0"
+  WAILS_VERSION: v3.0.0-beta.23
+  MACOSX_DEPLOYMENT_TARGET: "26.0"
+
+jobs:
+  gate:
+    name: Version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      publish: ${{ steps.read.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # The version lives in three places and the updater compares against one of them. They are
+      # required to agree here rather than discovered to disagree by a user whose update loops.
+      - name: Read and reconcile the version
+        id: read
+        shell: bash
+        run: |
+          config=$(sed -n 's/^  productVersion: *"\(.*\)"/\1/p' build/config.yml)
+          package=$(node -p "require('./frontend/package.json').version")
+
+          if ! [[ "$config" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::build/config.yml productVersion is '$config', not X.Y.Z"
+            exit 1
+          fi
+          if [ "$config" != "$package" ]; then
+            echo "::error::build/config.yml says $config and frontend/package.json says $package"
+            exit 1
+          fi
+
+          echo "version=$config" >> "$GITHUB_OUTPUT"
+
+          # A release that already exists is not rebuilt: its assets are what users have been
+          # offered, and replacing them under a published tag changes what a digest refers to.
+          if gh release view "v$config" >/dev/null 2>&1; then
+            echo "v$config is already released; building without publishing"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=${{ github.event_name == 'workflow_dispatch' && inputs.publish || 'true' }}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  draft:
+    name: Draft
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create the draft release
+        run: |
+          gh release create "v${{ needs.gate.outputs.version }}" \
+            --draft --target "$GITHUB_SHA" \
+            --title "v${{ needs.gate.outputs.version }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  installers:
+    name: Installer (${{ matrix.os }})
+    needs: [gate, draft]
+    # `always()` so a skipped draft (an existing release) still builds: the artefacts are worth
+    # having even when nothing will be published.
+    if: always() && needs.gate.result == 'success'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false # one platform's failure must not hide the other's
+      matrix:
+        include:
+          - os: macos-15
+            task: package:mac:dmg
+          - os: windows-2025
+            task: package:win
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install the Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Install the renderer's dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Package
+        shell: bash
+        run: wails3 task ${{ matrix.task }} VERSION=${{ needs.gate.outputs.version }}
+
+      # The packaged binary answers "is this viable on this machine?" and exits. A build that
+      # cannot probe its own environment is not one to upload.
+      - name: Smoke-test what was built
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./bin/CodeFlow.exe --smoke-test
+          else
+            ./bin/CodeFlow.app/Contents/MacOS/CodeFlow --smoke-test
+          fi
+
+      - name: Check the artefact names and digests
+        shell: bash
+        run: |
+          cd bin
+          version="${{ needs.gate.outputs.version }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            expected=("CodeFlow-Setup-$version-x64.exe" "CodeFlow-Setup-$version-x64.exe.sha256" \
+                      "CodeFlow-Portable-$version-x64.exe" "CodeFlow-Portable-$version-x64.exe.sha256")
+          else
+            expected=("CodeFlow-$version-arm64.dmg" "CodeFlow-$version-arm64.dmg.sha256")
+          fi
+          for name in "${expected[@]}"; do
+            [ -f "$name" ] || { echo "::error::$name was not produced"; exit 1; }
+          done
+          # A digest recorded with a path in it is the v1.7.5 failure in a different shape: the
+          # updater matches the last path segment, so a recorded `bin/CodeFlow…` still matches —
+          # but a single-entry file is trusted without matching at all, so this checks the content
+          # is a digest and a bare name rather than trusting either rule.
+          for name in *.sha256; do
+            grep -qE '^[0-9a-f]{64} [ *][^/\\]+$' "$name" || {
+              echo "::error::$name is not '<64 hex>  <bare name>'"; cat "$name"; exit 1; }
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ runner.os }}
+          path: |
+            bin/*.dmg
+            bin/*.exe
+            bin/*.sha256
+          if-no-files-found: error
+
+      - name: Upload to the draft release
+        if: needs.gate.outputs.publish == 'true'
+        shell: bash
+        run: |
+          cd bin
+          gh release upload "v${{ needs.gate.outputs.version }}" \
+            $(ls *.dmg *.exe *.sha256 2>/dev/null) --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  publish:
+    name: Publish
+    needs: [gate, installers]
+    if: needs.gate.outputs.publish == 'true' && needs.installers.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      # The last gate before every installed 2.7.x starts offering this release. Four assets, by
+      # the patterns the updater itself selects on — not by count, because four files of the wrong
+      # kind would pass a count.
+      - name: Require every asset the updater needs
+        shell: bash
+        run: |
+          assets=$(gh release view "v${{ needs.gate.outputs.version }}" --json assets --jq '.assets[].name')
+          echo "$assets"
+          for pattern in '\.dmg$' '\.dmg\.sha256$' '\-Setup\-.*\.exe$' '\-Setup\-.*\.exe\.sha256$'; do
+            echo "$assets" | grep -qE "$pattern" || {
+              echo "::error::no asset matches $pattern; refusing to publish"; exit 1; }
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish
+        run: |
+          gh release edit "v${{ needs.gate.outputs.version }}" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "3.0.0"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "3.0.0",
+			"CompanyName": "Gastón Lara P.",
+			"FileDescription": "My Product Description",
+			"LegalCopyright": "© now, My Company",
+			"ProductName": "CodeFlow",
+			"Comments": "This is a comment"
+		}
+	}
+}
