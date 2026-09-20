@@ -44,6 +44,27 @@ func TestCreatesNestedFileAndDir(t *testing.T) {
 	assert.Equal(t, "", content)
 }
 
+// The same thing without the `CreateDir` first, which is the only way one caller reaches it.
+//
+// The schema designer's "new document" field takes a whole relative path — typing `esquemas/ventas`
+// is how a person makes a folder there, since the panel offers no other way to make one — and the
+// store calls `create_file` with it directly. Nothing else in the app creates a file at a path
+// whose parent may not exist, so without this the behaviour that feature depends on was asserted
+// only in combination with the call that made the assertion unnecessary.
+func TestCreateFileMakesItsOwnParentDirectory(t *testing.T) {
+	repo := tempRepo(t)
+
+	require.NoError(t, files.CreateFile(repo, "esquemas/ventas/2026.dbml"))
+
+	content, err := files.ReadFileText(repo, "esquemas/ventas/2026.dbml")
+	require.NoError(t, err)
+	assert.Equal(t, "", content)
+
+	info, err := os.Stat(filepath.Join(repo, "esquemas", "ventas"))
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
+}
+
 // fsops.vectors.json#move-refuses-destructive-cases
 func TestMoveRefusesDestructiveCases(t *testing.T) {
 	repo := tempRepo(t)

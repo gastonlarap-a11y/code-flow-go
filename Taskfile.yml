@@ -32,6 +32,11 @@ includes:
 vars:
   APP_NAME: CodeFlow
   BIN_DIR: bin
+  # `go build -o <name>` writes exactly `<name>`: unlike a bare `go build`, an explicit output path
+  # gets no `.exe` added on Windows. So the binary was called `CodeFlow`, while `package:win` and
+  # the release workflow's smoke test both looked for `CodeFlow.exe` — the installer step failed on
+  # a file that had never been written under that name.
+  EXE: '{{if eq OS "windows"}}.exe{{end}}'
   # The single source of truth for the version at build time. The CI gate additionally requires
   # build/config.yml and frontend/package.json to agree with it.
   VERSION: '{{.VERSION | default "0.0.0"}}'
@@ -139,7 +144,7 @@ tasks:
     # the line, byte for byte identical to an unstripped build (measured, not assumed). What is
     # lost is attaching a debugger to a *release* binary, which is not how this is debugged.
     cmds:
-      - go build -trimpath -mod=readonly -ldflags "-s -w -X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}} .
+      - go build -trimpath -mod=readonly -ldflags "-s -w -X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}}{{.EXE}} .
 
   dev:
     desc: Run the app with hot reload (Go rebuild + Vite on 1420).
@@ -150,7 +155,7 @@ tasks:
     desc: Run the packaged binary's own environment probes.
     deps: [build]
     cmds:
-      - "{{.BIN_DIR}}/{{.APP_NAME}} --smoke-test"
+      - "{{.BIN_DIR}}/{{.APP_NAME}}{{.EXE}} --smoke-test"
 
   # ---- packaging (§10.3) ------------------------------------------------------------------
   #
@@ -164,6 +169,19 @@ tasks:
     deps: [build]
     cmds:
       - task: darwin:create:app:bundle
+      # `wails3 generate build-assets` writes `build/darwin/Assets.car` from **its own** icon — the
+      # catalog holds `appicon_Assets/wails_icon_vector`, the Wails logo — and `create:app:bundle`
+      # copies it in. macOS resolves an app icon from the asset catalog **before** the
+      # `CFBundleIconFile` in Info.plist, so the bundle showed a W however correct `icons.icns` was.
+      #
+      # Removed rather than regenerated: there is no CodeFlow `.icon` source to build a catalog
+      # from, and 2.7.1 shipped an `.icns` and nothing else. `wails3 generate icons` rewrites the
+      # `.icns` from `build/appicon.png` but leaves the catalog untouched, which is how this
+      # survived a regeneration.
+      #
+      # After the bundle is built and therefore after it was signed, so the signature is renewed.
+      - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Assets.car"
+      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
 
   package:mac:dmg:
     desc: Build the published disk image, CodeFlow-{{.VERSION}}-arm64.dmg.

@@ -16,7 +16,8 @@ export type LayoutKey =
   | "terminalPanelHeight"
   | "apiSidebarWidth"
   | "apiSnippetWidth"
-  | "apiResponseHeight";
+  | "apiResponseHeight"
+  | "dbmlEditorWidth";
 
 const STORAGE_KEYS: Record<LayoutKey, string> = {
   sidebarWidth: "layout_sidebar_width",
@@ -34,6 +35,7 @@ const STORAGE_KEYS: Record<LayoutKey, string> = {
   apiSidebarWidth: "layout_api_sidebar_width",
   apiSnippetWidth: "layout_api_snippet_width",
   apiResponseHeight: "layout_api_response_height",
+  dbmlEditorWidth: "layout_dbml_editor_width",
 };
 
 export const LAYOUT_DEFAULTS: Record<LayoutKey, number> = {
@@ -52,6 +54,10 @@ export const LAYOUT_DEFAULTS: Record<LayoutKey, number> = {
   apiSidebarWidth: 288,
   apiSnippetWidth: 420,
   apiResponseHeight: 320,
+  // The schema designer opened with the editor and the diagram at half the window each, which is
+  // the wrong default for the thing people look at: a diagram needs the room and the source is
+  // read in glances. 420 is wide enough for a `Table` block without wrapping.
+  dbmlEditorWidth: 420,
 };
 
 interface LayoutState {

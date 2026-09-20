@@ -18,6 +18,7 @@ import "./index.css";
 import { pushErrorToast } from "./state/toastStore";
 import { translate } from "./state/languageStore";
 import { reloadForStaleChunk } from "./lib/lazyRetry";
+import { isCancellation } from "./lib/cancellation";
 import { openUrl } from "./lib/bridge/shell";
 
 /** Vite's own event, which it does not put in `WindowEventMap` (vitejs/vite#17508). The error is on
@@ -46,6 +47,12 @@ declare global {
  */
 window.addEventListener("unhandledrejection", (event) => {
   const reason: unknown = event.reason;
+
+  // A cancellation is not a failure, and this net was reporting it as one. Monaco cancels its own
+  // in-flight work when an editor is disposed, so switching between work items raised a toast per
+  // switch for something that had gone exactly right. See `lib/cancellation.ts`.
+  if (isCancellation(reason)) return;
+
   // `.message`, not `String(reason)`: the latter prepends `Error: ` to text that already reads as a
   // sentence, and the transport had already left one of its own in there.
   pushErrorToast(

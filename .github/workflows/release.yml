@@ -137,6 +137,17 @@ jobs:
       - name: Install the Wails CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
 
+      # The installer is built with NSIS, and windows-2025 does not ship it — the first release run
+      # failed with `"makensis": executable file not found in $PATH` after building everything else.
+      # Chocolatey is preinstalled on the image; NSIS puts `makensis` here and does not add it to
+      # PATH itself.
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Install the renderer's dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
