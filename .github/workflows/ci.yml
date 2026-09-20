@@ -79,13 +79,17 @@ jobs:
       - name: Cross-compile the other platform
         # Catches a build-tagged file that only its own OS ever compiles — the process-group and
         # Job Object code is split exactly that way.
-        shell: bash
-        run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            GOOS=darwin GOARCH=arm64 go build ./...
-          else
-            GOOS=windows GOARCH=amd64 go build ./...
-          fi
+        #
+        # **One direction only, and not for symmetry's sake.** macOS → Windows works because every
+        # Windows-only dependency here is pure Go (`danieljoos/wincred`, `golang.org/x/sys`).
+        # Windows → macOS cannot work: `keychain_darwin.go` binds the macOS Security framework
+        # through cgo, and a Windows runner has no macOS C toolchain, so the build fails on
+        # `undefined: keychain.UpdateItem` rather than on anything this repository wrote.
+        #
+        # Nothing is lost by dropping it: the macOS job compiles those same files natively, which
+        # is a stronger check than cross-compiling them would have been.
+        if: runner.os != 'Windows'
+        run: GOOS=windows GOARCH=amd64 go build ./...
 
   frontend:
     name: Renderer

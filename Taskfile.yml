@@ -102,10 +102,15 @@ tasks:
     # gate locally, where it is cheap, instead of leaving it to a runner.
     #
     # Vet and test still run for the host only: cross-compiling is a build, not an execution.
+    #
+    # macOS to Windows only, and not for symmetry: `keychain_darwin.go` binds the macOS Security
+    # framework through cgo, so type-checking it from Windows fails on the binding rather than on
+    # anything here. A developer on Windows loses nothing — CI's macOS job lints those files
+    # natively, which is the stronger check.
     cmds:
       - cmd: |
           if [ "$(go env GOOS)" = "windows" ]; then
-            GOOS=darwin GOARCH=arm64 golangci-lint run
+            echo "skipped: linting darwin from Windows needs a macOS C toolchain for the keychain binding"
           else
             GOOS=windows GOARCH=amd64 golangci-lint run
           fi
