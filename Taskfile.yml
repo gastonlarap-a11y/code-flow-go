@@ -89,8 +89,26 @@ tasks:
     cmds:
       - go vet ./...
       - golangci-lint run
+      - task: go:lint:other-platform
       - go test -race -count=1 ./...
       - task: go:no-bare-goroutines
+
+  go:lint:other-platform:
+    desc: Lint the build-tagged files the host platform never compiles.
+    # `golangci-lint run` only ever sees the files that build for GOOS. The process-group and
+    # Job Object code is split exactly along that line, so `group_windows.go` was never linted on
+    # a Mac and `group_unix.go` is never linted on Windows — and three real gosec findings lived
+    # in the Windows half until CI compiled it for the first time. This closes that half of the
+    # gate locally, where it is cheap, instead of leaving it to a runner.
+    #
+    # Vet and test still run for the host only: cross-compiling is a build, not an execution.
+    cmds:
+      - cmd: |
+          if [ "$(go env GOOS)" = "windows" ]; then
+            GOOS=darwin GOARCH=arm64 golangci-lint run
+          else
+            GOOS=windows GOARCH=amd64 golangci-lint run
+          fi
 
   go:no-bare-goroutines:
     desc: Fail on a `go` statement outside shared/safego (BOOT-035).

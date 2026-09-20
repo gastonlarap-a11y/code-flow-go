@@ -1,0 +1,25 @@
+# Line endings.
+#
+# Without this file, a Windows checkout converts every tracked text file to CRLF — GitHub's own
+# runners have `core.autocrlf=true` — and `gofmt` reads a CRLF Go file as unformatted from line 1.
+# The whole lint gate then fails on Windows and passes everywhere else, which is how this was
+# found: the first CI run on windows-2025 flagged files that were provably formatted on macOS.
+#
+# So the rule is `eol=lf` rather than `text=auto`: these files are LF in the repository and LF in
+# every working tree, on every platform. Nothing here is edited by a tool that needs CRLF.
+* text=auto eol=lf
+
+# Binary, so git never tries to normalise them.
+*.png binary
+*.ico binary
+*.icns binary
+*.car binary
+*.dmg binary
+*.exe binary
+*.jar binary
+
+# Generated and vendored: kept out of diffs and language statistics, but still normalised above.
+frontend/pnpm-lock.yaml linguist-generated=true
+go.sum linguist-generated=true
+build/windows/nsis/wails_tools.nsh linguist-generated=true
+docs/verbatim/test-inventory.md linguist-generated=true

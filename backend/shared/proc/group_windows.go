@@ -3,12 +3,22 @@
 package proc
 
 import (
+	"context"
 	"os/exec"
 	"strconv"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+// taskkillTimeout bounds the fallback kill.
+//
+// It is reached when the Job Object could not be created or could not be closed — already the
+// degraded path — and it is called from "stop this run", which a person is waiting on. A taskkill
+// that never returns would hang that click forever, and the process it was asked to kill is not
+// going to become more killable by waiting.
+const taskkillTimeout = 10 * time.Second
 
 // applyGroupAttributes gives the child its own process group and no console window.
 //
@@ -46,10 +56,14 @@ func (c *Cmd) attachToJob() {
 			LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 		},
 	}
+	// gosec G103: `SetInformationJobObject` takes the structure as an address and a length, because
+	// that is the Win32 signature. `unsafe.Pointer` is the only way to express it, `limits` is a
+	// local that outlives the call, and the length is taken from the same value — the three
+	// conditions the rule exists to check.
 	if _, err := windows.SetInformationJobObject(
 		job,
 		windows.JobObjectExtendedLimitInformation,
-		uintptr(unsafe.Pointer(&limits)),
+		uintptr(unsafe.Pointer(&limits)), //nolint:gosec
 		uint32(unsafe.Sizeof(limits)),
 	); err != nil {
 		// Ignored: the job is unusable, so close it and leave the taskkill fallback in charge.
@@ -57,7 +71,11 @@ func (c *Cmd) attachToJob() {
 		return
 	}
 
-	handle, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(c.Process.Pid))
+	// gosec G115: a Windows process id **is** a DWORD — `os.Process.Pid` widens it to int on the way
+	// in, and this narrows it back for the API that issued it. The value came from a process this
+	// package started moments ago, so there is no range to check that could be false.
+	handle, err := windows.OpenProcess(
+		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(c.Process.Pid)) //nolint:gosec
 	if err != nil {
 		// Ignored: same reason as above.
 		_ = windows.CloseHandle(job)
@@ -90,7 +108,13 @@ func killTree(c *Cmd) error {
 		}
 	}
 
-	kill := exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(c.Process.Pid))
+	ctx, cancel := context.WithTimeout(context.Background(), taskkillTimeout)
+	defer cancel()
+
+	// gosec G204: the only interpolated argument is a process id rendered as decimal digits by
+	// `strconv.Itoa`, and the arguments go as a slice rather than through a shell. There is nothing
+	// here a caller could make mean something else.
+	kill := exec.CommandContext(ctx, "taskkill", "/T", "/F", "/PID", strconv.Itoa(c.Process.Pid)) //nolint:gosec
 	applyGroupAttributes(kill)
 	if err := kill.Run(); err != nil {
 		// taskkill exits non-zero when the process is already gone, which is not a failure of
