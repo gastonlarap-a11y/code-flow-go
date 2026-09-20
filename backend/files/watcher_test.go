@@ -2,6 +2,7 @@ package files_test
 
 import (
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -35,6 +36,27 @@ func changeEvents(recorder *bridge.RecordingEmitter) int {
 
 func startWatching(t *testing.T, repo string) *bridge.RecordingEmitter {
 	t.Helper()
+
+	// `syncthing/notify`'s Windows backend walks the `FILE_NOTIFY_INFORMATION` records the kernel
+	// writes by converting an offset into its buffer with `unsafe.Pointer`, and `checkptr` — which
+	// only exists in a `-race` build — rejects that conversion:
+	//
+	//	fatal error: checkptr: converted pointer straddles multiple allocations
+	//	.../notify@v0.0.0-20250528144937-c7027d4f7465/watcher_readdcw.go:406
+	//
+	// It kills the process, so it takes the whole package's run with it. The fault is entirely in
+	// the dependency — no frame of ours appears — and there is no newer version to move to: the
+	// pinned pseudo-version *is* the latest the proxy offers.
+	//
+	// Skipped only in the configuration that cannot survive it, rather than on Windows outright:
+	// without `-race` there is no `checkptr`, so these tests still run for a developer on Windows
+	// and in the manual acceptance pass, which is where "does the watcher actually work there" is
+	// answered. Recorded as `BUG-FILE-b`; a release build carries no `checkptr` either, so what
+	// ships is untested pointer arithmetic rather than a crash.
+	if runtime.GOOS == "windows" && raceEnabled {
+		t.Skip("syncthing/notify trips checkptr on Windows under -race (BUG-FILE-b); run without -race there")
+	}
+
 	recorder := &bridge.RecordingEmitter{}
 	registry := files.NewWatcherRegistry(recorder)
 	require.NoError(t, registry.Start(repo))
