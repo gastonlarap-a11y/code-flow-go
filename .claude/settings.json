@@ -1,11 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "enabledPlugins": [
-    "go@dev-plugins",
-    "react-nextjs@dev-plugins",
-    "ux@dev-plugins",
-    "gopls-lsp@claude-plugins-official"
-  ],
+  "enabledPlugins": {
+    "go@dev-plugins": true,
+    "react-nextjs@dev-plugins": true,
+    "ux@dev-plugins": true,
+    "gopls-lsp@claude-plugins-official": true
+  },
   "permissions": {
     "allow": [
       "Bash(go build:*)",

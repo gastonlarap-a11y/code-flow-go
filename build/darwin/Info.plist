@@ -1,0 +1,33 @@
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>CFBundlePackageType</key>
+            <string>APPL</string>
+        <key>CFBundleName</key>
+            <string>CodeFlow</string>
+        <key>CFBundleExecutable</key>
+            <string>CodeFlow</string>
+        <key>CFBundleIdentifier</key>
+            <string>com.codeflow.app</string>
+        <key>CFBundleVersion</key>
+            <string>3.0.0</string>
+        <key>CFBundleGetInfoString</key>
+            <string>This is a comment</string>
+        <key>CFBundleShortVersionString</key>
+            <string>3.0.0</string>
+        <key>CFBundleIconFile</key>
+            <string>icons</string>
+        <key>CFBundleIconName</key>
+            <string>appicon</string>
+        <!-- 26.0, not Wails' default 12.0 (§14 D3). The renderer uses CSS anchor positioning, the
+             Popover API and light-dark() natively, with no fallback path built, because every macOS
+             Apple still supports ships Safari 26+. Claiming 12.0 would let this install on a machine
+             whose WKWebView cannot lay the UI out at all. -->
+        <key>LSMinimumSystemVersion</key>
+            <string>26.0.0</string>
+        <key>NSHighResolutionCapable</key>
+            <string>true</string>
+        <key>NSHumanReadableCopyright</key>
+            <string>© now, My Company</string>
+    </dict>
+</plist>

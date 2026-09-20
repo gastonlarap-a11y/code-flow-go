@@ -12,6 +12,23 @@ version: "3"
 #   - VITE_PORT stays 1420. The renderer's vite.config.ts fixes the port with strictPort, so
 #     changing it here would make `dev` load someone else's server or nothing at all.
 
+# The generated Wails build assets, which own packaging and nothing else.
+#
+# `wails3 generate build-assets` writes build/Taskfile.yml plus one per platform, and they bring
+# their own `build`, `dev` and dependency-install tasks. Those are **not** included: the ones above
+# are hand-written because three things in them are load-bearing (the deployment target, the fixed
+# Vite port, the ldflags version) and a regenerated file would silently drop them. Only the
+# packaging namespaces are pulled in, which is all `darwin:package` and `windows:package` need.
+includes:
+  darwin:
+    taskfile: ./build/darwin/Taskfile.yml
+    dir: .
+    optional: true
+  windows:
+    taskfile: ./build/windows/Taskfile.yml
+    dir: .
+    optional: true
+
 vars:
   APP_NAME: CodeFlow
   BIN_DIR: bin
@@ -93,8 +110,13 @@ tasks:
   build:
     desc: Build the application binary with the renderer embedded.
     deps: [frontend:build]
+    # `-s -w` drops the symbol table and DWARF: 11 MB of the 65, on every download and every disk,
+    # for nothing this application uses. Go's tracebacks come from pclntab, which survives — the
+    # panic traces `safego` recovers and writes to errors.log still name the function, the file and
+    # the line, byte for byte identical to an unstripped build (measured, not assumed). What is
+    # lost is attaching a debugger to a *release* binary, which is not how this is debugged.
     cmds:
-      - go build -trimpath -mod=readonly -ldflags "-X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}} .
+      - go build -trimpath -mod=readonly -ldflags "-s -w -X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}} .
 
   dev:
     desc: Run the app with hot reload (Go rebuild + Vite on 1420).
@@ -106,6 +128,61 @@ tasks:
     deps: [build]
     cmds:
       - "{{.BIN_DIR}}/{{.APP_NAME}} --smoke-test"
+
+  # ---- packaging (§10.3) ------------------------------------------------------------------
+  #
+  # These wrap `build` above rather than the generated `darwin:build` / `windows:build`, and that
+  # is the whole point of their existing: the generated build tasks do not carry
+  # `-X main.version`, so an .app made from one would report `0.0.0` to the updater and offer
+  # itself as an update forever.
+
+  package:mac:
+    desc: Build bin/CodeFlow.app (arm64, ad-hoc signed).
+    deps: [build]
+    cmds:
+      - task: darwin:create:app:bundle
+
+  package:mac:dmg:
+    desc: Build the published disk image, CodeFlow-{{.VERSION}}-arm64.dmg.
+    deps: [package:mac]
+    cmds:
+      - task: darwin:create:dmg
+      # wails3 names it after the app; the published name is what 2.7.x's updater selects on
+      # (§5.5), so it is renamed here rather than hoped for.
+      - mv "{{.BIN_DIR}}/{{.APP_NAME}}.dmg" "{{.BIN_DIR}}/{{.APP_NAME}}-{{.VERSION}}-arm64.dmg"
+      - cd {{.BIN_DIR}} && shasum -a 256 "{{.APP_NAME}}-{{.VERSION}}-arm64.dmg" > "{{.APP_NAME}}-{{.VERSION}}-arm64.dmg.sha256"
+
+  package:win:
+    desc: Build the NSIS installer and the portable build, with their digests.
+    deps: [build]
+    cmds:
+      - wails3 generate webview2bootstrapper -dir build/windows/nsis
+      - >-
+        makensis -V3 -DARG_WAILS_AMD64_BINARY="{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe"
+        -DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user
+        build/windows/nsis/project.nsi
+      # `-Setup-` is not cosmetic: it is how 2.7.x tells the installer from the portable build, and
+      # handing over the portable one updates nothing (BOOT-021).
+      - mv "{{.BIN_DIR}}/{{.APP_NAME}}-amd64-installer.exe" "{{.BIN_DIR}}/{{.APP_NAME}}-Setup-{{.VERSION}}-x64.exe"
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}.exe" "{{.BIN_DIR}}/{{.APP_NAME}}-Portable-{{.VERSION}}-x64.exe"
+      - cd {{.BIN_DIR}} && sha256sum "{{.APP_NAME}}-Setup-{{.VERSION}}-x64.exe" > "{{.APP_NAME}}-Setup-{{.VERSION}}-x64.exe.sha256"
+      - cd {{.BIN_DIR}} && sha256sum "{{.APP_NAME}}-Portable-{{.VERSION}}-x64.exe" > "{{.APP_NAME}}-Portable-{{.VERSION}}-x64.exe.sha256"
+
+  parity:
+    desc: Replay the scripted requests against the installed 2.7.x core and this one (§9.7).
+    # Deliberately not part of `check`: it needs CodeFlow 2.7.x installed, which no CI runner has
+    # and no new contributor should need. It is run by hand before a release, and its exit status
+    # is the Phase 9 criterion — zero unexplained differences.
+    cmds:
+      - go run ./tools/parity {{.CLI_ARGS}}
+
+  inventory:
+    desc: Audit the Go tests against the C# suite they replace (§11 Phase 9 step 1).
+    # Also out of `check`, and for a different reason from `parity`: it reports volume and location,
+    # not a pass/fail. There is no threshold it could gate on that would mean anything — see the
+    # command's doc comment.
+    cmds:
+      - go run ./tools/inventory {{.CLI_ARGS}}
 
   check:
     desc: Everything the CI gate runs.
