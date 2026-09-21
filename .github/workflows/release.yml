@@ -257,6 +257,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      # Every download of an unsigned build is refused by the operating system on its first launch,
+      # and the release page is the only place anybody looks for why. Prepended rather than
+      # replacing, so the generated changelog survives.
+      - name: Explain the first launch
+        shell: bash
+        run: |
+          version="v${{ needs.gate.outputs.version }}"
+          body=$(gh release view "$version" --json body --jq .body)
+          printf '%s\n\n%s\n' "$(cat .github/release-preamble.md)" "$body" > notes.md
+          gh release edit "$version" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Publish
         run: |
           gh release edit "v${{ needs.gate.outputs.version }}" --draft=false --latest
