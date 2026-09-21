@@ -6,9 +6,15 @@ How to read and how to extend the business-rules inventory. Every other document
 ## What this inventory is
 
 **This is the specification of CodeFlow's behaviour** — the only one the application has.
-`src/CodeFlow.App/` (with `shell/` and `renderer/`) is the implementation that must satisfy it.
-The documents describe **behaviour, not implementation strategy**: how a rule is achieved in C# is
-the code's business, not this inventory's.
+`backend/` and `frontend/` are the implementation that must satisfy it. The documents describe
+**behaviour, not implementation strategy**: how a rule is achieved in Go is the code's business, not
+this inventory's.
+
+The inventory was written against the 2.x implementation (`src/CodeFlow.App/`, with `shell/` and
+`renderer/`), which is why C# paths still appear on many `Implementation` lines. They are
+**provenance, not the current implementation** — where a rule came from. A document swept since the
+port names the Go file first and keeps the C# one after it, which is the shape the rest are moving
+to (`MIGRATION-GO.md` §11 Phase 9 step 5).
 
 Where the code and a document disagree, that is a defect in one of them and must be resolved, not
 left standing. A behaviour that is deliberately preserved for compatibility is recorded in
@@ -55,8 +61,8 @@ Every rule is written in one shape:
 `
 
 Rule ids use a per-document prefix (`BOOT`, `STORE`, `GIT`, `AI`, `PROV`, `REVIEW`, `API`,
-`WS`, `SEC`, `FILE`, `DBG`, `XLANG`) plus a zero-padded sequence. Ids are stable once
-written — later documents reference them.
+`WS`, `SEC`, `FILE`, `DBG`, `XLANG`, `DBML`, `DIAG`) plus a zero-padded sequence. Ids are stable
+once written — later documents reference them.
 
 ## Markers
 
