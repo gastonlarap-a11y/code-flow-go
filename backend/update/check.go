@@ -29,6 +29,7 @@ import (
 //
 // **At the cutover this constant moves back to `code-flow`** and both feeds hold the same releases
 // from then on. It is pinned by a test so the move is a deliberate edit rather than a drift.
+// `scripts/install-macos.sh` holds the same repository for the same reason and moves with it.
 const GitHubFeedURL = "https://api.github.com/repos/gastonlarap-a11y/code-flow-go/releases/latest"
 
 const (

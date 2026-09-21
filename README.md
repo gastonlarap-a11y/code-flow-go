@@ -85,6 +85,22 @@ Cold start, idle memory and a 100 000-file repository are **not** in the table: 
 open on each operating system, and they are part of the manual acceptance pass rather than something
 this machine can answer alone.
 
+## Installing a published build
+
+The builds are ad-hoc signed and not notarized (§14 D4), so a `.dmg` **downloaded with a browser**
+is refused on first launch — every time, on every version, because Gatekeeper evaluates each
+quarantined bundle it is set on. `curl` sets no such flag, which is what `scripts/install-macos.sh`
+is for:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/gastonlarap-a11y/code-flow-go/main/scripts/install-macos.sh | bash
+```
+
+It resolves the latest release, checks the disk image against the `.sha256` published beside it —
+the same digest contract the in-app updater enforces (BOOT-021) — and copies the bundle into
+`/Applications`. `CODEFLOW_DMG=<path>` installs from an image you already have, verifying it the
+same way. The release workflow smoke-tests it against every image it publishes.
+
 ## Requirements
 
 | | Version | Notes |
@@ -172,7 +188,11 @@ the macOS keychain or Windows Credential Manager under `com.codeflow.app`, never
   again the day support lands. `pnpm typecheck` is the static check until then.
 - **Windows is unverified for Phase 1.** The frameless window, the caption buttons, ConPTY and the
   console-window suppression compile and cross-compile cleanly but have not been run.
-- **Unsigned builds.** As in 2.x: Gatekeeper and SmartScreen will warn on first run.
+- **Unsigned builds.** As in 2.x: Gatekeeper and SmartScreen warn on first run. On macOS the
+  warning is not once per machine but once per **browser-downloaded copy**, so it returns with each
+  version fetched from the releases page; an update the app downloads itself carries no quarantine
+  flag and is never refused. `scripts/install-macos.sh` avoids it altogether (see *Installing a
+  published build*).
 - **The first keychain read of a 2.7.x credential will prompt.** With ad-hoc signing the keychain
   partition is the code's own hash, which changes on every build, so macOS asks for the login
   password once per update before handing over a token it previously allowed. *Always Allow*

@@ -205,6 +205,38 @@ jobs:
               echo "::error::$name is not '<64 hex>  <bare name>'"; cat "$name"; exit 1; }
           done
 
+      # The installer script's whole promise is that what it puts in /Applications carries no
+      # quarantine flag, whatever the disk image it started from carried — that is what spares the
+      # user the "Apple could not verify" refusal on an unnotarized build. Proven here, against the
+      # image about to be published, on a copy marked exactly the way a browser marks a download.
+      #
+      # It also checks the bundle's own version, which is the other half of the same promise: the
+      # Info.plist shipped 3.0.0 for every release up to 3.3.0, so Get Info on a bundle macOS had
+      # just called suspicious named a version the user had never downloaded.
+      - name: Smoke-test the macOS installer
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version="${{ needs.gate.outputs.version }}"
+          name="CodeFlow-$version-arm64.dmg"
+
+          staging="$RUNNER_TEMP/staging"
+          mkdir -p "$staging"
+          cp "bin/$name" "bin/$name.sha256" "$staging/"
+          xattr -w com.apple.quarantine "0081;00000000;Chrome;" "$staging/$name"
+
+          CODEFLOW_DMG="$staging/$name" bash scripts/install-macos.sh --prefix "$RUNNER_TEMP/apps"
+
+          app="$RUNNER_TEMP/apps/CodeFlow.app"
+          [ -d "$app" ] || { echo "::error::the installer produced no bundle"; exit 1; }
+          if xattr -p com.apple.quarantine "$app" >/dev/null 2>&1; then
+            echo "::error::the installed bundle is quarantined; the installer's reason to exist is gone"
+            exit 1
+          fi
+          got=$(defaults read "$app/Contents/Info" CFBundleShortVersionString)
+          [ "$got" = "$version" ] || {
+            echo "::error::the bundle declares $got, not $version"; exit 1; }
+
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ runner.os }}
@@ -260,13 +292,18 @@ jobs:
       # Every download of an unsigned build is refused by the operating system on its first launch,
       # and the release page is the only place anybody looks for why. Prepended rather than
       # replacing, so the generated changelog survives.
+      #
+      # `{{VERSION}}` is substituted rather than written into the file: the preamble's install
+      # commands name the artefact, and an example carrying the *previous* release's version is one
+      # nobody can paste.
       - name: Explain the first launch
         shell: bash
         run: |
-          version="v${{ needs.gate.outputs.version }}"
-          body=$(gh release view "$version" --json body --jq .body)
-          printf '%s\n\n%s\n' "$(cat .github/release-preamble.md)" "$body" > notes.md
-          gh release edit "$version" --notes-file notes.md
+          version="${{ needs.gate.outputs.version }}"
+          body=$(gh release view "v$version" --json body --jq .body)
+          preamble=$(sed "s/{{VERSION}}/$version/g" .github/release-preamble.md)
+          printf '%s\n\n%s\n' "$preamble" "$body" > notes.md
+          gh release edit "v$version" --notes-file notes.md
         env:
           GH_TOKEN: ${{ github.token }}
 

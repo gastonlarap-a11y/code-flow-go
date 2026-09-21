@@ -130,6 +130,22 @@ jobs:
         working-directory: frontend
         run: pnpm build
 
+  # The release page tells people to pipe scripts/install-macos.sh straight into a shell, so a bad
+  # expansion in it lands on a user's machine rather than on a maintainer's. Its own behaviour is
+  # smoke-tested in the release workflow, against the disk image about to be published; this is the
+  # static half. Its own job on Linux because shellcheck is preinstalled there and the check has
+  # nothing to do with either language runtime.
+  scripts:
+    name: Scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh
+
   smoke:
     name: Smoke test (${{ matrix.os }})
     needs: [backend, frontend]
