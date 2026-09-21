@@ -33,6 +33,7 @@ pending.
 | `backend/shared/` | `proc` (child processes), `safego` (goroutines), `sentinel` (error prefixes) |
 | `frontend/` | The React 19 renderer, copied from 2.x; reaches Go only through `src/lib/bridge/host.ts` |
 | `docs/business-rules/` | The specification: 246 commands, 13 events, the storage schema |
+| `scripts/` | What the release page tells users to run: `install-macos.sh` installs without the quarantine flag that makes Gatekeeper refuse an unnotarized build |
 | `tools/parity/` | The differential oracle: drives the installed 2.7.x core and this one, compares |
 | `tools/inventory/` | The test audit: 1 232 C# behaviours against this tree's 1 906 |
 | `build/` | Packaging assets, **generated** by `wails3 generate build-assets` — excluded from lint, and the generator overwrites `appicon.png` and `config.yml`, so never re-run it blind |

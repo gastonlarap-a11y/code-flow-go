@@ -9,12 +9,17 @@
             <string>CodeFlow</string>
         <key>CFBundleIdentifier</key>
             <string>com.codeflow.app</string>
+        <!-- Placeholders. `package:mac` overwrites both with the VERSION it was built with, in the
+             copy inside the bundle, before the bundle is signed. Written as 0.0.0 to match the
+             Taskfile's own default, so a bundle that escaped that step is obvious rather than
+             plausible: these two said 3.0.0 through every release up to 3.3.0, and Finder's Get
+             Info reported 3.0.0 for a download that was not. -->
         <key>CFBundleVersion</key>
-            <string>3.0.0</string>
+            <string>0.0.0</string>
         <key>CFBundleGetInfoString</key>
-            <string>This is a comment</string>
+            <string>CodeFlow — code review and API workbench</string>
         <key>CFBundleShortVersionString</key>
-            <string>3.0.0</string>
+            <string>0.0.0</string>
         <key>CFBundleIconFile</key>
             <string>icons</string>
         <key>CFBundleIconName</key>
@@ -27,7 +32,9 @@
             <string>26.0.0</string>
         <key>NSHighResolutionCapable</key>
             <string>true</string>
+        <!-- What Finder's Get Info shows about a bundle the operating system has just called
+             unverifiable, which is the moment a user most wants to know whose it is. -->
         <key>NSHumanReadableCopyright</key>
-            <string>© now, My Company</string>
+            <string>© Gastón Lara P.</string>
     </dict>
 </plist>

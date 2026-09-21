@@ -190,6 +190,16 @@ tasks:
       #
       # After the bundle is built and therefore after it was signed, so the signature is renewed.
       - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/Assets.car"
+      # The version the binary reports (`-X main.version`) and the one the bundle declares are two
+      # different facts, and only the first was ever set: build/darwin/Info.plist carried a literal
+      # version, so every release from 3.0.0 to 3.3.0 shipped a bundle whose Get Info said 3.0.0.
+      # Nothing in Go reads CFBundle*, so this changes no contract — it changes what macOS and the
+      # user are told, which matters most on an unnotarized build the system has just refused.
+      #
+      # On the copy inside the bundle, never on build/darwin/Info.plist, and **before** the signing
+      # below: the plist is sealed by the signature, so editing it afterwards invalidates it.
+      - /usr/libexec/PlistBuddy -c "Set :CFBundleVersion {{.VERSION}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Info.plist"
+      - /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString {{.VERSION}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Info.plist"
       - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
 
   package:mac:dmg:
@@ -245,8 +255,16 @@ tasks:
     cmds:
       - go run ./tools/inventory {{.CLI_ARGS}}
 
+  scripts:check:
+    desc: Shellcheck the distribution scripts.
+    # scripts/install-macos.sh is what the release page tells people to pipe into a shell, which
+    # makes an unquoted expansion in it a user's problem rather than a maintainer's.
+    cmds:
+      - shellcheck scripts/*.sh
+
   check:
     desc: Everything the CI gate runs.
     cmds:
       - task: go:check
       - task: frontend:check
+      - task: scripts:check
