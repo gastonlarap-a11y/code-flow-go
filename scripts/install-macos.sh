@@ -86,7 +86,9 @@ mnt="$work/mnt"
 cleanup() {
 	# `hdiutil detach` on a mountpoint that was never attached is not an error worth reporting, and
 	# this runs on the failure path too.
-	[ -d "$mnt" ] && hdiutil detach "$mnt" -quiet 2>/dev/null || true
+	if [ -d "$mnt" ]; then
+		hdiutil detach "$mnt" -quiet 2>/dev/null || true
+	fi
 	rm -rf "$work"
 }
 trap cleanup EXIT

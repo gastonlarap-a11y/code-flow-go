@@ -143,8 +143,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The version is printed because the runner's is older than a current Homebrew one and they
+      # do not agree: SC2015 on `A && B || true` failed here while a local 0.11.0 stayed silent
+      # even at --severity=style. When this fails and `task scripts:check` does not, that line is
+      # the first thing to look at.
       - name: Shellcheck
-        run: shellcheck scripts/*.sh
+        run: |
+          shellcheck --version
+          shellcheck scripts/*.sh
 
   smoke:
     name: Smoke test (${{ matrix.os }})
