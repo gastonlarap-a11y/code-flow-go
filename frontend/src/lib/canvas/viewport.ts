@@ -1,11 +1,24 @@
-import type { Point, Rect } from "./layout";
-
 /**
- * Pan and zoom for the schema canvas, as pure functions (DBML-008).
+ * Pan and zoom, as pure functions — shared by every canvas in the app (DBML-008, DIAG-007).
  *
- * A screen point is `world × scale + offset`. Kept out of the component so the one property worth
+ * A screen point is `world × scale + offset`. Kept out of the components so the one property worth
  * testing — zooming keeps the point under the cursor still — is asserted rather than eyeballed.
+ *
+ * It lived in `lib/dbml/` until the diagram editor needed the same arithmetic. Moved on the second
+ * caller rather than in anticipation of one; the schema designer imports it from here now.
  */
+
+/** A point in whichever space the caller is working in. */
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** A rectangle: a point with a size. */
+export interface Rect extends Point {
+  width: number;
+  height: number;
+}
 export interface Viewport {
   x: number;
   y: number;
