@@ -10,6 +10,7 @@ import (
 	"github.com/gastonlarap-a11y/code-flow/backend/apiclient"
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
 	"github.com/gastonlarap-a11y/code-flow/backend/dbml"
+	"github.com/gastonlarap-a11y/code-flow/backend/diagram"
 	"github.com/gastonlarap-a11y/code-flow/backend/files"
 	"github.com/gastonlarap-a11y/code-flow/backend/git"
 	"github.com/gastonlarap-a11y/code-flow/backend/platform"
@@ -316,6 +317,11 @@ func BuildRegistry(deps Deps) *bridge.Registry {
 		terminals = terminal.NewRegistry(deps.Emitter)
 	}
 	terminal.Register(registry, terminals)
+
+	// The diagram editor walks a folder and nothing else — no database, no credential, no emitter —
+	// so it registers here with the rest of what survives a failed storage stage, and takes no deps
+	// at all (DIAG-002).
+	diagram.Register(registry)
 
 	// The AI routing and the Settings queries need no database: a nil settings reader resolves to
 	// the built-in defaults, so an install whose storage failed can still be configured. The run

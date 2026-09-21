@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import * as api from "../lib/ipc/commands";
 import { pushErrorToast } from "./toastStore";
-import { normalizeDocumentPath, type DocumentPathError } from "../lib/dbml/documentPath";
+import { normalizeDocumentPath, type DocumentPathError } from "../lib/documentPath";
 import type { Point } from "../lib/dbml/layout";
 import type { DbmlTablePosition } from "../types/domain";
 
@@ -61,6 +61,9 @@ interface DbmlState {
  * Not empty: an empty canvas with an empty editor beside it says nothing about what to type, and
  * DBML's syntax is not guessable. One table is the smallest thing that renders.
  */
+/** What a schema document is called. The sidecar's walk matches on it, so it is not cosmetic. */
+const DOCUMENT_EXTENSION = ".dbml";
+
 const STARTER_SOURCE = `Table users {
   id integer [primary key]
   name varchar
@@ -139,7 +142,7 @@ export const useDbmlStore = create<DbmlState>((set, get) => ({
   },
 
   createDocument: async (rootPath, name, contents = STARTER_SOURCE) => {
-    const normalized = normalizeDocumentPath(name);
+    const normalized = normalizeDocumentPath(name, DOCUMENT_EXTENSION);
     if (!normalized.ok) return normalized.reason;
 
     const { relPath } = normalized;

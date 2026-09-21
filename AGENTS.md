@@ -1,26 +1,38 @@
 # CodeFlow (Go + Wails v3)
 
 Desktop code-review and API workbench: **one Go binary** hosting a Wails v3 window with the React
-renderer embedded. A port of CodeFlow 2.7.x (Electron shell + .NET sidecar), shipping as **3.0.0**,
-a drop-in replacement that keeps every user's database, credentials and update path.
+renderer embedded. It began as a port of CodeFlow 2.7.x (Electron shell + .NET sidecar) and is now
+the product: **this repository is the only active one**, and `gastonlarap-a11y/code-flow` — the
+Electron/.NET tree it replaced — is deprecated.
 
-**Phases 1–8 complete; Phase 9 next** — **the command surface is done**: 235 registered + 11
-deferred on purpose = the 246 the renderer calls, and nothing is left pending.
-The PR review pipeline runs, reconciles and publishes; the work items cache, mirror, judge and — on
-a button press, and only there — comment. The API workbench is complete: its stores, HTTP with
-Digest and SigV4, and all three streaming transports behind one connection registry. So is the
-schema designer: documents, layouts, connections, the assistant and all four introspectors. The
-updater checks, verifies against the release's own digest and hands over. Phase 9 has done everything
-one machine can: the differential oracle is green (`task parity` — 38 requests against the installed
-2.7.1 core, zero unexplained differences), the test audit is done (`task inventory` — 1 232 C#
-behaviours against 1 906 here, one real gap found and closed), the specification sweep is done for
-the three documents it listed, and the performance record is in the README. **What is left needs a
-person**: the manual acceptance checklists on macOS and Windows, cold start and idle memory, the
-2.7.1 → 3.0.0 upgrade drills, and the cutover — which happens only on an explicit instruction.
-`MIGRATION-GO.md` is the plan; `docs/` is the authoritative specification (~11 000 lines) and
-outranks any assumption about behaviour. `backend/app/contract_test.go` is the progress meter: it
-re-derives all 246 names from the renderer and fails if one is registered while still listed as
-pending.
+**The port is finished and shipped.** `v3.0.0` through `v3.3.1` were published from here, so the
+cutover is history rather than a plan: what 3.0.0 had to be, a drop-in replacement keeping every
+user's database, credentials and update path, it was. The command surface is closed at 235
+registered + 11 deferred on purpose = the 246 the 2.x renderer called. The PR review pipeline runs,
+reconciles and publishes; the work items cache, mirror, judge and — on a button press, and only
+there — comment. The API workbench is complete: its stores, HTTP with Digest and SigV4, and all
+three streaming transports behind one connection registry. So is the schema designer: documents,
+layouts, connections, the assistant and all four introspectors. The updater checks, verifies against
+the release's own digest and hands over.
+
+**What came after the port grows this tree rather than matching a C# one.** The diagram editor
+(`backend/diagram/`, `frontend/src/lib/diagram/`, `docs/business-rules/16-diagrams.md`) is the first
+of these: a canvas for process flows and use cases whose documents are **Mermaid `flowchart` files**,
+`*.mmd`, readable by any Mermaid viewer and by a model. It owns the one command this repository
+invented, `diagram_list_documents`, which is why `backend/app/contract_test.go` now separates
+`portedCommandCount` — closed history — from `newSincePort`.
+
+**What the migration still owes, and what it does not.** Two of Phase 9's steps need a person at
+each of the two operating systems and block nothing: the manual acceptance checklists, and the half
+of the performance record a headless run cannot measure (cold start, idle memory, `get_status` on a
+100 000-file repository). One is a real backlog: the `Implementation` lines of twelve
+`docs/business-rules/` documents still cite only C# paths (§11 Phase 9 step 5 in `MIGRATION-GO.md`).
+
+`MIGRATION-GO.md` is the record of how the port was done, not a plan to follow. `docs/` is the
+authoritative specification (~11 000 lines) and outranks any assumption about behaviour.
+`backend/app/contract_test.go` re-derives every command name from the renderer and fails on drift in
+either direction; `portedCommandCount` is closed, and a feature written here rather than ported adds
+its name to `newSincePort`.
 
 ## Layout
 
@@ -30,12 +42,12 @@ pending.
 | `backend/bridge/` | The one bound method: `Service.Invoke(method, params)` → command registry |
 | `backend/desktop/` | **The only package that imports Wails**: window, tray, menu, quit, dialogs |
 | `backend/<feature>/` | One package per feature; each exposes `Register(r, deps)` |
-| `backend/shared/` | `proc` (child processes), `safego` (goroutines), `sentinel` (error prefixes) |
-| `frontend/` | The React 19 renderer, copied from 2.x; reaches Go only through `src/lib/bridge/host.ts` |
-| `docs/business-rules/` | The specification: 246 commands, 13 events, the storage schema |
+| `backend/shared/` | `proc` (child processes), `safego` (goroutines), `sentinel` (error prefixes), `docwalk` (finding a folder's documents) |
+| `frontend/` | The React 19 renderer, copied from 2.x and grown since; reaches Go only through `src/lib/bridge/host.ts` |
+| `docs/business-rules/` | The specification: every command, the 13 events, the storage schema |
 | `scripts/` | What the release page tells users to run: `install-macos.sh` installs without the quarantine flag that makes Gatekeeper refuse an unnotarized build |
 | `tools/parity/` | The differential oracle: drives the installed 2.7.x core and this one, compares |
-| `tools/inventory/` | The test audit: 1 232 C# behaviours against this tree's 1 906 |
+| `tools/inventory/` | The test audit: the 1 232 C# behaviours against this tree's, re-counted on each run |
 | `build/` | Packaging assets, **generated** by `wails3 generate build-assets` — excluded from lint, and the generator overwrites `appicon.png` and `config.yml`, so never re-run it blind |
 
 ## Commands
@@ -55,11 +67,21 @@ task smoke            # the packaged binary's own environment probes
 
 Go needs `GOROOT`/`PATH` on 1.27.1; `task` sets the macOS deployment target for you.
 
+Two things that bite on a fresh machine: **`task` itself may not be installed** — `wails3` embeds the
+same runner, so `wails3 task check` runs the Taskfile as written. And **`task dev` fails** on
+`wails3 v3.0.0-beta.23` with `root path is required`: the beta expects a key `build/config.yml` does
+not carry. Nothing else in the Taskfile is affected, but there is currently no working way into a
+dev build with an inspectable webview, which is what diagnosing a renderer problem needs.
+
 ## Hard rules
 
-- **Do not guess.** Behaviour marked `AMBIGUOUS-*` in `docs/` is not resolved by this port.
+- **Do not guess.** Behaviour marked `AMBIGUOUS-*` in `docs/` was not resolved by the port and is not
+  resolved by reading the Go code either — it is still open.
 - **Do not fix.** `BUG-*` rows still open in `docs/business-rules/91-known-bugs.md` are preserved on
   purpose — existing installs and the renderer depend on them. Fixing one is a separate, named change.
+- **A new feature is not a port.** There is no C# original to match, so `AMBIGUOUS-*`/`BUG-*` do not
+  apply to it: it gets its own document under `docs/business-rules/`, and any command it adds goes in
+  `newSincePort` in `backend/app/contract_test.go`. The two rules above govern ported behaviour only.
 - **`VERBATIM` is byte-level**: sentinel prefixes, prompts, regexes, keychain key formats, and the
   Spanish field names in review findings (`tipo`, `categoria`, `archivo`…). Never translate them.
 - **Never wrap a sentinel-bearing error.** The renderer matches eight of them with `startsWith`.

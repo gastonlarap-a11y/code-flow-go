@@ -16,7 +16,7 @@ import { CARD_PADDING, HEADER_HEIGHT, ROW_HEIGHT, boundsOf, computeLayout, type 
 import { routeRelations, type RoutedRelation } from "../../lib/dbml/routing";
 import { guessLanguage } from "../../lib/dbml/inflect";
 import { describeRelation, renderSentence } from "../../lib/dbml/relationPhrase";
-import { IDENTITY, fitBounds, overlayAt, zoomAt, type Viewport } from "../../lib/dbml/viewport";
+import { IDENTITY, fitBounds, overlayAt, zoomAt, type Viewport } from "../../lib/canvas/viewport";
 import { inlineEdit } from "../../lib/dbml/cardEdit";
 import { DRAG_THRESHOLD, setDragCursor } from "../../lib/pointerDrag";
 import { menuKeyAction, type MenuItemState } from "../../lib/ui/menuNavigation";

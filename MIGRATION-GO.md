@@ -2635,12 +2635,18 @@ Windows; after introspecting a SQLite file, delete or rename it immediately (Win
 
 ### Phase 9 — Parity audit, documentation and cutover
 
-**Steps 1, 2, 5 and 6 are done; step 4 is done as far as one machine can take it.** Everything that
-remains — the manual checklists, cold start and idle memory, the upgrade drills, and the cutover
-itself — needs a person at each of the two operating systems, and the cutover additionally needs an
-explicit instruction. Two tools came out of this phase and both stay: `task parity` (the
-differential oracle) and `task inventory` (the test audit). Neither is in `task check`: one needs
-2.7.x installed, the other reports volume rather than pass or fail.
+**The port is finished and shipped.** Steps 1, 2, 6, 7 and 8 are done; step 4 is done as far as a
+headless run can take it; step 5 is done for the three documents §13 lists and has a named remainder.
+`v3.0.0` through `v3.3.1` were published, so the cutover below is a record rather than a plan — and
+it did **not** happen the way step 7 describes, which is written out there and in §14 D2.
+
+What is still owed is step 3 and the rest of step 4: the manual acceptance checklists and the
+measurements that need a window open, at each of the two operating systems. Neither blocks work in
+this repository.
+
+Two tools came out of this phase and both stay: `task parity` (the differential oracle) and
+`task inventory` (the test audit). Neither is in `task check`: one needs 2.7.x installed, the other
+reports volume rather than pass or fail.
 
 1. ~~`docs/verbatim/test-inventory.md` fully ticked, or each unported test recorded with its reason in the
    owning spec document.~~ **Audited**: `tools/inventory`. The ticking itself is not possible and the audit
@@ -2679,7 +2685,9 @@ differential oracle) and `task inventory` (the test audit). Neither is in `task 
    marker that records it). One defect fixed and two divergences raised — see the table in §9.7.
    Widening the script is cheap and worth doing as the manual checklists find areas worth pinning.
 3. Manual acceptance checklists of every spec document, both OSes; the WebKit list W1–W14 re-checked on the
-   oldest supported macOS.
+   oldest supported macOS. **Still owed** — one of the two things in this phase that a person has to
+   do. Five shipped releases are evidence of a kind, but they are not this: nobody has walked the
+   documents against the running app, so an area no release exercised has still never been checked.
 4. Performance record (README): cold start, idle memory, installer size, `get_status` on a 100 000-file repo,
    2.7.1 vs 3.0.0. **Partly done** — the half this machine can answer is in the README, measured with
    `task parity -- -time`, which times the same request against both cores.
@@ -2723,10 +2731,13 @@ differential oracle) and `task inventory` (the test audit). Neither is in `task 
      resolves to a file that exists** — checked by resolving each one, which also caught
      `backend/bridge/contract_test.go` in §9.4 (it is `backend/app/contract_test.go`).
 
-   Still stale, and left for the remaining phase-9 pass: the per-row `<sub>` provenance in
-   `01-ipc-surface.md`'s tables (kept on purpose — the heading carries the Go file, the row carries
-   where it came from) and the `Implementation` lines of the twelve *other* spec documents, most of
-   which their own phase already updated.
+   Still stale, and **the migration's one standing backlog**: the `Implementation` lines of the
+   twelve *other* spec documents, which still cite C# paths — around 1 400 references — plus the
+   `renderer/src/…` root that became `frontend/src/…`, which survives in ten files outside the two
+   documents already swept. It is mechanical but not blind: each line has to be resolved against a Go
+   file that exists, which is what the swept documents did and what caught four commands that had no
+   row at all. Not stale, and staying: the per-row `<sub>` provenance in `01-ipc-surface.md`'s
+   tables — the heading carries the Go file, the row carries where the command came from.
 6. ~~Delete `docs/verbatim/` leftovers that moved (prompts, assets); keep `test-inventory.md` until step 1 is
    complete, then delete it.~~ **Done, with two deliberate departures from what this line says.**
 
@@ -2754,13 +2765,20 @@ differential oracle) and `task inventory` (the test audit). Neither is in `task 
    the names — and turned the inventory into the input of a re-runnable audit (`tools/inventory`, which
    reads it by default). Deleting it now would turn a fact anybody can re-check into a claim in a
    document, and would break `task inventory`. It is 76 KB.
-7. **Cutover** per §14 D2 (recommended path): on the operator's order, open a pull request in
-   `gastonlarap-a11y/code-flow` that replaces the tree with this repository's content (branch
-   `feat/go-wails-port`), keeping the repository, its releases and its update feed; merge; bump to `3.0.0`
-   (the CI gate publishes: draft → installers → publish).
-8. Watch the first real 2.7.x → 3.0.0 upgrades on the operator's machines; keep 2.7.1 artefacts available
-   for rollback (users can reinstall 2.7.1; its database is untouched by 3.0.0 migrations that are
-   no-ops on an up-to-date schema — confirm in step 2 of Phase 2).
+7. ~~**Cutover** per §14 D2 (recommended path): open a pull request in `gastonlarap-a11y/code-flow`
+   that replaces the tree with this repository's content, keeping the repository, its releases and its
+   update feed; merge; bump to `3.0.0`.~~ **Done, by the other path.** This repository stayed the home
+   and published `v3.0.0` itself; `gastonlarap-a11y/code-flow` was left intact and deprecated rather
+   than overwritten. The feed was the reason to prefer the recommended path, and it was answered in
+   code instead: the updater reads the repository its own releases are published to (`8139364`).
+   Leaving the old tree alone also keeps 2.7.1 downloadable, which step 8 asks for and a replacing
+   pull request would have taken away. §14 D2 records the decision as settled.
+8. ~~Watch the first real 2.7.x → 3.0.0 upgrades; keep 2.7.1 artefacts available for rollback.~~
+   **Done, and four releases past it**: `v3.0.0`, `v3.1.0`, `v3.2.0`, `v3.3.0`, `v3.3.1`. The 2.7.1
+   artefacts remain published in the deprecated repository. What the upgrades surfaced is in the
+   commit history rather than here — the bundle version that read `3.0.0` until `3.3.0`
+   (`Taskfile.yml`), the updater reading the wrong repository (`8139364`), and macOS refusing an
+   unnotarized build on first launch, answered by `scripts/install-macos.sh` (`3c1a169`).
 
 ---
 
@@ -2821,7 +2839,7 @@ Marker ids: take the **next free letter** in the owning document's ledger; never
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
 | D1 | Should CI run the test suites? | (a) keep "no CI runs a test", `release.sh` is the gate; (b) add a `test` job (Go + renderer) on macOS and Windows before `installers` | **(b)**: Actions minutes are free for the public repository, and Windows-only breakage (the `BUG-BOOT-a` history, "not verified on Windows" in the credential code) is exactly what a Windows runner catches |
-| D2 | Where does the Go code live and publish? | (a) develop here, then **cut over into `gastonlarap-a11y/code-flow`** as 3.0.0; (b) separate repository plus a last Electron 2.x release that repoints its updater; (c) separate repository uploading to `code-flow`'s releases with a PAT | **(a)**: keeps the update feed 2.7.x reads, the release history and a single source of truth; module path `github.com/gastonlarap-a11y/code-flow` |
+| D2 | Where does the Go code live and publish? | (a) develop here, then **cut over into `gastonlarap-a11y/code-flow`** as 3.0.0; (b) separate repository plus a last Electron 2.x release that repoints its updater; (c) separate repository uploading to `code-flow`'s releases with a PAT | **SETTLED as (b), not the recommended (a).** `gastonlarap-a11y/code-flow-go` stayed the home: `v3.0.0`–`v3.3.1` were all published from it, and the Electron/.NET repository is deprecated rather than overwritten. What (a) was protecting — the feed 2.7.x reads — was handled in the updater instead, which now reads the repository its own releases are published to (commit `8139364`); keeping the old tree intact also keeps 2.7.1 available for rollback, which (a) would have rewritten. The module path stayed `github.com/gastonlarap-a11y/code-flow`, so no import moved. Original recommendation was (a): the update feed, the release history and a single source of truth |
 | D3 | Minimum macOS / WebKit | **DECIDED 2026-09-17: macOS 26 (Tahoe).** Option (a) below was already stale when it was written — Apple stopped patching macOS 14 Sonoma on 2026-09-14, two days earlier, and its newest Safari is 26.6.1. Every macOS Apple still supports (15, 26, 27) ships Safari 27, so anchor positioning, the Popover API and `light-dark()` are native and **no `@floating-ui/dom` fallback is built**. `LSMinimumSystemVersion` and `MACOSX_DEPLOYMENT_TARGET` are 26.0; the start-up `CSS.supports("anchor-name: --a")` check stays as a net, because a Tahoe install that never updated Safari can be on 26.0 and `position-try-fallbacks` was extended in 26.2. Original options: (a) **macOS 14 with Safari ≥ 26.2** — Safari 26.x ships for macOS Sonoma and Sequoia (Apple's Safari 26.0–26.6 release notes), updates the system WebKit that WKWebView uses, and brings anchor positioning (26.0) with the flip fallbacks (26.2): no renderer fallback needed, plus a start-up check (`CSS.supports("anchor-name: --a")`) that shows "update Safari" instead of a broken layout; (b) macOS 14 + Safari ≥ 17.5 with the `@floating-ui/dom` W1 fallback; (c) Wails' default 12.0 (Popover/`light-dark()` break on old Safari) | **(a)** — cheapest and measured working (M-1 on Safari 27); `LSMinimumSystemVersion` 14.0 |
 | D4 | Code signing | (a) stay ad-hoc; (b) Apple Developer ID + notarisation and a Windows Authenticode certificate; (c) **a free, stable self-signed code-signing identity** for macOS builds | **(a) confirmed 2026-09-21: (b) is not being bought.** What (b) would have bought is now had another way on macOS: Gatekeeper only evaluates a bundle carrying `com.apple.quarantine`, which browsers write and `curl` does not, so `scripts/install-macos.sh` installs a digest-verified build without ever creating the flag — measured, and smoke-tested in the release workflow against the image it publishes. It buys nothing on Windows, and nothing for a user who downloads the `.dmg` by hand. Original recommendation: (b) when affordable. Meanwhile (c): with ad-hoc signing the keychain partition is `cdhash:` and changes every build, so macOS asks for the keychain password after **every** update (true today); a stable signing identity makes one *Always Allow* persist across updates (the approach of `claude-usage-swift` PR #31). It does not help Gatekeeper |
 | D5 | Wails' built-in updater (`pkg/updater`) after 3.0 | in-place `.app`/`.exe` swap with signature verification vs today's open-the-`.dmg`/run-the-installer | Revisit after 3.0 ships; it changes the renderer contract and the release artefacts |

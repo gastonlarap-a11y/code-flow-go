@@ -18,7 +18,7 @@ const ERROR_KEYS = {
 /**
  * Names a new `.dbml` document and creates it.
  *
- * The validation is `lib/dbml/documentPath.ts`, called through the store — pure, tested, and the
+ * The validation is `lib/documentPath.ts`, called through the store — pure, tested, and the
  * same rules whichever path reaches it. What is left here is showing the refusal under the field.
  */
 export function NewDbmlModal({ rootPath, onClose }: { rootPath: string; onClose: () => void }) {

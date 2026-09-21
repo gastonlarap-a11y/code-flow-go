@@ -29,19 +29,23 @@ function hasControlCharacter(value: string): boolean {
 }
 
 /**
- * Turns what the user typed into the project-relative path of a new `.dbml` document.
+ * Turns what the user typed into the project-relative path of a new document.
  *
  * Three things happen here, and all three are the reason this is not inline in the modal:
- * - `.dbml` is appended when it is missing, so "orders" and "orders.dbml" name one file. The
- *   extension is what the sidecar's walk matches on, so a document saved without it would be
+ * - `extension` is appended when it is missing, so "orders" and "orders.dbml" name one file. The
+ *   extension is what the backend's walk matches on, so a document saved without it would be
  *   invisible the moment the picker reloaded.
- * - Separators are normalised to `/`, because this path is half of the layout key and the same
+ * - Separators are normalised to `/`, because this path is half of a layout key and the same
  *   document typed as `db\orders` and `db/orders` has to be one row.
  * - Anything that could leave the project folder is refused *here*, not only at the boundary.
- *   `create_file` guards its own path (`PathGuards.ResolveNewPath`), but a refusal arriving from
- *   the sidecar reaches the user as a raw error string; this one reaches them as a labelled field.
+ *   `create_file` guards its own path, but a refusal arriving from the backend reaches the user as
+ *   a raw error string; this one reaches them as a labelled field.
+ *
+ * The extension is a parameter because two tools now create documents this way — the schema
+ * designer's `.dbml` and the diagram editor's `.diagram.json`. It is compared in lower case, so
+ * "Orders.DBML" is not given a second extension.
  */
-export function normalizeDocumentPath(input: string): DocumentPathResult {
+export function normalizeDocumentPath(input: string, extension: string): DocumentPathResult {
   const trimmed = input.trim();
   if (trimmed.length === 0) return { ok: false, reason: "empty" };
   if (INVALID_CHARACTERS.test(trimmed) || hasControlCharacter(trimmed)) {
@@ -60,9 +64,9 @@ export function normalizeDocumentPath(input: string): DocumentPathResult {
   }
 
   const last = segments[segments.length - 1]!;
-  const named = last.toLowerCase().endsWith(".dbml") ? last : `${last}.dbml`;
+  const named = last.toLowerCase().endsWith(extension) ? last : `${last}${extension}`;
   // A name that is nothing but the extension (".dbml") names no document.
-  if (named === ".dbml") return { ok: false, reason: "empty" };
+  if (named.toLowerCase() === extension) return { ok: false, reason: "empty" };
 
   return { ok: true, relPath: [...segments.slice(0, -1), named].join("/") };
 }
@@ -70,4 +74,10 @@ export function normalizeDocumentPath(input: string): DocumentPathResult {
 /** The file name a document path ends in, for titles and tabs. */
 export function documentName(relPath: string): string {
   return relPath.split("/").pop() ?? relPath;
+}
+
+/** The name without its extension, for a heading that should not shout ".diagram.json". */
+export function documentTitle(relPath: string, extension: string): string {
+  const name = documentName(relPath);
+  return name.toLowerCase().endsWith(extension) ? name.slice(0, -extension.length) : name;
 }
