@@ -20,6 +20,7 @@ import { reservedChordFor } from "../../lib/shortcuts";
 import { chordLabel } from "../../lib/keys";
 import type { TranslationKey } from "../../lib/i18n/translations";
 import { MarkdownPreview } from "./MarkdownPreview";
+import type { SourcePosition } from "../../lib/dbml/useCardEditing";
 // Carries `@dbml/core`, 15 MB of parser that only a `.dbml` file ever needs. Behind `lazy()` it
 // stops riding along with every file the Editor opens.
 const DbmlPreview = lazyRetry(() => import("./DbmlPreview").then((m) => ({ default: m.DbmlPreview })));
@@ -451,6 +452,37 @@ export function EditorPane({
     onRevealDone();
   }, [reveal, activePath, activeTab?.loading, editorReady, onRevealDone]);
 
+  /**
+   * "Go to its code", asked for from a table on the `.dbml` diagram (DBML-028).
+   *
+   * Held as state rather than applied on the spot, because in `preview` mode there is no editor to
+   * scroll — the request switches the tab to `split` first, and this runs once that editor has
+   * mounted and `editorReady` has ticked. Same shape as the reveal above, with its own pending slot
+   * so a file-tree reveal and a diagram reveal cannot consume each other.
+   */
+  const [dbmlReveal, setDbmlReveal] = useState<{ from: SourcePosition; to: SourcePosition } | null>(null);
+
+  useEffect(() => {
+    const target = dbmlReveal;
+    const ed = editorRef.current;
+    if (!target || !ed || !ed.getModel() || viewMode === "preview") return;
+    setDbmlReveal(null);
+    ed.revealLineInCenter(target.from.line);
+    ed.setSelection({
+      startLineNumber: target.from.line,
+      startColumn: target.from.column,
+      endLineNumber: target.to.line,
+      endColumn: target.to.column,
+    });
+    ed.focus();
+  }, [dbmlReveal, viewMode, editorReady]);
+
+  const revealDbmlTable = (from: SourcePosition, to: SourcePosition) => {
+    if (!activeTab) return;
+    if (viewMode === "preview") onViewMode(activeTab.path, "split");
+    setDbmlReveal({ from, to });
+  };
+
   // Split view: keep the Monaco pane and the rendered preview pane scrolling together,
   // proportionally (their line heights don't correspond 1:1, so this syncs by scroll ratio
   // rather than by line number). Re-attaches whenever Monaco (re)mounts.
@@ -628,7 +660,12 @@ export function EditorPane({
                 <MarkdownPreview content={content} />
               ) : (
                 <Suspense fallback={dbmlLoading}>
-                  <DbmlPreview content={content} path={activeTab.path} />
+                  <DbmlPreview
+                    content={content}
+                    path={activeTab.path}
+                    onChange={(next) => onChange(activeTab.path, next)}
+                    onReveal={revealDbmlTable}
+                  />
                 </Suspense>
               )
             ) : viewMode === "split" ? (
@@ -642,7 +679,12 @@ export function EditorPane({
                     // vertical rendering of the text beside it. Syncing a scroll ratio to it moved
                     // the picture for no reason a reader could connect to the line they were on.
                     <Suspense fallback={dbmlLoading}>
-                      <DbmlPreview content={content} path={activeTab.path} />
+                      <DbmlPreview
+                        content={content}
+                        path={activeTab.path}
+                        onChange={(next) => onChange(activeTab.path, next)}
+                        onReveal={revealDbmlTable}
+                      />
                     </Suspense>
                   )}
                 </div>
