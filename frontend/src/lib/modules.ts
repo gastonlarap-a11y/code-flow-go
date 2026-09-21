@@ -6,6 +6,7 @@ import {
   Home,
   Send,
   SquareKanban,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import type { TranslationKey } from "./i18n/translations";
@@ -77,6 +78,9 @@ export const APP_MODULES = [
   { id: "editor", icon: Code2, labelKey: "tabbar.editor", scope: "repo" },
   // No `requiresGit`: a schema document is a file in the folder, and reading one needs no history.
   { id: "dbml", icon: Database, labelKey: "tabbar.dbml", scope: "repo" },
+  // Diagrams are files in the folder too, for the same reason and with the same consequence: they
+  // are versioned beside the code they describe.
+  { id: "diagram", icon: Workflow, labelKey: "tabbar.diagram", scope: "repo" },
   { id: "workitems", icon: SquareKanban, labelKey: "tabbar.workitems", scope: "repo" },
   { id: "api", icon: Send, labelKey: "tabbar.api", scope: "workspace" },
 ] as const satisfies readonly AppModule[];

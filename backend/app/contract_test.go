@@ -16,25 +16,30 @@ import (
 )
 
 /*
-The command-coverage contract, and the port's progress meter.
+The command-coverage contract.
 
 The authoritative list of commands is not the specification and not this repository's Go code: it
-is what the renderer actually calls. 246 distinct names across three files, each reached through a
-typed wrapper. A command the renderer calls and Go does not register answers
-`unknown command '<name>'` at runtime — a dead button with no build-time warning anywhere, which is
-precisely the failure a 36 000-line rewrite is most likely to produce.
+is what the renderer actually calls, each name reached through a typed wrapper. A command the
+renderer calls and Go does not register answers `unknown command '<name>'` at runtime — a dead
+button with no build-time warning anywhere, which is precisely the failure a 36 000-line rewrite is
+most likely to produce.
 
 So the list is re-derived from the renderer's source on every run, and compared against the real
 registry. Three outcomes are possible and each means something different:
 
-  - registered and called      — ported, nothing to do
-  - called, not registered     — either still to port (notYetPorted) or deliberately deferred (deferred)
+  - registered and called      — nothing to do
+  - called, not registered     — either deliberately deferred (deferred) or a gap
   - registered, never called   — dead code, or a name that drifted from the renderer's spelling
 
-`notYetPorted` shrank by one phase's worth of names at a time. It is now empty: 235 registered plus
-the eleven deferred account for all 246, and the port's command surface is complete. The three
-tests below still run in both directions, because what they now guard is drift rather than progress
-— a command the renderer stops calling, or one registered under a name it never uses.
+This file was the port's progress meter, and `notYetPorted` shrank by one phase's worth of names at
+a time until it was empty. **That job is finished**: 235 registered plus the eleven deferred
+account for the 246 the 2.x renderer called, and the port shipped. What the tests guard now is
+drift in both directions, and one thing more — a command this repository invents.
+
+`portedCommandCount` is closed history and never moves. A feature written here rather than ported
+puts its name in `newSincePort`, and the expected totals move by exactly that much. The arithmetic
+is not the point: the point is that growing the command surface is a line somebody wrote down
+rather than a number that drifted.
 */
 
 // invokeCall matches `invoke<Result>("command_name"` across a line break, which is how the
@@ -48,6 +53,20 @@ var rendererCommandFiles = []string{
 	filepath.Join("..", "..", "frontend", "src", "lib", "bridge", "updater.ts"),
 }
 
+// portedCommandCount is what the renderer called when the port finished: the 235 the 2.x core
+// registered plus the 11 it answered `unknown command` for. It is a fact about a finished piece of
+// work, so it never moves — everything this repository adds afterwards is counted separately.
+const portedCommandCount = 246
+
+// newSincePort are the commands this repository grew after the port: features the 2.x core never
+// had, so there is no C# original to compare them against and nothing to defer. A name belongs
+// here from the moment the renderer calls it, and its handler is registered like any other.
+var newSincePort = []string{
+	// The diagram editor (16-diagrams.md). One command, because a diagram is a file in the user's
+	// folder and everything except walking for it is a file command that already existed.
+	"diagram_list_documents",
+}
+
 // deferred are the eleven names the renderer calls on purpose and the backend deliberately does
 // not answer. The debugger (12-debugging.md) and gRPC were never implemented in 2.x either; the
 // renderer handles the refusal, so registering them would be the change, not leaving them out.
@@ -57,9 +76,13 @@ var deferred = []string{
 	"debug_set_breakpoints", "debug_start", "debug_start_adapter", "debug_step", "debug_stop",
 }
 
-// notYetPorted is the work remaining: the commands the renderer calls today and this backend does
-// not answer yet. Registered + deferred + pending is asserted to be 246 below, which is what keeps
-// this list honest as the count moves.
+// notYetPorted was the work remaining: the commands the renderer called and this backend did not
+// answer yet. Registered + deferred + pending is asserted below to equal what the renderer calls,
+// which is what kept this list honest while the count moved.
+//
+// **It is empty, and kept as the record of how the port was tracked** — the phase blocks below say
+// what each one covered. A gap found from here is not a phase's leftover, so it does not belong in
+// this map; it is a missing handler, and the test that finds it says so.
 //
 // The names are transcribed from the renderer, never from the specification — the two do not
 // always agree on spelling (the renderer says `git_clone`, the spec's prose says "clone"), and the
@@ -111,10 +134,9 @@ var notYetPorted = map[string][]string{
 	// published before handing it to the operating system. Its block is empty and stays as the
 	// marker that it is done.
 	//
-	// With it, `notYetPorted` is empty for the first time: every command the renderer calls is
-	// either registered or one of the eleven deferred on purpose. What remains of the port is
-	// Phase 9 — the parity audit, the differential oracle and the cutover — and none of it adds a
-	// command, so this map stays empty from here.
+	// With it, `notYetPorted` emptied: every command the 2.x renderer called is either registered
+	// or one of the eleven deferred on purpose. Phase 9 — the parity audit, the differential
+	// oracle and the cutover — added no command, and the port shipped. The map stays empty.
 	"phase 8": {},
 }
 
@@ -164,10 +186,26 @@ func pendingCommands() map[string]string {
 }
 
 // The renderer's list is the contract. If this number moves, a command was added or removed on the
-// renderer side and this test's expectations need looking at rather than silently adjusting.
+// renderer side and this test's expectations need looking at rather than silently adjusting: a new
+// feature earns a line in `newSincePort`, and a deleted wrapper has to be explained.
 func TestRendererCallsTheExpectedNumberOfCommands(t *testing.T) {
-	assert.Len(t, rendererCommands(t), 246,
-		"246 = 235 the 2.x core registered + the 11 it answered 'unknown command' for")
+	assert.Len(t, rendererCommands(t), portedCommandCount+len(newSincePort),
+		"%d ported + %d added since the port", portedCommandCount, len(newSincePort))
+}
+
+// `newSincePort` raises the expected total, so a name left in it after its wrapper was deleted
+// would hide exactly the drift the count exists to catch. Both directions, for each entry.
+func TestEveryCommandAddedSinceThePortIsRealInBothDirections(t *testing.T) {
+	registry := fullRegistry(t)
+	called := rendererCommands(t)
+
+	for _, name := range newSincePort {
+		t.Run(name, func(t *testing.T) {
+			assert.Contains(t, called, name, "listed as added since the port, but no renderer wrapper calls it")
+			_, registered := registry.Lookup(name)
+			assert.True(t, registered, "listed as added since the port, but nothing registers it")
+		})
+	}
 }
 
 // The point of the whole file: nothing the renderer calls may be missing without being accounted
@@ -222,17 +260,18 @@ func TestDeferredCommandsAreNotRegistered(t *testing.T) {
 	assert.Len(t, deferred, 11, "nine debug_* and two api_grpc_*")
 }
 
-// The arithmetic that makes the progress meter trustworthy: everything the renderer calls is in
-// exactly one of the three buckets, and they add up.
+// The arithmetic that makes the count trustworthy: everything the renderer calls is in exactly one
+// of the three buckets, and they add up to what the two lists above say they should.
 func TestTheThreeBucketsAccountForEveryCommand(t *testing.T) {
 	registry := fullRegistry(t)
 
-	assert.Equal(t, 246, registry.Len()+len(deferred)+len(pendingCommands()),
+	assert.Equal(t, portedCommandCount+len(newSincePort), registry.Len()+len(deferred)+len(pendingCommands()),
 		"registered + deferred + not yet ported must equal what the renderer calls")
 }
 
-// Housekeeping: an entry that has been ported but left in notYetPorted makes the progress meter
-// lie, and the meter is the only thing tracking how much of the port is left.
+// Housekeeping, kept now that the map is empty: an entry both registered and listed as pending
+// would subtract from the bucket arithmetic twice, so the totals above would agree while a real
+// gap sat behind them.
 func TestNotYetPortedDoesNotListSomethingAlreadyDone(t *testing.T) {
 	registry := fullRegistry(t)
 

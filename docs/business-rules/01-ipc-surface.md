@@ -127,7 +127,7 @@ it is not where the code is.
 `Injected` lists the shell-supplied dependencies of the 2.x core; it was never part of the payload
 and in Go it is the feature package's `Deps` struct.
 
-### Where the 246 are registered
+### Where the 247 are registered
 
 Derived from the registry, not transcribed: every name below was found as a literal registration in
 exactly one non-test file under `backend/`, with zero ambiguity, and the total reconciles with
@@ -154,9 +154,16 @@ exactly one non-test file under `backend/`, with zero ambiguity, and the total r
 | `backend/review/commands_run.go` | 2 | `07-review-pipeline.md` |
 | `backend/review/commands_publish.go` | 2 | `07-review-pipeline.md` |
 | `backend/platform/commands.go` | 1 | `02-bootstrap-platform.md` |
-| **registered** | **235** | |
+| `backend/diagram/commands.go` | 1 | `16-diagrams.md` |
+| **registered** | **236** | |
 | deferred — never registered, answer `unknown command` | 11 | `12-debugging.md`, `08-api-client.md` |
-| **called by the renderer** | **246** | |
+| **called by the renderer** | **247** | |
+
+**One of these did not come from 2.x.** `diagram_list_documents` is the first command this
+repository added on its own, after the port shipped; there is no C# file under it, and its row
+carries no `<sub>` provenance because there is none to carry. `backend/app/contract_test.go` keeps
+the two apart in the same way: `portedCommandCount` is closed at 246 and `newSincePort` lists what
+came after.
 
 Four regroupings are worth naming, because they are the reason a reader looking for a command in
 the file its heading names will not find it:
@@ -456,6 +463,19 @@ and were never tabulated.
 | `dbml_delete_connection`<br><sub>`src/CodeFlow.App/Dbml/DbmlCommands.cs`</sub> | `connection_id: string` | `Result&lt;(), string&gt;` | State, Keychain | `dbmlDeleteConnection` |
 | `dbml_test_connection`<br><sub>`src/CodeFlow.App/Dbml/DbmlCommands.cs`</sub> | `connection_id: string` | `Result&lt;(), string&gt;` | State, Keychain | `dbmlTestConnection` |
 | `dbml_introspect_database`<br><sub>`src/CodeFlow.App/Dbml/DbmlCommands.cs`</sub> | `connection_id: string` | `Result&lt;DbmlSchemaSnapshot, string&gt;` | State, Keychain | `dbmlIntrospectDatabase` |
+
+### `backend/diagram/commands.go` — 1 command → [16-diagrams](16-diagrams.md)
+<sub>2.x: none — this feature was written here, after the port.</sub>
+
+| Command | Caller parameters | Returns | Injected | TS wrapper |
+|---|---|---|---|---|
+| `diagram_list_documents` | `rootPath: string` | `Result&lt;Vec&lt;string&gt;, string&gt;` | — | `diagramListDocuments` |
+
+The parameter is listed as `rootPath`, which is the name the handler actually reads and the wrapper
+actually sends. Elsewhere in this table the `Caller parameters` column carries the 2.x signature in
+snake_case — provenance, like the `<sub>` lines, and not always what crosses the wire today: the
+schema designer's `dbml_list_documents` is listed as `root_path` and is read as `rootPath`. This row
+has no 2.x signature to record, so it states the live one.
 
 ### `backend/terminal/commands.go` — 4 commands → [11-files-search-terminal](11-files-search-terminal.md)
 <sub>2.x: `src/CodeFlow.App/Terminal/TerminalCommands.cs`</sub>

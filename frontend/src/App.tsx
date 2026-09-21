@@ -59,6 +59,11 @@ const ApiView = lazyRetry(() => import("./components/api/ApiView").then((m) => (
 // Carries `@dbml/core` — 15 MB, four times Monaco — plus a Monaco instance of its own. Only a user
 // who opens the schema designer pays for either.
 const DbmlView = lazyRetry(() => import("./components/dbml/DbmlView").then((m) => ({ default: m.DbmlView })));
+// Carries React Flow and the whole stencil catalogue, and neither belongs in the first paint of a
+// session that never opens a diagram.
+const DiagramView = lazyRetry(() =>
+  import("./components/diagram/DiagramView").then((m) => ({ default: m.DiagramView })),
+);
 const SettingsView = lazyRetry(() =>
   import("./components/settings/SettingsView").then((m) => ({ default: m.SettingsView })),
 );
@@ -82,6 +87,7 @@ const MODULE_VIEWS: Record<ModuleId, () => ReactElement> = {
   changes: () => <ChangesPanel />,
   editor: () => <EditorView />,
   dbml: () => <DbmlView />,
+  diagram: () => <DiagramView />,
   workitems: () => <WorkItemsView />,
   api: () => <ApiView />,
 };

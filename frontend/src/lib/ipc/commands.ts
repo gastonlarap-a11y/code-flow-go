@@ -814,6 +814,16 @@ export const listRepoFiles = (repoPath: string) => invoke<string[]>("list_repo_f
 export const dbmlListDocuments = (rootPath: string) =>
   invoke<string[]>("dbml_list_documents", { rootPath });
 
+/**
+ * Every `*.mmd` in the project folder, project-relative and sorted (DIAG-002).
+ *
+ * The diagram editor's only command. Opening, saving and creating a document are the file commands
+ * above, because a diagram is a file in the user's folder like a schema is — which is also why the
+ * backend has to do the walking: a webview cannot read a directory.
+ */
+export const diagramListDocuments = (rootPath: string) =>
+  invoke<string[]>("diagram_list_documents", { rootPath });
+
 /** The positions a person dragged this document's tables to (DBML-005). Tables absent here are auto-laid out. */
 export const dbmlLoadLayout = (projectId: string, relPath: string) =>
   invoke<DbmlTablePosition[]>("dbml_load_layout", { projectId, relPath });

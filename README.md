@@ -1,25 +1,23 @@
 # CodeFlow
 
 A desktop code-review and API workbench: pull-request review driven by AI engines, a Git client, a
-terminal, an HTTP/WebSocket/MQTT client and a database schema designer, in one window.
+terminal, an HTTP/WebSocket/MQTT client, a database schema designer and a diagram editor that
+stores its drawings as Mermaid, in one window.
 
-This repository is **CodeFlow 3.0**, a rewrite of CodeFlow 2.7.x as a single Go binary hosting a
-[Wails v3](https://v3.wails.io) window. It replaces an Electron shell plus a .NET sidecar, and ships
-as a drop-in replacement: it installs over 2.7.x and keeps the same database, the same keychain
-entries and the same update feed.
+This repository **is CodeFlow**, a rewrite of CodeFlow 2.7.x as a single Go binary hosting a
+[Wails v3](https://v3.wails.io) window. It replaced an Electron shell plus a .NET sidecar, and 3.0.0
+shipped as a drop-in replacement: it installs over 2.7.x and keeps the same database, the same
+keychain entries and the same update feed.
 
-> **Status: Phases 1–4 complete.** The window, the desktop shell and the bridge; storage
-> with its migrations, the credential store, workspaces, projects, settings, prompts, review
-> contexts, agents, MCP servers, skills, chat and job history, and the review-run store; Git in
-> full — status, diffs, history, branches, staging, committing, stash, merge and conflicts, AI
-> checkpoints, remotes, the identity and clone/fetch/pull/push with their streamed progress; the
-> file tree and its operations, the go-to-file palette, search and replace, the working-tree
-> watcher, the pre-commit secret gate and the terminal; and the AI layer in full — the routing
-> cascade, binary discovery, the run lifecycle with its streaming and cancellation, all six
-> engines, chat with its history and session handling, and the commit-message, inline-edit,
-> conflict-resolution, finding-fix and pull-request-description operations. **142 of 246 backend
-> commands answer**; 11 are deferred on purpose and 93 remain. `MIGRATION-GO.md` is the plan and
-> `docs/` is the authoritative specification of the behaviour being ported.
+> **Status: shipped.** The rewrite is complete and released — `v3.0.0` through `v3.3.1` were all
+> published from here. The Electron/.NET repository, `gastonlarap-a11y/code-flow`, is **deprecated**;
+> its 2.7.1 artefacts stay published so an install can be rolled back. All 246 backend commands the
+> renderer calls are accounted for: 235 answer, and 11 — the debugger and gRPC — are deferred on
+> purpose, exactly as 2.x deferred them.
+>
+> `docs/` is the authoritative specification of the behaviour (~11 000 lines). `MIGRATION-GO.md` is
+> the record of how the port was done, kept because its measurements and its decisions are still the
+> reasons things are the way they are; it is not a plan to follow.
 >
 > Git no longer goes through libgit2 — every operation is a `git` invocation, so parity is proven
 > by tests against real temporary repositories rather than by reasoning about library semantics.
@@ -48,10 +46,11 @@ on both platforms; Wails uses the system's, which is why there is a minimum macO
 
 ## What got faster, and what did not
 
-Measured on this machine by `task parity -- -time`, which sends the same request to the installed
-2.7.1 core and to 3.0 and times both. 2.7.1's figure includes one round trip over its unix socket,
-because that is what the command cost a user; 3.0's is an in-process call, because there is no
-transport left to include.
+Measured at 3.0.0 by `task parity -- -time`, which sends the same request to the installed 2.7.1
+core and to this one and times both. 2.7.1's figure includes one round trip over its unix socket,
+because that is what the command cost a user; the other is an in-process call, because there is no
+transport left to include. Nothing since has changed the shape of either side, so the table stands
+as the comparison it was taken to be.
 
 | Request | 2.7.1 | 3.0 | |
 |---|---:|---:|---|
@@ -170,7 +169,7 @@ untouched is what made a host swap of this size possible. `MIGRATION-GO.md` §3.
 
 ## Data locations
 
-CodeFlow 3.0 reads and writes exactly where 2.7.x did. Both are literal and neither is configurable.
+CodeFlow reads and writes exactly where 2.7.x did. Both are literal and neither is configurable.
 
 | | Path |
 |---|---|
@@ -186,8 +185,11 @@ the macOS keychain or Windows Credential Manager under `com.codeflow.app`, never
   (`typescript-eslint does not support TS 7.0`), and no release — canary included — supports it yet;
   its tracking issue targets TS ≥ 7.1. `eslint.config.js` is kept intact so this becomes one command
   again the day support lands. `pnpm typecheck` is the static check until then.
-- **Windows is unverified for Phase 1.** The frameless window, the caption buttons, ConPTY and the
-  console-window suppression compile and cross-compile cleanly but have not been run.
+- **Windows is verified by machine, not by hand.** The gate and the smoke test both run on
+  `windows-2025`, and the installer is built and published from CI — so the suite, the packaging and
+  the binary's own environment probes are exercised there every run. What has not happened is a
+  person walking the app: the frameless window, the caption buttons, ConPTY and the console-window
+  suppression have never been looked at on a real Windows desktop.
 - **Unsigned builds.** As in 2.x: Gatekeeper and SmartScreen warn on first run. On macOS the
   warning is not once per machine but once per **browser-downloaded copy**, so it returns with each
   version fetched from the releases page; an update the app downloads itself carries no quarantine

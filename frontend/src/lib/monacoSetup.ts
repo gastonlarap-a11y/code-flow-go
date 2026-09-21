@@ -69,6 +69,55 @@ const isolatedFileDiagnostics = { noSemanticValidation: true, noSyntaxValidation
 monaco.typescript.typescriptDefaults.setDiagnosticsOptions(isolatedFileDiagnostics);
 monaco.typescript.javascriptDefaults.setDiagnosticsOptions(isolatedFileDiagnostics);
 
+/**
+ * Mermaid, which Monaco does not know.
+ *
+ * The schema designer borrows `language="sql"` for its `.dbml` pane — close enough for comments
+ * and strings, and not worth a tokenizer. Mermaid has no lookalike: `%%` is a comment in nothing
+ * else, and the arrows and shape braces are the whole syntax. Since the text *is* the format here,
+ * it gets a real one — small, and only over what this editor reads and writes.
+ */
+monaco.languages.register({ id: "mermaid", extensions: [".mmd"], aliases: ["Mermaid"] });
+monaco.languages.setLanguageConfiguration("mermaid", {
+  comments: { lineComment: "%%" },
+  brackets: [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+  ],
+  autoClosingPairs: [
+    { open: "{", close: "}" },
+    { open: "[", close: "]" },
+    { open: "(", close: ")" },
+    { open: '"', close: '"' },
+  ],
+});
+monaco.languages.setMonarchTokensProvider("mermaid", {
+  defaultToken: "",
+  keywords: ["flowchart", "graph", "subgraph", "end", "direction", "classDef", "class", "style", "linkStyle"],
+  tokenizer: {
+    root: [
+      [/%%.*$/, "comment"],
+      [/"[^"]*"/, "string"],
+      // The arrows, longest first so `-.->` is not read as `-` then `.`.
+      [/-\.->|-\.-|==>|===|-->|---|~~~/, "keyword.operator"],
+      [/\|[^|]*\|/, "string"],
+      [/#[0-9a-fA-F]{3,8}\b/, "number"],
+      [/\b(?:flowchart|graph|subgraph|end|direction|classDef|class|style|linkStyle)\b/, "keyword"],
+      [/@\{/, { token: "delimiter.bracket", next: "@attributes" }],
+      [/[A-Za-z_][\w-]*/, "identifier"],
+      [/[{}[\]()]/, "delimiter.bracket"],
+    ],
+    attributes: [
+      [/\}/, { token: "delimiter.bracket", next: "@pop" }],
+      [/"[^"]*"/, "string"],
+      [/[A-Za-z_][\w-]*(?=\s*:)/, "attribute.name"],
+      [/[A-Za-z_][\w-]*/, "attribute.value"],
+      [/[,:]/, "delimiter"],
+    ],
+  },
+});
+
 // Every scheme is registered up front rather than on demand: `defineTheme` is cheap (it just
 // stores a rule list), and having them all present means switching themes — or mounting an
 // editor that already has one selected — can never race a definition that hasn't happened yet.
