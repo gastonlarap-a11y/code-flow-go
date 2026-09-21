@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { Table2 } from "lucide-react";
 import { parseDbmlModel } from "../../lib/dbml/parse";
+import { useCardEditing, type SourcePosition } from "../../lib/dbml/useCardEditing";
+import { emptyModel } from "../../lib/dbml/model";
 import type { Point } from "../../lib/dbml/layout";
 import { DbmlCanvas, type DbmlCanvasHandle } from "../dbml/DbmlCanvas";
 import { DbmlViewportControls } from "../dbml/DbmlViewportControls";
@@ -20,8 +22,27 @@ import { useT } from "../../state/languageStore";
  * module next door had auto-layout, orthogonal routes anchored to the column they name, and
  * relationships that explain themselves on hover. Keeping the lesser one meant a `.dbml` file looked
  * different depending on which door you opened it through.
+ *
+ * **And the cards edit here too**, when the Editor hands over `onChange` — which it does. They were
+ * read-only at first, on the reasoning that the Editor owns this buffer and the preview has nothing
+ * to write into. That was wrong from the only side that matters: opening a `.dbml` from the file
+ * tree is how most people reach one, so the editing landed exactly where nobody was looking. A
+ * buffer with an owner is not a buffer that cannot be written; it is one that has somewhere to
+ * write.
  */
-export function DbmlPreview({ content, path }: { content: string; path: string }) {
+export function DbmlPreview({
+  content,
+  path,
+  onChange,
+  onReveal,
+}: {
+  content: string;
+  path: string;
+  /** Replaces the tab's buffer. Without it the diagram is a picture, as it was. */
+  onChange?: ((next: string) => void) | undefined;
+  /** Put the caret on this span of the file, showing the code if it is not on screen. */
+  onReveal?: ((from: SourcePosition, to: SourcePosition) => void) | undefined;
+}) {
   const t = useT();
   const parsed = useMemo(() => parseDbmlModel(content), [content]);
   const canvasRef = useRef<DbmlCanvasHandle>(null);
@@ -30,6 +51,16 @@ export function DbmlPreview({ content, path }: { content: string; path: string }
   // document (DBML-005), and that is the schema module's job. The auto-layout is deterministic, so
   // reopening the file gives back the same picture rather than a shuffled one.
   const [positions, setPositions] = useState<Record<string, Point>>({});
+
+  const model = parsed.ok ? parsed.model : emptyModel();
+  const editing = useCardEditing({
+    readSource: () => content,
+    parsed,
+    model,
+    onSource: onChange ?? (() => {}),
+    // Nothing to carry: this view stores no positions to begin with.
+    onReveal: onReveal ?? (() => {}),
+  });
 
   if (!parsed.ok) {
     return (
@@ -53,6 +84,8 @@ export function DbmlPreview({ content, path }: { content: string; path: string }
         documentKey={path}
         positions={positions}
         onPlace={(tableKey, point) => setPositions((current) => ({ ...current, [tableKey]: point }))}
+        // A tab opened read-only — a diff, a preview of something not on disk — keeps a picture.
+        editing={onChange ? editing : undefined}
       />
       <DbmlViewportControls canvas={canvasRef} />
     </div>

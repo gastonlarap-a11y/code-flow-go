@@ -13,18 +13,10 @@ import {
 import type { editor as MonacoEditorNS } from "monaco-editor";
 import { Editor, OVERFLOW_SAFE_OPTIONS, monaco, type OnMount } from "../../lib/monacoEditor";
 import { parseDbmlModel } from "../../lib/dbml/parse";
-import { carriedPosition, planEdit, relationsTouching } from "../../lib/dbml/cardEdit";
-import {
-  lineAndColumn,
-  removeTable,
-  renameColumn,
-  renameTable,
-  retypeColumn,
-  tableNameSpan,
-} from "../../lib/dbml/editDbml";
+import { carriedPosition } from "../../lib/dbml/cardEdit";
+import { useCardEditing } from "../../lib/dbml/useCardEditing";
 import { emptyModel, type DbmlSchemaModel } from "../../lib/dbml/model";
 import { useDbmlStore } from "../../state/dbmlStore";
-import { pushErrorToast } from "../../state/toastStore";
 import { useWorkspaceStore } from "../../state/workspaceStore";
 import { useThemeStore } from "../../state/themeStore";
 import { confirmAction } from "../../state/confirmStore";
@@ -34,7 +26,7 @@ import { EmptyState } from "../common/EmptyState";
 import { ResizeHandle } from "../common/ResizeHandle";
 import { IconButton } from "../common/IconButton";
 import { Button } from "../common/Button";
-import { DbmlCanvas, type DbmlCanvasEditing, type DbmlCanvasHandle } from "./DbmlCanvas";
+import { DbmlCanvas, type DbmlCanvasHandle } from "./DbmlCanvas";
 import { DbmlViewportControls } from "./DbmlViewportControls";
 import { NewDbmlModal } from "./NewDbmlModal";
 import { ExportDbmlModal } from "./ExportDbmlModal";
@@ -125,68 +117,18 @@ export function DbmlView() {
     requestAnimationFrame(() => canvasRef.current?.fit());
   };
 
-  /**
-   * Where every edit made on a card lands (DBML-028).
-   *
-   * `planEdit` is the rule and this is the wiring: it decides, this reports and commits. The two
-   * gates it applies — a buffer that does not parse, and a result that would not — are why a card
-   * cannot quietly edit a document the user is halfway through typing.
-   */
-  const applyEdit = (next: string | null): boolean => {
-    const outcome = planEdit(parsed, next);
-    switch (outcome.kind) {
-      case "stale":
-        pushErrorToast(t("dbml.edit.invalid"));
-        return false;
-      case "missing":
-        pushErrorToast(t("dbml.edit.notFound"));
-        return false;
-      case "refused":
-        pushErrorToast(t("dbml.edit.refused", { error: outcome.error }));
-        return false;
-      case "apply":
-        setSource(outcome.source);
-        return true;
-    }
-  };
-
-  const editing: DbmlCanvasEditing = {
-    renameTable: (key, name) => {
-      const table = model.tables.find((entry) => entry.key === key);
-      if (table === undefined || !applyEdit(renameTable(source, key, name))) return;
-
+  // The rules are `useCardEditing`, shared with the Editor's preview; what this passes is what it
+  // owns — its buffer, its source pane, and the positions a rename has to carry over (DBML-028).
+  const editing = useCardEditing({
+    readSource: () => useDbmlStore.getState().source,
+    parsed,
+    model,
+    onSource: setSource,
+    onRenamed: (table, name) => {
       const carried = carriedPosition(positions, table, name);
       if (carried) void placeTable(project.id, carried.key, carried.point);
     },
-    renameColumn: (key, column, name) => void applyEdit(renameColumn(source, key, column, name)),
-    retypeColumn: (key, column, type) => void applyEdit(retypeColumn(source, key, column, type)),
-
-    deleteTable: (key) => {
-      const table = model.tables.find((entry) => entry.key === key);
-      if (table === undefined) return;
-
-      const related = relationsTouching(model, key);
-      const message =
-        related === 0
-          ? t("dbml.table.deleteConfirm", { name: table.name })
-          : t("dbml.table.deleteConfirmRelated", { name: table.name, n: related });
-
-      void confirmAction(message, true, t("dbml.table.delete")).then((confirmed) => {
-        if (!confirmed) return;
-        // Read again rather than close over it: the dialog was open, and the source pane is live.
-        applyEdit(removeTable(useDbmlStore.getState().source, key));
-      });
-    },
-
-    revealTable: (key) => {
-      const span = tableNameSpan(source, key);
-      if (span === null) {
-        pushErrorToast(t("dbml.edit.notFound"));
-        return;
-      }
-
-      const from = lineAndColumn(source, span.start);
-      const to = lineAndColumn(source, span.end);
+    onReveal: (from, to) => {
       setEditorCollapsed(false);
       // Next frame, so a source pane that was collapsed has been laid out before Monaco is asked to
       // scroll inside it — a hidden editor has no viewport to centre a line in.
@@ -203,7 +145,7 @@ export function DbmlView() {
         instance.focus();
       });
     },
-  };
+  });
 
   const onEditorMount: OnMount = (instance) => {
     editorRef.current = instance;

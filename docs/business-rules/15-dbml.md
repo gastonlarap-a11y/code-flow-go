@@ -451,10 +451,18 @@ diagram reached only one of them. Both files are gone, and with them their adapt
 assertions `parse.test.ts` already made.
 
 The shared zoom/fit cluster is `DbmlViewportControls`, whose `onArrange` is optional: re-arranging
-means forgetting positions a person saved, and the preview has none. The canvas's `editing` prop is
-optional for the same kind of reason: the preview draws a file the Editor owns the buffer of, so
-there is nothing here to write an edit into and the cards stay read-only (`DBML-028`). Notes and
-relationship tooltips are not editing and work in both.
+means forgetting positions a person saved, and the preview has none.
+
+**The cards edit here too.** They were read-only at first, on the reasoning that the Editor owns
+this buffer and the preview has nothing to write into — which was wrong from the only side that
+matters. Opening a `.dbml` from the file tree is how most people reach one, so the editing shipped
+exactly where nobody was looking, and the feature was reported missing in the release that added it.
+A buffer with an owner is not a buffer that cannot be written; it is one that has somewhere to
+write. `EditorPane` passes `onChange`, which is the same setter Monaco's own edits go through, so a
+card edit marks the tab dirty and is saved, undone and discarded like any other. "Go to its code"
+switches a `preview`-only tab to `split` first — there is no editor to scroll in until it does — and
+puts the caret on the table's name once that editor has mounted. A tab with no `onChange` still
+draws a picture.
 **Inputs / outputs**: `(content, path)` → the diagram. `path` is the canvas's `documentKey`, so
 switching tabs re-fits.
 **Edge cases**: the preview's drag is **ephemeral** — persistence is keyed on a project and a
@@ -742,11 +750,15 @@ re-parse rather than committed wrong.
 ---
 
 ### DBML-028 A card is the second way to edit the document, and every edit is parsed before it lands
-**Implementation**: `renderer/src/lib/dbml/cardEdit.ts` · `renderer/src/components/dbml/DbmlCanvas.tsx`
-(`DbmlCanvasEditing`) · `renderer/src/components/dbml/DbmlView.tsx` (`applyEdit`)
-**Behaviour**: The canvas takes an optional `editing` prop and is a picture without it — which is
-what keeps the Editor module's quick look read-only (`DBML-018`), since that view has no buffer of
-its own to write to. With it, each card offers: **double-click** on the table's title, a column's
+**Implementation**: `renderer/src/lib/dbml/cardEdit.ts` · `renderer/src/lib/dbml/useCardEditing.ts` ·
+`renderer/src/components/dbml/DbmlCanvas.tsx` (`DbmlCanvasEditing`) ·
+`renderer/src/components/dbml/DbmlView.tsx` · `renderer/src/components/editor/DbmlPreview.tsx` ·
+`renderer/src/components/editor/EditorPane.tsx` (`revealDbmlTable`)
+**Behaviour**: The canvas takes an optional `editing` prop and is a picture without it. **Both
+places the diagram is drawn pass it** — the schema module and the Editor's `.dbml` preview
+(`DBML-018`) — through `useCardEditing`, which owns the rules while each host passes only what it
+owns: how to read its buffer, how to replace it, and how to show a line of it. With it, each card
+offers: **double-click** on the table's title, a column's
 name or a column's type to edit it in place (Enter and blur commit, Escape abandons, the value is
 selected on open); and a **menu**, opened by right-clicking anywhere on the card or by clicking the
 `⋮` in its header — a right click alone would be the only way in, and a left click is what everyone
@@ -782,12 +794,18 @@ it, because the source pane stays live while a dialog is open. Nothing is writte
 lands in the buffer, so the save button and Ctrl+Z keep owning it.
 **Frontend dependency**: none outward.
 **Markers**: none. The rules are covered by `cardEdit.test.ts`; the **wiring** — which handler sits
-on which element — was checked by mounting `DbmlCanvas` on its own in a throwaway page under the
-dev server and driving it in a browser: hover a column and a note appears, right-click and the menu
-opens on the first item, arrow keys and Enter reach "delete", the menu's "rename" opens the inline
-input with the name selected, Enter commits exactly once (blur behind it does not commit again),
-Escape commits nothing, leaving the cell commits, and the header still drags the card. Repeat it
-that way if this component changes; there is no DOM in the test run to do it from.
+on which element — is checked by mounting the component on its own in a throwaway page under the
+dev server and driving it in a browser, since there is no DOM in the test run to do it from. What
+was confirmed that way: hover a column and its note appears, right-click opens the menu on its first
+item, arrow keys and Enter reach "delete", "rename" opens the inline input with the name selected,
+Enter commits exactly once (the blur behind it does not commit again), Escape commits nothing,
+leaving the cell commits, the header still drags the card — and, for the preview, that a delete
+travels the whole way round: card → `onChange` → the tab's buffer → back in as `content`, with the
+table gone, the inline `ref:` gone from the other table's column and its `not null` untouched.
+
+**Checking the component is not checking the feature.** The first version of this rule was verified
+exactly that way and still shipped unreachable, because the *host* that users actually open —
+`DbmlPreview` — was the one not passing `editing`. Drive the path, not the widget.
 
 ---
 
