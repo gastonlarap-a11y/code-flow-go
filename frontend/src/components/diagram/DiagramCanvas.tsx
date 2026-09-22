@@ -17,6 +17,7 @@ import {
   moveNodes,
   reparent,
   resizeNode,
+  setEdgeLabel,
   setNodeText,
 } from "../../lib/diagram/edits";
 import {
@@ -29,6 +30,14 @@ import {
   normalizeRect,
 } from "../../lib/diagram/picking";
 import { HANDLES, handleCursor, handlePoint, resizeBox, type Handle } from "../../lib/diagram/resize";
+
+/**
+ * The field a connector's label is typed into, in document units.
+ *
+ * Wider than the caption it replaces, because a label being written is longer than the one already
+ * there more often than not.
+ */
+const EDGE_EDITOR = { width: 150, height: 26 };
 import { DASH, edgeCaption, edgeStyle, markerDomId } from "../../lib/diagram/markers";
 import { absolutePosition, documentBounds, nodeById, type DiagramNode } from "../../lib/diagram/model";
 import { diagramPalette } from "../../lib/diagram/palette";
@@ -38,7 +47,7 @@ import { useDiagramStore } from "../../state/diagramStore";
 import { useThemeStore } from "../../state/themeStore";
 import { DiagramMarkers } from "./DiagramMarkers";
 import { ShapeGlyph } from "./ShapeGlyph";
-import { ShapeLabel } from "./ShapeLabel";
+import { LabelEditor, ShapeLabel } from "./ShapeLabel";
 
 /**
  * The drawing surface (DIAG-017).
@@ -89,6 +98,7 @@ export function DiagramCanvas({ ref }: { ref?: Ref<DiagramCanvasHandle> }) {
   const [view, setView] = useState<Viewport>(IDENTITY);
   const [gesture, setGesture] = useState<Gesture>({ kind: "none" });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
 
   const selectedNodes = useMemo(() => new Set(selection.nodes), [selection.nodes]);
   const selectedEdges = useMemo(() => new Set(selection.edges), [selection.edges]);
@@ -307,8 +317,19 @@ export function DiagramCanvas({ ref }: { ref?: Ref<DiagramCanvasHandle> }) {
   };
 
   const onDoubleClick = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const node = nodeAt(doc, pointOf(event));
-    if (node !== null && editable) setEditingId(node.id);
+    if (!editable) return;
+
+    const at = pointOf(event);
+    const node = nodeAt(doc, at);
+    if (node !== null) {
+      setEditingId(node.id);
+      return;
+    }
+
+    // Missing every shape, the double click is aimed at whatever connector runs under it — which
+    // is how somebody labels an arrow without knowing the inspector exists.
+    const edge = edgeAt(doc, at);
+    if (edge !== null) setEditingEdgeId(edge);
   };
 
   // ---- what is drawn -----------------------------------------------------------------------
@@ -324,6 +345,24 @@ export function DiagramCanvas({ ref }: { ref?: Ref<DiagramCanvasHandle> }) {
 
   const selectedSingle =
     selection.nodes.length === 1 ? (nodeById(doc, selection.nodes[0]!) ?? null) : null;
+
+  /**
+   * The connector being labelled, and where its field goes.
+   *
+   * Derived rather than held: an edge deleted while its label was open would otherwise leave a
+   * field floating over nothing.
+   */
+  const editingEdge = (() => {
+    if (editingEdgeId === null) return null;
+    const edge = doc.edges.find((one) => one.id === editingEdgeId);
+    if (edge === undefined) return null;
+
+    const from = boxes.get(edge.from);
+    const to = boxes.get(edge.to);
+    if (from === undefined || to === undefined) return null;
+
+    return { id: edge.id, label: edge.label, at: edgePath(from, to).at };
+  })();
 
   return (
     <div
@@ -421,6 +460,31 @@ export function DiagramCanvas({ ref }: { ref?: Ref<DiagramCanvasHandle> }) {
             pointOf={pointOf}
           />
         ))}
+
+        {/* A connector's label, typed over the middle of the run it belongs to. Inside the
+            transformed wrapper like everything else, so it sits on the arrow at every zoom. */}
+        {editingEdge !== null && (
+          <div
+            className="absolute"
+            style={{
+              left: editingEdge.at.x - EDGE_EDITOR.width / 2,
+              top: editingEdge.at.y - EDGE_EDITOR.height / 2,
+              width: EDGE_EDITOR.width,
+              height: EDGE_EDITOR.height,
+              background: palette.background,
+            }}
+          >
+            <LabelEditor
+              text={editingEdge.label}
+              colour={palette.lineText}
+              onCommit={(text) => {
+                setEditingEdgeId(null);
+                edit((current) => setEdgeLabel(current, editingEdge.id, text));
+              }}
+              onCancel={() => setEditingEdgeId(null)}
+            />
+          </div>
+        )}
 
         {gesture.kind === "marquee" && (
           <div

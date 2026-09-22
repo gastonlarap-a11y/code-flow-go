@@ -22,13 +22,30 @@ import { ShapeGlyph } from "./ShapeGlyph";
  * selected, ready to be dragged where it belongs.
  */
 const GROUP_LABELS = {
-  basic: "diagram.group.basic",
-  flow: "diagram.group.flow",
+  process: "diagram.group.process",
+  control: "diagram.group.control",
+  terminal: "diagram.group.terminal",
+  data: "diagram.group.data",
+  document: "diagram.group.document",
+  system: "diagram.group.system",
+  note: "diagram.group.note",
   container: "diagram.group.container",
 } as const satisfies Record<StencilGroup, TranslationKey>;
 
 /** The box a preview is drawn in. Everything is scaled to fit it, keeping its proportions. */
 const PREVIEW = 46;
+
+/**
+ * Matching is done on the **translated** label, because that is the word somebody has in mind.
+ * Accents are folded away so "decision" finds "decisión": typing the accent is work, and not
+ * finding the shape because of it reads as the shape not existing.
+ */
+function fold(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
 
 export function DiagramPalette({
   onPlace,
@@ -40,9 +57,8 @@ export function DiagramPalette({
   const t = useT();
   const theme = useThemeStore((s) => s.resolved);
   const palette = useMemo(() => diagramPalette(theme), [theme]);
-  // All three open: the catalogue is seventeen figures now, which fits without scrolling. It was
-  // thirty when two of the groups started closed.
   const [collapsed, setCollapsed] = useState<ReadonlySet<StencilGroup>>(new Set());
+  const [filter, setFilter] = useState("");
 
   const toggle = (group: StencilGroup) =>
     setCollapsed((current) => {
@@ -51,10 +67,38 @@ export function DiagramPalette({
       return next;
     });
 
+  // Fifty figures is more than anybody scans. The filter is what makes the catalogue reachable:
+  // it is matched against the label, and a group with nothing left in it disappears rather than
+  // showing an empty heading.
+  const needle = fold(filter.trim());
+  const matching = useMemo(
+    () =>
+      needle === ""
+        ? STENCILS
+        : STENCILS.filter((stencil) => fold(t(stencil.labelKey)).includes(needle)),
+    [needle, t],
+  );
+
   return (
     <div className="flex w-[184px] shrink-0 flex-col gap-1 overflow-y-auto p-2">
+      <input
+        type="search"
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+        placeholder={t("diagram.paletteFilter")}
+        aria-label={t("diagram.paletteFilter")}
+        className="cf-focusable mb-1 w-full rounded-control border border-[var(--cf-border)] bg-[var(--cf-bg)] px-1.5 py-1 text-ui text-[var(--cf-text)] outline-none"
+      />
+
+      {matching.length === 0 && (
+        <p className="px-1 py-2 text-ui text-[var(--cf-text-muted)]">{t("diagram.paletteNoMatch")}</p>
+      )}
+
       {STENCIL_GROUPS.map((group) => {
-        const open = !collapsed.has(group);
+        const inGroup = matching.filter((stencil) => stencil.group === group);
+        if (inGroup.length === 0) return null;
+        // While filtering, a collapsed group would hide the very thing that was searched for.
+        const open = needle !== "" || !collapsed.has(group);
         return (
           <section key={group}>
             <button
@@ -73,7 +117,7 @@ export function DiagramPalette({
 
             {open && (
               <div className="grid grid-cols-3 gap-1 p-1">
-                {STENCILS.filter((stencil) => stencil.group === group).map((stencil) => {
+                {inGroup.map((stencil) => {
                   const scale = PREVIEW / Math.max(stencil.width, stencil.height);
                   const width = Math.round(stencil.width * scale);
                   const height = Math.round(stencil.height * scale);

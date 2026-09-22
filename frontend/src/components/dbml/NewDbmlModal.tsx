@@ -62,8 +62,12 @@ export function NewDbmlModal({ rootPath, onClose }: { rootPath: string; onClose:
             placeholder={t("dbml.namePlaceholder")}
             className="cf-focusable w-full rounded-control border border-[var(--cf-border)] bg-[var(--cf-bg)] px-2 py-1.5 text-body text-[var(--cf-text)] outline-none"
           />
-          {/* The extension is appended when missing, so the hint is not a rule to obey. */}
-          <span className="text-badge text-[var(--cf-text-muted)]">.dbml</span>
+          {/* The extension is appended when missing, so the hint is not a rule to obey. The folder
+              half of it is: a name with a `/` in it has always created the folder, and nothing
+              said so. */}
+          <span className="text-badge text-[var(--cf-text-muted)]">
+            .dbml · {t("dbml.nameFolderHint")}
+          </span>
         </label>
 
         {error !== null && (

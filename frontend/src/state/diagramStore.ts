@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import * as api from "../lib/ipc/commands";
 import { pushErrorToast } from "./toastStore";
-import { normalizeDocumentPath, type DocumentPathError } from "../lib/documentPath";
+import { documentTitle, normalizeDocumentPath, type DocumentPathError } from "../lib/documentPath";
 import {
   amend,
   canRedo,
@@ -179,7 +179,9 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     const taken = get().documents.some((d) => d.toLowerCase() === relPath.toLowerCase());
     if (taken) return "exists";
 
-    const doc = contents ?? newDocument(name.trim());
+    // Titled with the file's name, not with what was typed: `procesos/aprobacion` names a folder
+    // and a document, and only the second half is the document's title.
+    const doc = contents ?? newDocument(documentTitle(relPath, DOCUMENT_EXTENSION));
     const source = emitMermaid(doc);
 
     try {

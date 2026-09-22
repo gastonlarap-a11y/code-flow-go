@@ -68,10 +68,12 @@ const LEGACY_SHAPES: Record<string, { kind: StencilId; lossy?: true }> = {
   cylinder: { kind: "cyl" },
   document: { kind: "doc" },
   "bpmn.data": { kind: "doc", lossy: true },
-  "bpmn.annotation": { kind: "brace" },
-  note: { kind: "brace", lossy: true },
-  subprocess: { kind: "div-rect" },
-  "bpmn.subprocess": { kind: "div-rect" },
+  // The catalogue no longer carries Mermaid's comment shapes, so an annotation arrives as the text
+  // block it is — the bracket beside it is what is lost.
+  "bpmn.annotation": { kind: "text", lossy: true },
+  note: { kind: "text", lossy: true },
+  subprocess: { kind: "fr-rect" },
+  "bpmn.subprocess": { kind: "fr-rect" },
   connector: { kind: "sm-circ" },
   "bpmn.start": { kind: "circle" },
   "bpmn.intermediate": { kind: "dbl-circ" },
