@@ -21,6 +21,7 @@ import { UpdateAlert } from "./components/layout/UpdateAlert";
 import { EmptyState } from "./components/common/EmptyState";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { SkeletonRows } from "./components/common/Skeleton";
+import { UsageIndicator } from "./components/usage/UsageIndicator";
 import { ToastContainer } from "./components/common/Toast";
 import { ConfirmModal } from "./components/common/ConfirmModal";
 import { useThemeStore } from "./state/themeStore";
@@ -419,6 +420,9 @@ export default function App() {
       {/* Owns its own open flag rather than one in uiStore: nothing but the update badge and the
           Settings panel ever opens it, and both go through the update store already. */}
       <UpdateNotesModal />
+      {/* The bottom-right corner, which the redesign left empty. Fixed-positioned and outside the
+          layout flow, so it costs the panes no height (USAGE-010). */}
+      <UsageIndicator />
       <ToastContainer />
       <ConfirmModal />
     </div>

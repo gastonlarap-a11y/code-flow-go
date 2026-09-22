@@ -656,3 +656,88 @@ export interface DbmlSnapshotEnum {
   name: string;
   values: string[];
 }
+
+/**
+ * How much can be known about one AI provider's consumption (USAGE-004).
+ *
+ * `measured` — the provider writes a transcript this app can read.
+ * `unlimited` — a local engine, metered by nothing at all.
+ * `unavailable` — it publishes no readable consumption, so nothing is shown rather than guessed.
+ */
+export type UsageState = "measured" | "unlimited" | "unavailable";
+
+/** One model's share of a metered window. */
+export interface UsageModel {
+  model: string;
+  tokens: number;
+}
+
+/**
+ * Where a percentage came from (USAGE-011).
+ *
+ * `reported` — the provider's own figure, read from its CLI. `observed` — divided by a ceiling this
+ * app watched the user reach. They are not the same claim, and the panel does not present them as
+ * though they were. Empty when there is no percentage at all.
+ */
+export type UsagePercentSource = "reported" | "observed" | "";
+
+/**
+ * One metered stretch of time (USAGE-003).
+ *
+ * `percent` is null when neither source has anything to say. `ceiling` is set only for an
+ * `observed` percentage: a reported share arrives with no denominator attached. Null and zero are
+ * different answers and the panel draws them differently.
+ */
+export interface UsageWindow {
+  tokens: number;
+  percent: number | null;
+  source: UsagePercentSource;
+  ceiling: number | null;
+  started_at: string;
+  resets_at: string;
+  burn_per_hour: number;
+  models: UsageModel[];
+}
+
+/** One agent's consumption, in both windows a subscription is metered against. */
+export interface UsageProvider {
+  provider: string;
+  state: UsageState;
+  plan: string;
+  session: UsageWindow | null;
+  week: UsageWindow | null;
+}
+
+/**
+ * What the CodeFlow process costs the machine (USAGE-007).
+ *
+ * The Go process only — the renderer runs in a WebView process of its own that nothing here can
+ * see, which is why the panel labels this as the process rather than as "the app". `sampled` is
+ * false on the first reading, which has no previous one to rate against.
+ */
+export interface UsageResources {
+  cpu_percent: number;
+  memory_bytes: number;
+  sampled: boolean;
+}
+
+/** The room the app's own files take. `complete` is false when the sweep hit its limit. */
+export interface UsageData {
+  bytes: number;
+  complete: boolean;
+}
+
+/** What the app has been used for in the trailing week, counted from tables already being written. */
+export interface UsageActivity {
+  conversations: number;
+  jobs: number;
+}
+
+/** Everything the indicator draws, measured at one instant (USAGE-001). */
+export interface UsageSnapshot {
+  providers: UsageProvider[];
+  resources: UsageResources;
+  data: UsageData;
+  activity: UsageActivity;
+  taken_at: string;
+}

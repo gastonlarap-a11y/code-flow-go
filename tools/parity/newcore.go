@@ -37,10 +37,11 @@ func startNewCore(ctx context.Context, base string) (*newCore, error) {
 		return nil, fmt.Errorf("open %s: %w", paths.Database(), err)
 	}
 
-	return &newCore{
-		registry: app.BuildRegistry(app.Deps{Paths: paths, DB: db, Version: "3.0.0"}),
-		db:       db,
-	}, nil
+	// The failure observer is the usage indicator's, and the oracle replays requests rather than
+	// watching quotas, so it is discarded here.
+	registry, _ := app.BuildRegistry(app.Deps{Paths: paths, DB: db, Version: "3.0.0"})
+
+	return &newCore{registry: registry, db: db}, nil
 }
 
 // Call runs one command and marshals its answer exactly as the bridge would.

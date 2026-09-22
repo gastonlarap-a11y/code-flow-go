@@ -159,11 +159,11 @@ exactly one non-test file under `backend/`, with zero ambiguity, and the total r
 | deferred — never registered, answer `unknown command` | 11 | `12-debugging.md`, `08-api-client.md` |
 | **called by the renderer** | **247** | |
 
-**One of these did not come from 2.x.** `diagram_list_documents` is the first command this
-repository added on its own, after the port shipped; there is no C# file under it, and its row
-carries no `<sub>` provenance because there is none to carry. `backend/app/contract_test.go` keeps
-the two apart in the same way: `portedCommandCount` is closed at 246 and `newSincePort` lists what
-came after.
+**Two of these did not come from 2.x.** `diagram_list_documents` (`16-diagrams.md`) and
+`usage_snapshot` (`17-usage.md`) are the commands this repository added on its own, after the port
+shipped; there is no C# file under either, and their rows carry no `<sub>` provenance because there
+is none to carry. `backend/app/contract_test.go` keeps the two groups apart in the same way:
+`portedCommandCount` is closed at 246 and `newSincePort` lists what came after.
 
 Four regroupings are worth naming, because they are the reason a reader looking for a command in
 the file its heading names will not find it:
@@ -476,6 +476,17 @@ actually sends. Elsewhere in this table the `Caller parameters` column carries t
 snake_case — provenance, like the `<sub>` lines, and not always what crosses the wire today: the
 schema designer's `dbml_list_documents` is listed as `root_path` and is read as `rootPath`. This row
 has no 2.x signature to record, so it states the live one.
+
+### `backend/usage/commands.go` — 1 command → [17-usage](17-usage.md)
+<sub>2.x: none — this feature was written here, after the port.</sub>
+
+| Command | Caller parameters | Returns | Injected | TS wrapper |
+|---|---|---|---|---|
+| `usage_snapshot` | — | `Result&lt;UsageSnapshot, string&gt;` | Reader, Store, DB | `usageSnapshot` |
+
+No parameters at all: it measures this process and the agent transcripts under the user's own home,
+and the renderer can name neither. One command rather than one per section, because the panel draws
+its four sections together and four round trips would let them disagree about what "now" means.
 
 ### `backend/terminal/commands.go` — 4 commands → [11-files-search-terminal](11-files-search-terminal.md)
 <sub>2.x: `src/CodeFlow.App/Terminal/TerminalCommands.cs`</sub>

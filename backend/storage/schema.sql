@@ -382,3 +382,19 @@ CREATE TABLE IF NOT EXISTS db_connections (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- The AI usage ceilings this app has watched the user reach (USAGE-006).
+--
+-- No provider publishes the token limit of a subscription window, so the indicator never assumes
+-- one: it records what the window held the moment a provider answered "limit reached", and divides
+-- by that from then on. One row per provider, plan and window; the value only ever moves up,
+-- because running out early proves the window held at least that much and a later, larger number
+-- is the better reading of the same limit.
+CREATE TABLE IF NOT EXISTS ai_usage_ceiling (
+    provider        TEXT NOT NULL,
+    plan            TEXT NOT NULL,
+    window_kind     TEXT NOT NULL,
+    observed_tokens INTEGER NOT NULL,
+    observed_at     TEXT NOT NULL,
+    PRIMARY KEY (provider, plan, window_kind)
+);

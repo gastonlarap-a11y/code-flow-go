@@ -1,5 +1,6 @@
 import { Check, Download, Loader2, RefreshCw, RotateCw, Sparkles, TriangleAlert } from "lucide-react";
 import { Button } from "../common/Button";
+import { ProgressBar } from "../common/ProgressBar";
 import { useUpdateStore } from "../../state/updateStore";
 import { useLanguageStore, useT } from "../../state/languageStore";
 import type { TranslationKey } from "../../lib/i18n/translations";
@@ -114,9 +115,7 @@ export function UpdateSection() {
             <Loader2 size={14} className="animate-spin" />
             {t("settings.downloadingUpdate", { progress: progress })}
           </p>
-          <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-[var(--cf-border)]">
-            <div className="h-full rounded-full bg-[var(--cf-accent)] transition-all" style={{ width: `${progress}%` }} />
-          </div>
+          <ProgressBar percent={progress} size="md" className="max-w-xs" />
         </div>
       )}
 
