@@ -82,10 +82,10 @@ func columns(t *testing.T, db *storage.DB, table string) []string {
 // The count measured against a real 2.7.1 database (23 tables, 10 indexes). `03-storage.md` says
 // 22/10, which is what this number corrects — the two DBML tables live in Schema.cs but were never
 // transcribed into the specification.
-func TestSchemaHasTwentyThreeTablesAndTenIndexes(t *testing.T) {
+func TestSchemaHasTwentyFourTablesAndTenIndexes(t *testing.T) {
 	db := open(t)
 
-	assert.Len(t, objects(t, db, "table"), 23)
+	assert.Len(t, objects(t, db, "table"), 24)
 	assert.Len(t, objects(t, db, "index"), 10)
 }
 
@@ -93,11 +93,11 @@ func TestSchemaCreatesTheExpectedTables(t *testing.T) {
 	db := open(t)
 
 	assert.Equal(t, []string{
-		"activity_log", "api_collections", "api_cookies", "api_environments", "api_folders",
-		"api_history", "api_requests", "app_settings", "conversation_titles", "db_connections",
-		"dbml_layouts", "job_history", "projects", "review_contexts", "review_runs",
-		"ticket_links", "ticket_review_runs", "tickets", "workspace_agents", "workspace_mcps",
-		"workspace_prompts", "workspace_skills", "workspaces",
+		"activity_log", "ai_usage_ceiling", "api_collections", "api_cookies", "api_environments",
+		"api_folders", "api_history", "api_requests", "app_settings", "conversation_titles",
+		"db_connections", "dbml_layouts", "job_history", "projects", "review_contexts",
+		"review_runs", "ticket_links", "ticket_review_runs", "tickets", "workspace_agents",
+		"workspace_mcps", "workspace_prompts", "workspace_skills", "workspaces",
 	}, objects(t, db, "table"))
 }
 

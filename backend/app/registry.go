@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/gastonlarap-a11y/code-flow/backend/activity"
 	"github.com/gastonlarap-a11y/code-flow/backend/ai"
@@ -21,6 +22,7 @@ import (
 	"github.com/gastonlarap-a11y/code-flow/backend/terminal"
 	"github.com/gastonlarap-a11y/code-flow/backend/tickets"
 	"github.com/gastonlarap-a11y/code-flow/backend/update"
+	"github.com/gastonlarap-a11y/code-flow/backend/usage"
 	"github.com/gastonlarap-a11y/code-flow/backend/workspaces"
 )
 
@@ -158,6 +160,45 @@ func (p projectPaths) ProjectPath(ctx context.Context, projectID string) (string
 	return project.LocalPath, nil
 }
 
+/*
+newUsageService builds the indicator's one service (USAGE-001).
+
+Its two readable sources are the agent CLIs' own transcripts, which live under the user's home and
+not under the app's directory — so the home is resolved here rather than taken from `platform.Paths`,
+whose base is `~/CodeFlow`. A home that cannot be resolved leaves the reader with no sources, and the
+indicator reports every provider as unmeasured instead of failing a start-up over a panel.
+
+The database is passed as it is: nil when storage failed, which costs the learned ceilings and the
+activity counts and nothing else.
+*/
+func newUsageService(deps Deps, activeProvider func(context.Context) string) *usage.Service {
+	home, err := os.UserHomeDir()
+	sources := []usage.Source{}
+	if err == nil {
+		sources = append(sources, usage.ClaudeSource(home), usage.CodexSource(home))
+	}
+
+	service := usage.Deps{
+		Reader:         usage.NewReader(sources...),
+		DataDir:        deps.Paths.Base(),
+		ActiveProvider: activeProvider,
+		// Only composition wires the subprocess probes, because nothing that runs in a test should
+		// grow a child process by accident (USAGE-011, USAGE-005). Antigravity is here even though
+		// it keeps no readable transcript: its CLI reports the limits it cannot log.
+		Limits: map[string]usage.LimitsReader{
+			"claude": usage.NewLimitsProbe(""),
+			"gemini": usage.NewAntigravityProbe(""),
+		},
+		Plan: func(ctx context.Context) usage.Plan { return usage.ClaudePlan(ctx, "") },
+	}
+	if deps.DB != nil {
+		service.Store = usage.NewStore(deps.DB)
+		service.DB = deps.DB
+	}
+
+	return usage.NewService(service)
+}
+
 // gitRemotes answers "what does this repository point at", for the provider detection that links a
 // project to its pull-request host. The provider package asks in its own terms so a remote scan is
 // testable without a repository on disk.
@@ -270,7 +311,13 @@ func (c dbPasswords) DeleteDBPassword(connectionID string) error {
 // The order matches the 2.x composition root. It has no functional meaning — the registry is a map
 // and panics on a duplicate either way — but keeping it makes the two files diffable while the
 // port is in progress.
-func BuildRegistry(deps Deps) *bridge.Registry {
+// BuildRegistry wires every feature and answers the registry plus a failure observer.
+//
+// The observer is the usage indicator's hook: every command's error passes through the bridge's
+// recorder, so that is where a quota refusal is noticed, and composition is what connects the two
+// without either package learning about the other (USAGE-006). A caller with no use for it — the
+// contract test — discards it.
+func BuildRegistry(deps Deps) (*bridge.Registry, func(method string, err error)) {
 	registry := bridge.NewRegistry()
 
 	platform.Register(registry, platform.Deps{Paths: deps.Paths})
@@ -322,6 +369,10 @@ func BuildRegistry(deps Deps) *bridge.Registry {
 	// so it registers here with the rest of what survives a failed storage stage, and takes no deps
 	// at all (DIAG-002).
 	diagram.Register(registry)
+
+	// The usage indicator is registered further down, once the AI router exists: it needs to ask
+	// which engine is active in order to attribute a quota failure to the provider that hit it
+	// (USAGE-006).
 
 	// The AI routing and the Settings queries need no database: a nil settings reader resolves to
 	// the built-in defaults, so an install whose storage failed can still be configured. The run
@@ -461,6 +512,12 @@ func BuildRegistry(deps Deps) *bridge.Registry {
 		Opener:      deps.Opener,
 	})
 
+	// Last, because it asks the router which engine is active (USAGE-006). Everything else about it
+	// survives a failed storage stage: without a database it loses the learned ceilings and the
+	// activity counts and still reports consumption, reset times and resources.
+	usageService := newUsageService(deps, aiRouter.ActiveProvider)
+	usage.Register(registry, usageService)
+
 	registry.Seal()
-	return registry
+	return registry, usageService.NoteFailure
 }

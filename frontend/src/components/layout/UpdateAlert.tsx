@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowUp, Loader2, RotateCw, TriangleAlert } from "lucide-react";
 import { Button } from "../common/Button";
+import { ProgressBar } from "../common/ProgressBar";
 import { useUpdateStore } from "../../state/updateStore";
 import { useT } from "../../state/languageStore";
 
@@ -88,12 +89,7 @@ export function UpdateAlert() {
             <p className="mt-0.5 text-badge leading-snug text-[var(--cf-text-muted)]">
               {t("settings.downloadingUpdate", { progress })}
             </p>
-            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-[var(--cf-border)]">
-              <div
-                className="h-full rounded-full bg-[var(--cf-accent)] transition-all"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+            <ProgressBar percent={progress} className="mt-1.5" />
           </>
         ) : (
           <>

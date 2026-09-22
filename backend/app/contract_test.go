@@ -65,6 +65,10 @@ var newSincePort = []string{
 	// The diagram editor (16-diagrams.md). One command, because a diagram is a file in the user's
 	// folder and everything except walking for it is a file command that already existed.
 	"diagram_list_documents",
+
+	// The usage indicator (17-usage.md). One command, because the panel draws its four sections
+	// together and a command per section would let them disagree about what "now" means.
+	"usage_snapshot",
 }
 
 // deferred are the eleven names the renderer calls on purpose and the backend deliberately does
@@ -151,7 +155,8 @@ func fullRegistry(t *testing.T) *bridge.Registry {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	return app.BuildRegistry(app.Deps{Paths: platform.NewPaths(t.TempDir()), DB: db})
+	registry, _ := app.BuildRegistry(app.Deps{Paths: platform.NewPaths(t.TempDir()), DB: db})
+	return registry
 }
 
 func rendererCommands(t *testing.T) []string {
@@ -323,7 +328,7 @@ func TestPhaseTwoFeaturesAnswer(t *testing.T) {
 // database keeps working — credentials, so "reconnect your account" is still offered, and all of
 // git, because a broken install is exactly when someone is trying to get their work out.
 func TestADegradedStartUpKeepsWhatNeedsNoDatabase(t *testing.T) {
-	registry := app.BuildRegistry(app.Deps{Paths: platform.NewPaths(t.TempDir())})
+	registry, _ := app.BuildRegistry(app.Deps{Paths: platform.NewPaths(t.TempDir())})
 
 	for _, name := range []string{
 		"reset_app_data", "has_github_token", "set_ado_pat",

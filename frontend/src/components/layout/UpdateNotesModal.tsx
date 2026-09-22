@@ -3,6 +3,7 @@ import { Download, Loader2, RotateCw, Sparkles, TriangleAlert } from "lucide-rea
 import { Button } from "../common/Button";
 import { Modal } from "../common/Modal";
 import { openUrl } from "../../lib/bridge/shell";
+import { ProgressBar } from "../common/ProgressBar";
 import { renderMarkdown } from "../../lib/markdown";
 import { useUpdateStore } from "../../state/updateStore";
 import { useLanguageStore, useT } from "../../state/languageStore";
@@ -99,12 +100,7 @@ export function UpdateNotesModal() {
                 <Loader2 size={14} className="animate-spin" aria-hidden />
                 {t("settings.downloadingUpdate", { progress })}
               </p>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--cf-border)]">
-                <div
-                  className="h-full rounded-full bg-[var(--cf-accent)] transition-all"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
+              <ProgressBar percent={progress} size="md" />
             </div>
           )}
 

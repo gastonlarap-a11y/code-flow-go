@@ -15,6 +15,7 @@ import type {
   DbmlConnection,
   DbmlSchemaSnapshot,
   DbmlTablePosition,
+  UsageSnapshot,
   NewDbmlConnection,
   FileDiffInfo,
   FileEntry,
@@ -823,6 +824,15 @@ export const dbmlListDocuments = (rootPath: string) =>
  */
 export const diagramListDocuments = (rootPath: string) =>
   invoke<string[]>("diagram_list_documents", { rootPath });
+
+/**
+ * Everything the usage indicator draws, in one answer (USAGE-001).
+ *
+ * One command rather than four, because the pill shows AI consumption, this process's resources,
+ * the app's data size and the week's activity side by side — four round trips would be four chances
+ * for them to disagree about what "now" is.
+ */
+export const usageSnapshot = () => invoke<UsageSnapshot>("usage_snapshot", {});
 
 /** The positions a person dragged this document's tables to (DBML-005). Tables absent here are auto-laid out. */
 export const dbmlLoadLayout = (projectId: string, relPath: string) =>

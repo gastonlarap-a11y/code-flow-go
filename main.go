@@ -90,7 +90,7 @@ func main() {
 
 	// The feature wiring lives in app.BuildRegistry so the contract test can inspect the real
 	// registry rather than a second copy of this list.
-	registry := app.BuildRegistry(app.Deps{
+	registry, noteFailure := app.BuildRegistry(app.Deps{
 		Paths:       paths,
 		Version:     version,
 		Emitter:     emitter,
@@ -109,7 +109,13 @@ func main() {
 		Name:        "CodeFlow",
 		Description: "Code review and API workbench",
 		Services: []application.Service{
-			application.NewService(bridge.NewService(registry, errorLog.Record)),
+			// Two observers on one failure: the error log records it, and the usage indicator
+			// notices the ones that mean "out of quota" so it can learn that provider's ceiling
+			// (USAGE-006). Composition is what joins them; neither package knows the other.
+			application.NewService(bridge.NewService(registry, func(method string, err error) {
+				errorLog.Record(method, err)
+				noteFailure(method, err)
+			})),
 			application.NewService(host),
 		},
 		Assets: application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
