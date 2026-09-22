@@ -3,6 +3,7 @@ package update
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,6 +18,22 @@ volume attached and kept the download. The parts that can be asserted without a 
 two that decide whether an install is safe — where the bundle is, and that the exchange either
 completes or leaves the old version exactly where it was.
 */
+
+/*
+onlyOnMacOS skips a test that needs `ditto`.
+
+The copy is `ditto` rather than a Go walk because it preserves the symlinks and extended attributes
+an app bundle's signature is computed over, and a naive copy produces a bundle Gatekeeper refuses.
+That ties these three tests to the platform the code runs on; the path arithmetic above does not
+need it and runs everywhere, which is where a mistake would actually hide.
+*/
+func onlyOnMacOS(t *testing.T) {
+	t.Helper()
+
+	if runtime.GOOS != "darwin" {
+		t.Skip("the bundle swap uses ditto, which is macOS's")
+	}
+}
 
 // bundleAt lays down a fake `.app` with one file inside, and answers the path to its executable.
 func bundleAt(t *testing.T, root, name, marker string) string {
@@ -70,6 +87,8 @@ func TestOnlyTheRealBundleLayoutCounts(t *testing.T) {
 }
 
 func TestTheSwapPutsTheNewVersionWhereTheOldOneWas(t *testing.T) {
+	onlyOnMacOS(t)
+
 	root := t.TempDir()
 	bundleAt(t, root, "CodeFlow", "installed")
 	source := filepath.Join(root, "staging", "CodeFlow.app")
@@ -88,6 +107,8 @@ func TestTheSwapPutsTheNewVersionWhereTheOldOneWas(t *testing.T) {
 // Neither scratch path may survive: one is the next update's leftover and the other is a whole
 // stale copy of the application sitting beside the live one.
 func TestTheSwapLeavesNoScratchCopiesBehind(t *testing.T) {
+	onlyOnMacOS(t)
+
 	root := t.TempDir()
 	bundleAt(t, root, "CodeFlow", "installed")
 	source := filepath.Join(root, "staging", "CodeFlow.app")
@@ -108,6 +129,8 @@ back. Forced here by making the target path un-creatable — a file where the bu
 the second rename fails with the first already done.
 */
 func TestAFailedSwapPutsTheInstalledVersionBack(t *testing.T) {
+	onlyOnMacOS(t)
+
 	root := t.TempDir()
 	bundleAt(t, root, "CodeFlow", "installed")
 	target := filepath.Join(root, "CodeFlow.app")
@@ -124,6 +147,8 @@ func TestAFailedSwapPutsTheInstalledVersionBack(t *testing.T) {
 
 // An interrupted attempt leaves scratch directories. The next one must not trip over them.
 func TestLeftoversFromAnInterruptedAttemptAreCleared(t *testing.T) {
+	onlyOnMacOS(t)
+
 	root := t.TempDir()
 	bundleAt(t, root, "CodeFlow", "installed")
 	target := filepath.Join(root, "CodeFlow.app")
