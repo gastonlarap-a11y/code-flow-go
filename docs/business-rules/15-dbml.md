@@ -95,6 +95,13 @@ for: that one takes an open `LibGit2Sharp.Repository` because it prunes through
 The fixed prune list is the substitute for gitignore rules, and it means a `.dbml` under
 `node_modules` — a dependency's, not the user's — is never offered.
 
+**The picker groups what this returns by folder** (`DIAG-018`), which is where the rule that this
+walk recurses becomes visible to the user: `facturacion/pedidos` typed into the new-document field
+has always created the folder, and the picker used to list the result as one flat string among the
+rest. It shares `groupByFolder` with the diagram editor, and moved from a native `<select>` to the
+shared `Select` to get the grouped headings. Still a select, not a tree — the reasoning in
+`DIAG-018` is this document's reasoning, written down there because that is where it was acted on.
+
 **Go port**: the "skip symlinked directories" half comes free, because `filepath.WalkDir` reads
 entries through `lstat` and a link to a directory is therefore not a directory to it. The rule is
 still worth stating — it is what stops one document being reported under two paths, and each path

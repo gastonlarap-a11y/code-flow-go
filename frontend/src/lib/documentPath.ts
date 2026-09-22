@@ -42,7 +42,7 @@ function hasControlCharacter(value: string): boolean {
  *   a raw error string; this one reaches them as a labelled field.
  *
  * The extension is a parameter because two tools now create documents this way — the schema
- * designer's `.dbml` and the diagram editor's `.diagram.json`. It is compared in lower case, so
+ * designer's `.dbml` and the diagram editor's `.mmd`. It is compared in lower case, so
  * "Orders.DBML" is not given a second extension.
  */
 export function normalizeDocumentPath(input: string, extension: string): DocumentPathResult {
@@ -76,8 +76,55 @@ export function documentName(relPath: string): string {
   return relPath.split("/").pop() ?? relPath;
 }
 
-/** The name without its extension, for a heading that should not shout ".diagram.json". */
+/** The name without its extension, for a heading that should not shout ".mmd". */
 export function documentTitle(relPath: string, extension: string): string {
   const name = documentName(relPath);
   return name.toLowerCase().endsWith(extension) ? name.slice(0, -extension.length) : name;
+}
+
+/** The folder a document sits in, or `null` when it sits in the project root. */
+export function documentFolder(relPath: string): string | null {
+  const cut = relPath.lastIndexOf("/");
+  return cut === -1 ? null : relPath.slice(0, cut);
+}
+
+/** A folder and the documents in it, as the picker shows them. */
+export interface DocumentFolder {
+  /** `null` for the project root, which is shown without a heading. */
+  folder: string | null;
+  /** Full project-relative paths — the value the picker hands back when one is chosen. */
+  paths: string[];
+}
+
+/**
+ * Groups a flat list of document paths by the folder they are in.
+ *
+ * Folders are how these documents are organised: creating `procesos/alta-cliente` already makes the
+ * folder and puts the file in it, and the walk that finds them already recurses. What was missing
+ * was showing it — a picker listing `procesos/alta-cliente.mmd` beside `checkout.mmd` as two equal
+ * strings is a folder nobody can see they have.
+ *
+ * The root goes first and unheaded, because a project with no folders must look exactly as it did.
+ * Everything else keeps the order it arrived in, which is the backend's sort, so the list does not
+ * reshuffle between loads. The whole folder path is the heading (`a/b`, not `b`): a nested folder
+ * indented under its parent is a tree, and a tree is what the Editor module is for.
+ */
+export function groupByFolder(paths: readonly string[]): DocumentFolder[] {
+  const root: string[] = [];
+  const folders = new Map<string, string[]>();
+
+  for (const path of paths) {
+    const folder = documentFolder(path);
+    if (folder === null) {
+      root.push(path);
+      continue;
+    }
+    const existing = folders.get(folder);
+    if (existing === undefined) folders.set(folder, [path]);
+    else existing.push(path);
+  }
+
+  const grouped: DocumentFolder[] = root.length > 0 ? [{ folder: null, paths: root }] : [];
+  for (const [folder, inIt] of folders) grouped.push({ folder, paths: inIt });
+  return grouped;
 }

@@ -26,6 +26,8 @@ import { EmptyState } from "../common/EmptyState";
 import { ResizeHandle } from "../common/ResizeHandle";
 import { IconButton } from "../common/IconButton";
 import { Button } from "../common/Button";
+import { Select, type SelectItems } from "../common/Select";
+import { documentName, groupByFolder } from "../../lib/documentPath";
 import { DbmlCanvas, type DbmlCanvasHandle } from "./DbmlCanvas";
 import { DbmlViewportControls } from "./DbmlViewportControls";
 import { NewDbmlModal } from "./NewDbmlModal";
@@ -63,6 +65,18 @@ export function DbmlView() {
   const dirty = useDbmlStore((s) => s.dirty);
   const saving = useDbmlStore((s) => s.saving);
   const positions = useDbmlStore((s) => s.positions);
+
+  // Grouped by folder, exactly as the diagram editor's picker is: both list documents the same
+  // walk found, and two pickers over the same kind of list should not behave differently.
+  const documentOptions = useMemo<SelectItems>(
+    () =>
+      groupByFolder(documents).flatMap(({ folder, paths }): SelectItems =>
+        folder === null
+          ? paths.map((path) => ({ value: path, label: path }))
+          : [{ label: folder, options: paths.map((path) => ({ value: path, label: documentName(path) })) }],
+      ),
+    [documents],
+  );
 
   const editorWidth = useLayoutStore((s) => s.sizes.dbmlEditorWidth);
   const setSize = useLayoutStore((s) => s.setSize);
@@ -162,25 +176,20 @@ export function DbmlView() {
         </span>
 
         {/* A select rather than a tree: these are a handful of files, and the picker is not the
-            feature. The file explorer stays available in the Editor module. */}
-        <select
+            feature. The file explorer stays available in the Editor module. Grouped by folder,
+            though — typing `db/orders` when creating one already puts it in a folder, and a flat
+            list of full paths is a folder nobody can see they have. */}
+        <Select
           value={activePath ?? ""}
-          onChange={(e) => {
-            const next = e.target.value;
+          ariaLabel={t("dbml.documents")}
+          size="sm"
+          className="min-w-0 max-w-[280px] flex-1"
+          placeholder={t("dbml.noDocumentOpen")}
+          options={documentOptions}
+          onChange={(next) => {
             if (next.length > 0) void openDocument(project.id, rootPath, next);
           }}
-          aria-label={t("dbml.documents")}
-          className="cf-focusable min-w-0 max-w-[280px] flex-1 truncate rounded-control border border-[var(--cf-border)] bg-[var(--cf-bg)] px-1.5 py-1 text-ui text-[var(--cf-text)] outline-none"
-        >
-          <option value="" disabled>
-            {t("dbml.noDocumentOpen")}
-          </option>
-          {documents.map((path) => (
-            <option key={path} value={path}>
-              {path}
-            </option>
-          ))}
-        </select>
+        />
 
         {dirty && <span className="text-badge text-[var(--cf-warning)]">{t("dbml.unsaved")}</span>}
 

@@ -3,6 +3,7 @@ import { Workflow } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { Button } from "../common/Button";
 import { useT } from "../../state/languageStore";
+import { confirmAction } from "../../state/confirmStore";
 import { DOCUMENT_EXTENSION, useDiagramStore } from "../../state/diagramStore";
 import type { DiagramDocument } from "../../lib/diagram/model";
 import type { TranslationKey } from "../../lib/i18n/translations";
@@ -36,11 +37,18 @@ export function NewDiagramModal({
 }) {
   const t = useT();
   const createDocument = useDiagramStore((s) => s.createDocument);
+  const dirty = useDiagramStore((s) => s.dirty);
   const [name, setName] = useState("");
   const [error, setError] = useState<keyof typeof ERROR_KEYS | null>(null);
   const [creating, setCreating] = useState(false);
 
   const submit = async () => {
+    // Creating replaces whatever is open, so it is a document switch and asks the question a
+    // switch asks (DIAG-009). Without this the work on the open diagram goes silently.
+    if (dirty && !(await confirmAction(t("diagram.discardConfirm"), true, t("diagram.discard")))) {
+      return;
+    }
+
     setCreating(true);
     const failure = await createDocument(rootPath, name, contents);
     setCreating(false);
@@ -79,8 +87,12 @@ export function NewDiagramModal({
             placeholder={t("diagram.namePlaceholder")}
             className="cf-focusable w-full rounded-control border border-[var(--cf-border)] bg-[var(--cf-bg)] px-2 py-1.5 text-body text-[var(--cf-text)] outline-none"
           />
-          {/* The extension is appended when missing, so the hint is not a rule to obey. */}
-          <span className="text-badge text-[var(--cf-text-muted)]">{DOCUMENT_EXTENSION}</span>
+          {/* The extension is appended when missing, so the hint is not a rule to obey. The folder
+              half of it is: a name with a `/` in it has always created the folder, and nothing
+              said so. */}
+          <span className="text-badge text-[var(--cf-text-muted)]">
+            {DOCUMENT_EXTENSION} · {t("diagram.nameFolderHint")}
+          </span>
         </label>
 
         {error !== null && (

@@ -255,11 +255,13 @@ flowchart TD
     expect(parsed.value.doc.nodes.map((n) => n.id)).toEqual(["start", "finish"]);
   });
 
+  // `brace` is a real Mermaid shape this catalogue deliberately leaves out, which is exactly the
+  // case worth asserting: a file that is valid Mermaid, naming a shape we choose not to draw.
   test("a shape outside this catalogue is drawn as a rectangle, and counted", () => {
-    const parsed = parseMermaid('flowchart TD\n  a@{ shape: bolt, label: "Zap" }\n');
+    const parsed = parseMermaid('flowchart TD\n  a@{ shape: brace, label: "Remark" }\n');
     if (!parsed.ok) throw new Error(parsed.reason);
 
-    expect(parsed.value.doc.nodes[0]).toMatchObject({ kind: "rect", text: "Zap" });
+    expect(parsed.value.doc.nodes[0]).toMatchObject({ kind: "rect", text: "Remark" });
     expect(parsed.value.dropped).toBe(1);
   });
 

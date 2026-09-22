@@ -163,10 +163,29 @@ kept for the life of the document, so inserting a shape does not rewrite half th
 **Implementation**: `frontend/src/lib/diagram/stencils.ts` · `frontend/src/lib/diagram/shapes.ts` ·
 `frontend/src/lib/diagram/palette.ts` · `frontend/src/lib/diagram/markers.ts` ·
 `frontend/src/lib/diagram/routing.ts`
-**Behaviour**: 17 stencils in three groups — basic, flowchart, container — and **a stencil's id is
-its Mermaid shape name**: `rect`, `rounded`, `stadium`, `diam`, `lean-r`, `div-rect`, `cyl`, `doc`,
-`brace`, `text`, `circle`, `dbl-circ`, `fr-circ`, `sm-circ`, `hex`, `person`, and `subgraph` for the
-container. There is no translation table to keep in step, because there is nothing to translate.
+**Behaviour**: 50 stencils, and **a stencil's id is its Mermaid shape name** — `rect`, `diam`,
+`cyl`, `fr-rect`, `notch-pent` — with `subgraph` the one exception, because in Mermaid a container
+is not a shape. There is no translation table to keep in step, because there is nothing to
+translate.
+
+The catalogue is Mermaid's published set, less two families left out on purpose: the comment shapes
+(`brace`, `brace-r`, `braces`), which are a remark drawn beside a diagram rather than a step in it —
+`text` covers annotating a canvas — and `odd`, which exists for the classic `>text]` syntax and
+means nothing of its own.
+
+Eight families, named for what a figure is *used for* rather than what it looks like, because that
+is how somebody looks for one:
+
+| Family | Figures |
+|---|---|
+| Steps | `rect` `rounded` `fr-rect` `div-rect` `lin-rect` `st-rect` `notch-rect` `trap-t` `trap-b` `sl-rect` `win-pane` `tag-rect` `curv-trap` |
+| Branches and waits | `diam` `hex` `fork` `f-circ` `cross-circ` `notch-pent` `delay` `hourglass` `bolt` |
+| Start and end | `stadium` `circle` `sm-circ` `dbl-circ` `fr-circ` |
+| Data and storage | `cyl` `h-cyl` `lin-cyl` `datastore` `bow-rect` `lean-r` `lean-l` |
+| Documents | `doc` `docs` `lin-doc` `tag-doc` `flag` `tri` `flip-tri` |
+| Systems | `cloud` `browser` `console` `folder` `bucket` `bang` |
+| Annotation | `text` `person` |
+| Container | `subgraph` |
 
 Four connector kinds, which are Mermaid's: `arrow` (`-->`), `line` (`---`), `dotted` (`-.->`) and
 `thick` (`==>`), each with an optional label.
@@ -181,20 +200,35 @@ colour. `palette.ts` resolves a token per theme.
 **Inputs / outputs**: pure functions; `shapeElements` answers a list of rects, ellipses, paths and
 lines, each marked `body` (carries the fill) or `detail` (outline only, drawn on top).
 **Edge cases**: every stencil is asserted drawable at 1×1 and 2000×12 without producing `NaN`,
-because `NaN` in a path attribute is a shape that silently does not render.
+because `NaN` in a path attribute is a shape that silently does not render. Paint order is array
+order and `role` decides only the fill, which is what lets a stacked figure (`st-rect`, `docs`) put
+the copies behind it first as outlines and cover them with the filled front.
 **Frontend dependency**: `components/diagram/ShapeGlyph.tsx`, `DiagramCanvas.tsx`.
 **Markers**: none.
 
 **The property this buys.** "What I exported is not what I drew" is not a class of bug that exists
 here: there is nothing to keep in step.
 
-**What the catalogue lost, and why that was the right trade.** It was 30 stencils across four
-notations, including BPMN's three gateways and UML's generalization. Mermaid expresses one diamond,
-not three, and no hollow-triangle arrowhead. Keeping them would have meant encoding them in comments
-the way positions are — private information in a file whose whole value is that it is not private.
-The exclusive, parallel and inclusive gateways therefore collapse to one `diam`, generalization
-becomes a labelled arrow, and ellipse and use-case become `stadium`. A `.diagram.json` imported from
-before the change is translated (`DIAG-010`) and says how much it lost.
+**Adding or removing a figure is three files, and two of them refuse to compile if forgotten.**
+`stencils.ts` holds the entry, `shapeElements` in `shapes.ts` must have a matching `case` — the
+switch is exhaustive over `StencilId` with no `default` — and `translations.ts` must have the
+`labelKey` in both languages, since `labelKey` is typed as `TranslationKey`. `stencils.test.ts`
+covers what the compiler cannot: a duplicate id, an empty family, an id that is not a bare Mermaid
+shape name, and the comment family staying out.
+
+**The palette has a filter**, matched against the translated label with accents folded away, so
+"decision" finds "decisión". Fifty glyphs in a three-column grid is more than anybody scans; a
+family with no matches disappears rather than showing an empty heading, and a collapsed family
+opens while filtering, since hiding the thing being searched for is the opposite of the point.
+
+**What the catalogue still cannot say.** It was 30 stencils across four notations before the move
+to Mermaid, and BPMN's three gateways and UML's generalization did not survive it: Mermaid expresses
+one diamond, not three, and no hollow-triangle arrowhead. Encoding them in comments the way
+positions are would put private information in a file whose whole value is that it is not private.
+So the exclusive and inclusive gateways are one `diam` — the parallel one is now `fork`, which is
+the part Mermaid can say — generalization is a labelled arrow, and ellipse and use-case are
+`stadium`. A `.diagram.json` imported from before the change is translated (`DIAG-010`) and says how
+much it lost.
 
 ### DIAG-007 A container carries what is inside it
 **Implementation**: `frontend/src/lib/diagram/edits.ts`
@@ -241,7 +275,9 @@ and the one nobody wrote is discovered by losing work.
 ### DIAG-009 Saving is explicit
 **Implementation**: `frontend/src/state/diagramStore.ts` (`save`)
 **Behaviour**: `⌘S` or the toolbar button writes the document; the toolbar shows whether there are
-unsaved changes. Switching to another document with unsaved changes asks first. A write that fails
+unsaved changes. Switching to another document with unsaved changes asks first — **including when
+the switch is a new document or an import**, which replace what is open just as picking one from
+the list does, and used not to ask. A write that fails
 is reported and the document stays dirty. An edit made **while** the write is in flight leaves the
 document dirty, because the text that was written is compared against the document that was written,
 not against the current one.
@@ -271,8 +307,9 @@ ticket, a document, a chat.
 
 JSON is the interchange format, and it is also the **migration path**: a `.diagram.json` written
 before the format changed is read through the same code, its stencils and connectors translated to
-the Mermaid catalogue. A translation that loses information — the three BPMN gateways, UML
-generalization — is counted and reported; a pure rename is not, because nothing was lost.
+the Mermaid catalogue. A translation that loses information — the BPMN gateways, UML
+generalization, an annotation arriving as the bare `text` its bracket is gone from — is counted and
+reported; a pure rename is not, because nothing was lost.
 **Inputs / outputs**: `exportDiagram(doc, baseName, format)` → the path written, or `null` when the
 dialog was dismissed. `parseDocument(text)` → `{ ok, value: { doc, dropped } }` or a reason.
 **Edge cases**: an empty document exports a blank page rather than failing. A label containing `&`
@@ -433,8 +470,21 @@ pointer gesture at a time, as a discriminated state: pan, marquee, move, resize,
 Connecting is a drag from one of a shape's four ports, revealed on hover, to another shape; the
 sides each end attaches to are **chosen from how the two boxes lie**, not stored (`DIAG-005`), and
 the route is orthogonal. Selection is click, shift-click and marquee; resize is eight handles, with
-⇧ or a fixed-ratio stencil keeping proportions; the wheel with ⌘ zooms about the pointer;
-double-click edits a label.
+⇧ or a fixed-ratio stencil keeping proportions; the wheel with ⌘ zooms about the pointer.
+
+**Double-click edits a label — a shape's, or a connector's.** A double click that misses every shape
+is aimed at whatever connector runs under it, and opens a field over the middle of that run. The
+field is the same `LabelEditor` a shape uses, so Enter commits, ⇧Enter breaks the line, Escape
+abandons and clicking away commits, in one definition rather than two. The inspector keeps its own
+text field: it edits without having to hit a 1.5px line, and it is the only way in when several
+connectors are selected.
+
+**Delete and Backspace remove the selection**, shapes and connectors together, through the same
+`removeSelection` the inspector's button calls. On the window rather than the canvas, because after
+a delete the focus is on nothing in particular; ignored while a text field has focus, or
+backspacing a letter out of a label would delete the shape the label is on. An empty selection does
+nothing at all: `removeSelection` always answers a new document, so calling it with nothing selected
+would push an undo step that undoes nothing.
 **Inputs / outputs**: `viewport.ts`, `picking.ts`, `resize.ts` and `routing.ts` are pure and tested
 in node — no DOM.
 **Edge cases**: a zoom listener must be registered non-passively, or the browser scrolls the page
@@ -456,6 +506,36 @@ Rewriting the canvas retired that question rather than answering it. The geometr
 here — pure and tested — because the exporter needed it; what the library was providing was event
 handling over that geometry. Connecting worked in the first build of the replacement. The dependency
 is gone, and with it 2.3 MB, `flow.ts`, `ShapeNode.tsx`, `ShapeEdge.tsx` and `canvasContext.ts`.
+
+### DIAG-018 Folders are how diagrams are organised, and the picker shows them
+**Implementation**: `frontend/src/lib/documentPath.ts` (`groupByFolder`, `documentFolder`) ·
+`frontend/src/components/diagram/DiagramView.tsx` ·
+`frontend/src/components/diagram/NewDiagramModal.tsx`
+**Behaviour**: A document's name may name a folder: typing `procesos/alta-cliente` creates the
+folder and the file in it. The picker groups what it lists by folder, with the project root first
+and unheaded and each folder a heading over the file names inside it. The "new diagram" field says
+so, because nothing else did.
+**Inputs / outputs**: `groupByFolder(paths)` → `{ folder: string | null; paths: string[] }[]`, root
+first, otherwise in the order the backend's sorted listing arrived.
+**Edge cases**: a project with no folders is one unheaded group and looks exactly as it did before
+grouping existed. A nested folder is its own heading spelled in full (`ventas/2026`), never indented
+under its parent. A document created in a folder is **titled with its name, not its path** —
+`procesos/aprobacion` names a folder and a document, and only the second half is the title.
+**Frontend dependency**: `components/common/Select.tsx`, whose `SelectGroup` support already
+existed and was unused.
+**Markers**: none. `15-dbml.md` shares all of this: the same rules, the same helper, and its picker
+moved from a native `<select>` to the shared component to get it.
+
+**None of this was a new capability.** `normalizeDocumentPath` already accepted `/`,
+`files.CreateFile` already called `os.MkdirAll` for the missing parents, and `docwalk.List` already
+recursed. The whole gap was that a picker listing `procesos/alta-cliente.mmd` beside `checkout.mmd`
+as two equal strings is a folder nobody can see they have.
+
+**Why not a folder tree.** Creating, renaming and moving between folders is a lot of interface for
+something this repository already answers three ways: the Editor module has a real file explorer,
+moving a file is `git mv`, and the schema designer wrote the decision down first — *"a select rather
+than a tree: these are a handful of files, and the picker is not the feature"*. A second tree would
+compete with the one that exists.
 
 ---
 

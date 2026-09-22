@@ -42,11 +42,22 @@ test("text is drawn as nothing but its text", () => {
   expect(shapeElements("text", 160, 36)).toEqual([]);
 });
 
-test("a brace is an open bracket, never a box", () => {
-  const elements = shapeElements("brace", 180, 70);
+// A person has no fill to paint over: every part of the figure is a stroke.
+test("a person is drawn entirely in details, never filled", () => {
+  const elements = shapeElements("person", 60, 96);
 
-  expect(elements).toHaveLength(1);
-  expect(elements[0]?.role).toBe("detail");
+  expect(elements.length).toBeGreaterThan(1);
+  expect(elements.every((element) => element.role === "detail")).toBe(true);
+});
+
+// A stack of documents is painted back to front: the sheets behind are outlines and go first, and
+// the filled front sheet covers the lines that would otherwise run through it. Paint order is
+// array order, so this ordering *is* the drawing.
+test("a stack of documents paints the sheets behind before the one in front", () => {
+  const elements = shapeElements("docs", 158, 98);
+
+  expect(elements).toHaveLength(3);
+  expect(elements.map((element) => element.role)).toEqual(["detail", "detail", "body"]);
 });
 
 test("a stadium's corners are half its height, which is what makes it a pill", () => {

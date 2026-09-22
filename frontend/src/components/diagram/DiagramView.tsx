@@ -18,7 +18,7 @@ import { Editor, OVERFLOW_SAFE_OPTIONS, monaco, type OnMount } from "../../lib/m
 import { EmptyState } from "../common/EmptyState";
 import { IconButton } from "../common/IconButton";
 import { ResizeHandle } from "../common/ResizeHandle";
-import { Select } from "../common/Select";
+import { Select, type SelectItems } from "../common/Select";
 import { useWorkspaceStore } from "../../state/workspaceStore";
 import { useThemeStore } from "../../state/themeStore";
 import { useLayoutStore } from "../../state/layoutStore";
@@ -26,8 +26,8 @@ import { useT } from "../../state/languageStore";
 import { pushErrorToast } from "../../state/toastStore";
 import { confirmAction } from "../../state/confirmStore";
 import { DOCUMENT_EXTENSION, failureKey, useDiagramStore } from "../../state/diagramStore";
-import { addNode } from "../../lib/diagram/edits";
-import { documentTitle } from "../../lib/documentPath";
+import { addNode, removeSelection } from "../../lib/diagram/edits";
+import { documentName, documentTitle, groupByFolder } from "../../lib/documentPath";
 import { parseDocument } from "../../lib/diagram/serialize";
 import { exportDiagram, type ExportFormat } from "../../lib/diagram/exportFile";
 import type { StencilId } from "../../lib/diagram/stencils";
@@ -117,11 +117,15 @@ export function DiagramView() {
   }, [rootPath, save]);
 
   /**
-   * The three bindings a canvas cannot do without.
+   * The bindings a canvas cannot do without.
    *
    * On the window rather than the canvas: after deleting a shape the focus is on nothing in
    * particular, and an undo that depends on where the focus landed is an undo people stop trusting.
-   * Skipped while a text field has focus, so undo inside the Mermaid pane is Monaco's own.
+   * Skipped while a text field has focus, so undo inside the Mermaid pane is Monaco's own — and so
+   * that backspacing a letter out of a label does not delete the shape the label is on.
+   *
+   * The selection is read at the moment the key is pressed rather than subscribed to, so the
+   * listener is installed once instead of on every click.
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -130,24 +134,41 @@ export function DiagramView() {
         target instanceof HTMLElement &&
         (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
 
-      if (!(event.metaKey || event.ctrlKey)) return;
-
-      if (event.key.toLowerCase() === "s") {
+      // Saving is the one binding that means the same wherever the focus is, including inside the
+      // Mermaid pane — which is where somebody has just finished typing when they reach for it.
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         saveNow();
         return;
       }
       if (typing) return;
-      if (event.key.toLowerCase() === "z") {
+
+      if (event.metaKey || event.ctrlKey) {
+        if (event.key.toLowerCase() === "z") {
+          event.preventDefault();
+          if (event.shiftKey) redo();
+          else undo();
+        }
+        return;
+      }
+
+      // Backspace as well as Delete: on this keyboard Backspace is the key people actually press,
+      // and the browser's "go back" is not a thing inside the app.
+      if (event.key === "Delete" || event.key === "Backspace") {
+        const { selection } = useDiagramStore.getState();
+        // Nothing selected is not an empty edit — `removeSelection` always answers a new document,
+        // so calling it would push an undo step that undoes nothing.
+        if (selection.nodes.length === 0 && selection.edges.length === 0) return;
+
         event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
+        edit((current) => removeSelection(current, selection.nodes, selection.edges));
+        select({ nodes: [], edges: [] });
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [saveNow, undo, redo]);
+  }, [saveNow, undo, redo, edit, select]);
 
   const place = useCallback(
     (kind: StencilId) => {
@@ -215,8 +236,20 @@ export function DiagramView() {
     });
   };
 
-  const options = useMemo(
-    () => documents.map((path) => ({ value: path, label: path })),
+  /**
+   * The picker, grouped by the folder each document is in.
+   *
+   * Documents in the project root keep their place at the top with no heading, so a project that
+   * has never used a folder looks exactly as it did. Inside a folder only the file name is shown —
+   * repeating the folder on every row is the flat list this replaced.
+   */
+  const options = useMemo<SelectItems>(
+    () =>
+      groupByFolder(documents).flatMap(({ folder, paths }): SelectItems =>
+        folder === null
+          ? paths.map((path) => ({ value: path, label: path }))
+          : [{ label: folder, options: paths.map((path) => ({ value: path, label: documentName(path) })) }],
+      ),
     [documents],
   );
 

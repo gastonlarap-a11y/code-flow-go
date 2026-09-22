@@ -29,7 +29,7 @@ export function ShapeLabel({
   onCancel: () => void;
 }) {
   if (editing) {
-    return <Editor text={text} colour={colour} onCommit={onCommit} onCancel={onCancel} />;
+    return <LabelEditor text={text} colour={colour} onCommit={onCommit} onCancel={onCancel} />;
   }
   if (text.trim() === "") return null;
 
@@ -64,7 +64,7 @@ export function ShapeLabel({
 }
 
 /**
- * Typing into a shape.
+ * Typing a label, wherever a label is.
  *
  * A textarea rather than a contentEditable: it already does selection, undo and IME, and none of
  * the three are worth re-implementing on a canvas.
@@ -72,8 +72,12 @@ export function ShapeLabel({
  * Enter commits and Shift+Enter breaks the line, which is the way round people expect in a diagram.
  * Escape abandons; clicking away commits, because losing what you typed by looking elsewhere is not
  * a defensible default.
+ *
+ * Exported because a connector's label is edited the same way (DIAG-017) and there should be one
+ * answer to "what does Escape do here", not two. It fills its parent, so the caller decides where
+ * the field sits — inside a shape, or over the middle of an arrow.
  */
-function Editor({
+export function LabelEditor({
   text,
   colour,
   onCommit,

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { documentName, documentTitle, normalizeDocumentPath } from "./documentPath";
+import {
+  documentFolder,
+  documentName,
+  documentTitle,
+  groupByFolder,
+  normalizeDocumentPath,
+} from "./documentPath";
 
 const DBML = ".dbml";
 const DIAGRAM = ".diagram.json";
@@ -117,5 +123,61 @@ describe("documentTitle", () => {
 
   it("leaves a name that does not end in the extension alone", () => {
     expect(documentTitle("README", DIAGRAM)).toBe("README");
+  });
+});
+
+describe("documentFolder", () => {
+  it("is everything before the last separator, or nothing at the root", () => {
+    expect(documentFolder("procesos/alta-cliente.mmd")).toBe("procesos");
+    expect(documentFolder("ventas/2026/pipeline.mmd")).toBe("ventas/2026");
+    expect(documentFolder("checkout.mmd")).toBeNull();
+  });
+});
+
+describe("groupByFolder", () => {
+  it("puts the root first and unheaded, then each folder", () => {
+    const grouped = groupByFolder([
+      "checkout.mmd",
+      "procesos/alta-cliente.mmd",
+      "procesos/baja.mmd",
+      "ventas/pipeline.mmd",
+    ]);
+
+    expect(grouped).toEqual([
+      { folder: null, paths: ["checkout.mmd"] },
+      { folder: "procesos", paths: ["procesos/alta-cliente.mmd", "procesos/baja.mmd"] },
+      { folder: "ventas", paths: ["ventas/pipeline.mmd"] },
+    ]);
+  });
+
+  // A project with no folders has to look exactly as it did before grouping existed.
+  it("makes one unheaded group when nothing is in a folder", () => {
+    expect(groupByFolder(["a.mmd", "b.mmd"])).toEqual([
+      { folder: null, paths: ["a.mmd", "b.mmd"] },
+    ]);
+  });
+
+  it("does not invent a root group when everything is in a folder", () => {
+    const grouped = groupByFolder(["procesos/a.mmd"]);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]?.folder).toBe("procesos");
+  });
+
+  // A nested folder is its own heading, spelled in full. Indenting it under its parent would be a
+  // tree, and the file explorer in the Editor module is the tree.
+  it("heads a nested folder with its whole path", () => {
+    expect(groupByFolder(["ventas/2026/q1.mmd"])[0]?.folder).toBe("ventas/2026");
+  });
+
+  it("keeps the order it was given, so the list does not reshuffle between loads", () => {
+    const grouped = groupByFolder(["z/one.mmd", "a/two.mmd", "z/three.mmd"]);
+
+    expect(grouped.map((one) => one.folder)).toEqual(["z", "a"]);
+    expect(grouped[0]?.paths).toEqual(["z/one.mmd", "z/three.mmd"]);
+  });
+
+  it("answers nothing for nothing", () => {
+    expect(groupByFolder([])).toEqual([]);
   });
 });

@@ -97,7 +97,8 @@ describe("opening a document", () => {
   });
 
   test("what could not be read is counted, so the view can say so before it is saved over", async () => {
-    api.readFileText.mockResolvedValue('flowchart TD\n  a@{ shape: bolt, label: "Zap" }\n');
+    // A real Mermaid shape the catalogue leaves out on purpose — the comment family.
+    api.readFileText.mockResolvedValue('flowchart TD\n  a@{ shape: brace, label: "Remark" }\n');
 
     await useDiagramStore.getState().openDocument("/project", "newer.mmd");
 
@@ -263,6 +264,16 @@ describe("creating a document", () => {
     await useDiagramStore.getState().createDocument("/project", "flows/onboarding");
 
     expect(api.createFile).toHaveBeenCalledWith("/project", "flows/onboarding.mmd");
+  });
+
+  // `flows/onboarding` names a folder and a document. Only the second half is the title, or the
+  // file says `%% codeflow: title flows/onboarding` and the folder is in the diagram's name.
+  test("a document in a folder is titled with its name, not with its path", async () => {
+    await useDiagramStore.getState().createDocument("/project", "flows/onboarding");
+
+    expect(useDiagramStore.getState().doc().title).toBe("onboarding");
+    const [, , contents] = api.writeFileText.mock.calls[0]!;
+    expect(contents).toContain("%% codeflow: title onboarding");
   });
 
   test("a name that is already taken is refused, case-insensitively", async () => {

@@ -87,7 +87,8 @@ describe("reading a document from before Mermaid", () => {
     ["uml.usecase", "stadium"],
     ["bpmn.pool", "subgraph"],
     ["cylinder", "cyl"],
-    ["note", "brace"],
+    ["note", "text"],
+    ["subprocess", "fr-rect"],
     ["connector", "sm-circ"],
   ])("%s becomes %s", (before, after) => {
     expect(parsed(legacy(before)).nodes[0]?.kind).toBe(after);
