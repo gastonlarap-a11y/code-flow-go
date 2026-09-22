@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"runtime"
 
@@ -130,5 +131,16 @@ func Register(r *bridge.Registry, deps Deps) {
 			return nil, err
 		}
 		return service.Download(ctx, assetURL, assetName)
+	})
+
+	// Armed just before the quit that *Restart now* performs, so an ordinary quit does not bring
+	// the app back minutes later (BOOT-039). Answers nothing and never fails the restart: a
+	// relaunch that could not be scheduled leaves the user opening the app themselves, which is
+	// what they did before this existed.
+	r.Add("update_relaunch", func(ctx context.Context, _ bridge.Params) (any, error) {
+		if err := ScheduleRelaunch(ctx, service.goos); err != nil && !errors.Is(err, errNoBundle) {
+			return false, nil //nolint:nilerr // reported as "not scheduled", never as a failed restart
+		}
+		return true, nil
 	})
 }

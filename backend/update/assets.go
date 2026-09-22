@@ -52,14 +52,19 @@ const (
 
 // InstallKind says what happens after the download.
 //
-// `auto` means the artefact is an installer this platform can run: Windows gets the NSIS installer
-// started for it. `manual` means the artefact is handed over and the user finishes the job — on
-// macOS the `.dmg` is mounted and they drag the app across. The renderer branches on it to decide
-// whether to offer *Restart*, and telling a Mac user to restart would be an untruth.
+// `auto` means the update finishes without the user: Windows gets the NSIS installer started for
+// it, and macOS has its bundle replaced in place (BOOT-038). `manual` means the artefact is handed
+// over and the user finishes the job. The renderer branches on it to decide whether to offer
+// *Restart*, and offering one where nothing was installed would be an untruth.
+//
+// **macOS was `manual` and is not any more.** It was, while the update was `open <dmg>` and the
+// user dragged the app across; the renderer said so, in those words, and hid the restart button.
+// Now the bundle is swapped before the command returns, so the true instruction is "restart" and
+// the old copy stays on screen only if this lies about it.
 func InstallKind() string { return installKindFor(runtime.GOOS) }
 
 func installKindFor(goos string) string {
-	if goos == "windows" {
+	if goos == "windows" || goos == "darwin" {
 		return "auto"
 	}
 	return "manual"

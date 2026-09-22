@@ -69,6 +69,10 @@ var newSincePort = []string{
 	// The usage indicator (17-usage.md). One command, because the panel draws its four sections
 	// together and a command per section would let them disagree about what "now" means.
 	"usage_snapshot",
+
+	// Arming the watcher that reopens the app after *Restart now* (BOOT-039). Its own command
+	// rather than part of the quit, so an ordinary quit does not bring the app back.
+	"update_relaunch",
 }
 
 // deferred are the eleven names the renderer calls on purpose and the backend deliberately does

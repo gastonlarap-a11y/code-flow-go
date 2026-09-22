@@ -971,6 +971,72 @@ app unkillable by ordinary means — so the next occurrence is one line instead 
 **Frontend dependency**: none.
 **Markers**: `BUG-BOOT-c` — **fixed**.
 
+### BOOT-038 On macOS an update replaces the installed bundle instead of mounting a disk image
+**Implementation**: `backend/update/install_macos.go` · `backend/update/handoff.go` ·
+`scripts/install-macos.sh` (the same sequence, proven by the release workflow's smoke test)
+**Behaviour**: once the download is verified (`BOOT-021`), macOS installs it. The image is mounted
+with `-nobrowse` and `-readonly` to a temporary mount point, the bundle is copied beside the
+installed one with `ditto`, the quarantine flag is cleared, the two are exchanged by rename, the old
+one is removed, the image is **detached** and the download is **deleted**. The bundle replaced is
+the one this process is running from, derived from `os.Executable()` — not an assumed
+`/Applications/CodeFlow.app`, because assuming the path is how an updater installs a second copy
+somewhere the user does not look.
+**Inputs / outputs**: unchanged on the wire. `update_download` still answers the artefact path.
+**Edge cases**: a binary **not inside an app bundle** — a `task build` binary, a test — has nothing
+to replace and falls back to opening the image, which is the previous behaviour and the right one
+there. A failed copy leaves the installed version untouched; a failed rename puts it back, because
+leaving no application at all is far worse than not updating. Leftover `.new`/`.old` directories
+from an interrupted attempt are cleared before the next one. Windows is unchanged: the shell runs
+the NSIS installer, which is the half that knows how to deal with a running application.
+**Frontend dependency**: `InstallKind()` answers `auto` for macOS now, not `manual`. That is what
+the renderer reads to decide whether to offer *Restart*, and while it said `manual` the corner
+notice told the user "the disk image is open — drag CodeFlow to Applications" and **hid the restart
+button**. Both were true then and neither is now.
+**Markers**: none.
+
+**What this fixes, observed on a machine that had updated a dozen times.** The handover used to be
+one call — `open <dmg>` — which mounts the image and leaves the rest to the user. Three consequences,
+all of them visible:
+
+- the volume was never detached, so every update left another "CodeFlow" in Finder's sidebar and in
+  Launchpad, which is exactly what "it installed a second copy" looks like from the outside;
+- the image was never removed, so `~/Downloads` held one per release — twelve, about 500 MB;
+- and **nothing was replaced**. The new version sat on a mounted volume until somebody dragged it
+  across, so an update that reported success could leave the old build running.
+
+**Replacing a running bundle is deliberate.** The swap is two renames, so the running process keeps
+the directory it was launched from until it exits, and this app embeds its assets in the binary
+(`go:embed`) so it reads almost nothing from the bundle after start-up. Copying beside and exchanging
+— rather than copying over — is what makes it safe: a half-finished copy over a live install is an
+application that no longer starts, and a rename is the one step that cannot be half-done.
+
+### BOOT-039 *Restart now* restarts, by arming a watcher before it quits
+**Implementation**: `backend/update/relaunch.go` · `backend/update/commands.go`
+(`update_relaunch`) · `frontend/src/lib/bridge/updater.ts` (`relaunch`)
+**Behaviour**: the renderer calls `update_relaunch` and then quits. The command spawns a detached
+`/bin/sh` that polls for this process to disappear, waits half a second for the operating system to
+release the bundle, and opens it again. macOS only: on Windows the NSIS installer owns the restart,
+and nothing else ships.
+**Inputs / outputs**: `update_relaunch()` → `true` when a watcher was armed, `false` when it could
+not be. Never an error.
+**Edge cases**: a binary outside an app bundle has nothing to reopen and answers `false`. A watcher
+that cannot be started is **not** allowed to block the quit — the user opens the app themselves,
+which is what they did before this existed. The watcher is started and never waited on, and
+deliberately not adopted into the app's process job, because outliving this process is the point of
+it.
+**Frontend dependency**: `relaunch()` swallows the command's failure and quits regardless.
+**Markers**: none.
+
+**Why a separate command and not part of the quit.** An application cannot relaunch itself —
+whatever would do it dies with the process — so something outside has to be waiting, and arming it
+is a distinct instruction from leaving. Folding it into `Quit` would mean the tray's Quit item, ⌘Q
+and the Settings button all brought the app back minutes later.
+
+**Why it was worth adding now.** The button quit and stopped there, which was honest while macOS
+could not install on its own: there was nothing to come back to. Once `BOOT-038` swaps the bundle
+before the command returns, the only thing between the user and the new version is a launch nobody
+was performing.
+
 ### BOOT-030 A startup failure is recorded before it ends the process
 **Implementation**: `src/CodeFlow.App/Program.cs` (`Stage`) · `src/CodeFlow.App/Diagnostics/StartupLog.cs`
 **Behaviour**: steps 1–3 of `RunAsync` each run through `Stage(name, work)`, which catches, calls

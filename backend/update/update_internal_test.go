@@ -161,9 +161,17 @@ func TestAReleaseWithoutThisPlatformOffersNothing(t *testing.T) {
 	assert.Nil(t, assetFor(onlyWindows, "linux"))
 }
 
-func TestOnlyWindowsClaimsItCanInstallOnItsOwn(t *testing.T) {
+/*
+Both shipping platforms finish an update on their own (BOOT-038).
+
+macOS was `manual` while the update meant mounting a disk image for the user to drag across — the
+renderer said exactly that and hid the restart button. Now the bundle is replaced before the command
+returns, so "restart" is the true instruction and this is what the renderer reads to decide.
+*/
+func TestBothShippingPlatformsInstallOnTheirOwn(t *testing.T) {
 	assert.Equal(t, "auto", installKindFor("windows"))
-	assert.Equal(t, "manual", installKindFor("darwin"))
+	assert.Equal(t, "auto", installKindFor("darwin"))
+	// Never a target, and nothing here installs one.
 	assert.Equal(t, "manual", installKindFor("linux"))
 }
 
