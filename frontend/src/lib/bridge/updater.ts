@@ -146,9 +146,23 @@ async function download(
   }
 }
 
-/** Restarts the app after an update has been staged. */
-export function relaunch(): Promise<void> {
-  // Quitting is real even without the updater: it is the same path the tray's Quit item uses. On
-  // Windows the NSIS installer is already waiting for this process to exit.
-  return host.quit("the updater, after staging a new version");
+/**
+ * Restarts the app after an update has been installed (BOOT-039).
+ *
+ * Two steps, and the order is the whole of it: something outside this process has to be waiting
+ * before the process goes, because nothing inside it survives the quit. `update_relaunch` arms a
+ * watcher that opens the app once this one is gone; the quit is then the same path the tray's Quit
+ * item uses.
+ *
+ * A watcher that could not be armed is not a reason to refuse the restart — the user opens the app
+ * themselves, which is what they did before this existed — so the failure is swallowed rather than
+ * left to block the quit behind it.
+ */
+export async function relaunch(): Promise<void> {
+  try {
+    await invoke<boolean>("update_relaunch", {});
+  } catch {
+    // Deliberately silent: see above. The quit below still happens.
+  }
+  await host.quit("the updater, after installing a new version");
 }

@@ -118,10 +118,10 @@ func (s *Service) Download(ctx context.Context, assetURL, assetName string) (str
 			ErrUnverified, name)
 	}
 
-	if err := s.handOff(destination); err != nil {
-		// The artefact is verified and on disk; only the shell refused it. The error names the
-		// path for that reason — it is a different situation from a failed download, and the file
-		// is there and good.
+	if err := s.handOff(ctx, destination); err != nil {
+		// The artefact is verified and on disk; only the install or the shell refused it. The error
+		// names the path for that reason — it is a different situation from a failed download, and
+		// the file is there and good.
 		return "", err
 	}
 	return destination, nil

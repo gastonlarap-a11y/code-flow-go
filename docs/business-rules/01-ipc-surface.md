@@ -604,6 +604,11 @@ which is how the omission surfaced.</sub>
 | `update_current_version`<br><sub>`backend/update/commands.go`</sub> | — | `string` — the build's own version, `0.0.0` when unstamped | — | `getVersion` |
 | `update_check`<br><sub>`backend/update/commands.go` · async</sub> | — | `Availability` — **never rejects**; `available` + `reason` carry the three outcomes (`XLANG-019`) | HttpClient, CredentialStore | `check` |
 | `update_download`<br><sub>`backend/update/commands.go` · async</sub> | `assetUrl: string`<br>`assetName: string` | `Result&lt;string, string&gt;` — where the artefact landed. Emits `update:progress` | HttpClient, CredentialStore, Opener | `downloadAndInstall` |
+| `update_relaunch`<br><sub>`backend/update/commands.go`</sub> | — | `bool` — whether a watcher was armed. **Never rejects** (`BOOT-039`) | — | `relaunch` |
+
+`update_relaunch` is the third command this repository invented, so it is in `newSincePort` rather
+than in the closed `portedCommandCount` — 2.x's *Restart* quit and left the user to open the app
+again.
 
 ### `backend/providers/commands.go` — the row 2.x never had → [07-review-pipeline](07-review-pipeline.md)
 
