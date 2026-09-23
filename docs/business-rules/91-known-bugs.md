@@ -9,7 +9,12 @@ the change surfaces later as an unexplained difference nobody chose.
 Each row states what the code does and what it probably should do. Fixing any of them is a decision
 to take as its own change, with its own test and its own release note.
 
-**Ten are now closed**, which is that decision being taken rather than an exception to the rule
+One row is not among the twenty-three: `BUG-FILE-c`, found in 3.7.0 and closed in the change that
+found it. It is listed here because it is `BUG-FILE-a`'s shape one step further — the same guard,
+fooled by a symlink instead of a `..` — and a reader auditing the containment guards should find
+both in one place.
+
+**Ten of the twenty-three are now closed**, which is that decision being taken rather than an exception to the rule
 above. The chosen ones lose data, refuse to start, leak resources, weaken transport security or a
 security check, or degrade what the user sees — and each was fixed with its own test. They are
 struck through below with their reasoning kept, so nobody reads a closed row as still-current
