@@ -86,13 +86,13 @@ export default defineConfig({
   // the whole reason it is here rather than `node --test`: `renderer/src` is full of extensionless
   // relative imports, which Node's resolver rejects and Vite's accepts.
   test: {
-    // The default, stated rather than implied: nothing here touches a DOM. Component tests would
-    // need `jsdom` and `@testing-library/react`, and none of the three are installed — this covers
-    // pure logic, and says so.
+    // The default, stated rather than implied: logic tests touch no DOM. A component test opts into
+    // one with a `// @vitest-environment jsdom` first line, so the DOM is paid for only where a
+    // component is rendered — and those are `.test.tsx`, which is how to tell them apart.
     environment: "node",
 
     // Tests live beside what they test. The i18n check is the exception: it reads
     // `translations.ts` as text rather than importing it, so it sits in `scripts/`.
-    include: ["src/**/*.test.ts", "scripts/**/*.test.mjs"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.test.mjs"],
   },
 });
