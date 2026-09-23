@@ -186,9 +186,15 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
+      # The flags of `task build` that decide what ships (BOOT-040), so the probes below run against
+      # the same kind of binary a user gets: a production build, and a GUI program on Windows —
+      # whose output still reaches this step because bash hands it a pipe, not a console.
       - name: Build the application
         shell: bash
-        run: go build -trimpath -mod=readonly -ldflags "-X main.version=0.0.0-ci" -o bin/CodeFlow .
+        run: |
+          gui=""
+          if [ "$RUNNER_OS" = "Windows" ]; then gui="-H windowsgui "; fi
+          go build -trimpath -mod=readonly -tags production -ldflags "${gui}-X main.version=0.0.0-ci" -o bin/CodeFlow .
 
       # The environment probes, run on the binary that was just produced rather than on the source.
       # This is what catches "it compiles but git is not reachable from a packaged build".

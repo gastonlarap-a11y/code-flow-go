@@ -152,8 +152,15 @@ tasks:
     # panic traces `safego` recovers and writes to errors.log still name the function, the file and
     # the line, byte for byte identical to an unstripped build (measured, not assumed). What is
     # lost is attaching a debugger to a *release* binary, which is not how this is debugged.
+    #
+    # `-tags production` and, on Windows, `-H windowsgui` are what the generated Wails build tasks
+    # use and this hand-written one once did not (BOOT-040): without the tag the shipped app had the
+    # web inspector on and loaded its renderer from FRONTEND_DEVSERVER_URL when that was set;
+    # without the flag Windows opened a console window beside it.
     cmds:
-      - go build -trimpath -mod=readonly -ldflags "-s -w -X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}}{{.EXE}} .
+      - go build -trimpath -mod=readonly -tags production -ldflags "-s -w {{.GUI_LDFLAGS}}-X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}}{{.EXE}} .
+    vars:
+      GUI_LDFLAGS: '{{if eq OS "windows"}}-H windowsgui {{end}}'
 
   dev:
     desc: Run the app with hot reload (Go rebuild + Vite on 1420).
