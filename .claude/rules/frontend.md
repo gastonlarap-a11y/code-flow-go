@@ -37,7 +37,10 @@ and need no fallback. What WKWebView still does *not* do:
 - Type-only imports use `import type`.
 - No floating promises: `await`, return, or `void` with a reason.
 - Named exports only.
-- Tests live beside what they test, run with `vitest`.
+- Tests live beside what they test, run with `vitest`. Logic tests are `.test.ts` in the `node`
+  environment; a component test is `.test.tsx`, starts with `// @vitest-environment jsdom`, renders
+  with `@testing-library/react`, and mocks only the module that reaches Go (see
+  `components/layout/UpdateAlert.test.tsx`). No jest-dom: plain `expect` on what Testing Library finds.
 
 ## Known gap: lint is off
 
