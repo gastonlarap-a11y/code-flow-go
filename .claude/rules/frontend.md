@@ -37,11 +37,14 @@ and need no fallback. What WKWebView still does *not* do:
 - Type-only imports use `import type`.
 - No floating promises: `await`, return, or `void` with a reason.
 - Named exports only.
-- Tests live beside what they test, run with `vitest`.
+- Tests live beside what they test, run with `vitest`. Logic tests are `.test.ts` in the `node`
+  environment; a component test is `.test.tsx`, starts with `// @vitest-environment jsdom`, renders
+  with `@testing-library/react`, and mocks only the module that reaches Go (see
+  `components/layout/UpdateAlert.test.tsx`). No jest-dom: plain `expect` on what Testing Library finds.
 
 ## Known gap: lint is off
 
-`pnpm lint` fails outright — typescript-eslint refuses to load against TypeScript 7 and no release,
-canary included, supports it yet (its tracking issue targets TS ≥ 7.1). `eslint.config.js` is kept
-intact so this becomes one command again the day support lands. Until then `pnpm typecheck` is the
-only static check, so prefer explicit types over inference in new code.
+typescript-eslint refuses to load against TypeScript 7 until 7.1 ships a compiler API, so
+`pnpm lint` runs **oxlint** (type-aware, on typescript-go) from `.oxlintrc.json`, which mirrors
+`eslint.config.js`. A rule added to one belongs in the other until one is retired; `pnpm lint:eslint`
+is the old command, kept for the day support lands.

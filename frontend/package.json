@@ -2,7 +2,7 @@
   "name": "codeflow-renderer",
   "private": true,
   "license": "MIT",
-  "version": "3.7.0",
+  "version": "3.8.0",
   "type": "module",
   "packageManager": "pnpm@11.20.0",
   "scripts": {
@@ -10,7 +10,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "oxlint",
+    "lint:eslint": "eslint .",
     "test": "vitest run"
   },
   "dependencies": {
@@ -33,6 +34,9 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.0.5",
@@ -40,7 +44,10 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.4",
     "globals": "^17.11.0",
+    "jsdom": "^30.1.1",
     "monaco-editor": "^0.56.0",
+    "oxlint": "^1.85.0",
+    "oxlint-tsgolint": "^7.0.2002",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
     "typescript-eslint": "^8.70.0",

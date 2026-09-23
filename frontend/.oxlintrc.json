@@ -1,0 +1,93 @@
+{
+  // The renderer's linter while typescript-eslint cannot load against TypeScript 7 (it needs the
+  // compiler API that TS 7.1 adds). oxlint's type-aware mode runs on typescript-go itself, so it
+  // works today. eslint.config.js stays as it is and keeps the reasoning behind each rule; this
+  // file mirrors its rules one for one. Keep the two in step until one of them is retired.
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "react", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**"],
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "react/only-export-components": "warn",
+
+    // The React Compiler's rules. Advisory, as eslint.config.js has them: on this codebase they are
+    // a refactor rather than a diagnostic, and promoting them is a decision of its own.
+    "react/set-state-in-effect": "warn",
+    "react/refs": "warn",
+    "react/purity": "warn",
+    "react/immutability": "warn",
+    "react/incompatible-library": "warn",
+    "react/no-did-update-set-state": "warn",
+
+    // Type-aware rules oxlint's `correctness` turns on that the ESLint setup never ran (it used
+    // `recommended`, not `recommendedTypeChecked`). Visible, not blocking, until each is looked at:
+    // the six no-base-to-string reports on first run were all false positives on `unknown` values
+    // already narrowed away from objects.
+    "typescript/no-base-to-string": "warn",
+    "typescript/no-meaningless-void-operator": "warn",
+    "typescript/unbound-method": "warn",
+    "typescript/no-misused-spread": "warn",
+    "typescript/restrict-template-expressions": "warn",
+    "typescript/require-array-sort-compare": "warn",
+    "typescript/no-redundant-type-constituents": "warn",
+    // `lib/api/sandbox.ts` builds a `new Function` on purpose: Postman-style scripts are the feature,
+    // and the CSP carries 'unsafe-eval' for exactly that one place.
+    "typescript/no-implied-eval": "warn",
+
+    "typescript/no-explicit-any": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": [
+      "error",
+      { "checksVoidReturn": { "attributes": false, "properties": false } }
+    ],
+    "typescript/no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_",
+        "destructuredArrayIgnorePattern": "^_",
+        "ignoreRestSiblings": true
+      }
+    ],
+    "typescript/no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "@monaco-editor/react",
+            "message": "Import Editor/DiffEditor from lib/monacoEditor instead.",
+            "allowTypeImports": true
+          },
+          {
+            "name": "monaco-editor",
+            "message": "Import the `monaco` instance from lib/monacoEditor instead.",
+            "allowTypeImports": true
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/lib/monacoSetup.ts", "src/lib/monacoEditor.ts", "src/lib/goToDefinition.ts"],
+      "rules": { "typescript/no-restricted-imports": "off" }
+    },
+    {
+      "files": ["vite.config.ts", "scripts/**/*.mjs"],
+      "env": { "node": true, "browser": false }
+    }
+  ]
+}
