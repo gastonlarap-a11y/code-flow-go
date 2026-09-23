@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -27,23 +28,17 @@ var errEscapes = errors.New("path escapes the repository root")
 // resolveWithinRepo turns a repo-relative path into an absolute one, refusing anything outside the
 // repository (FILE-001).
 //
-// A candidate that does not exist is normalised lexically rather than rejected: the renderer's file
-// tree resolves paths mid-drag and against stale references, and erroring there would break
-// ordinary use. Lexical normalisation is enough because filepath.Clean resolves `..` textually
-// before the containment check sees it — which is what closed BUG-FILE-a.
+// A candidate that does not exist is resolved rather than rejected: the renderer's file tree
+// resolves paths mid-drag and against stale references, and erroring there would break ordinary
+// use. Join cleans `..` away textually, which is what closed BUG-FILE-a; resolving the deepest
+// ancestor that does exist is what closes BUG-FILE-c, a symlinked folder the name passes through.
 func resolveWithinRepo(repo, relPath string) (string, error) {
 	base, err := canonical(repo)
 	if err != nil {
 		return "", fmt.Errorf("invalid repo path: %w", err)
 	}
 
-	candidate := filepath.Join(base, filepath.FromSlash(relPath))
-
-	resolved, err := canonical(candidate)
-	if err != nil {
-		// Not on disk (yet): Join already cleaned the `..` segments away.
-		resolved = candidate
-	}
+	resolved := canonicalThroughExisting(filepath.Join(base, filepath.FromSlash(relPath)))
 	if !within(base, resolved) {
 		return "", errEscapes
 	}
@@ -73,9 +68,14 @@ func resolveNewPath(repo, relPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid repo path: %w", err)
 	}
-	// No containment check is needed beyond the component rule: a path made only of plain names
-	// cannot climb out of base.
-	return filepath.Join(base, filepath.FromSlash(trimmed)), nil
+	// Plain names cannot climb out of base by spelling, but they can by walking through a symlinked
+	// folder that already exists (BUG-FILE-c), so the containment check still runs on what they
+	// resolve to.
+	resolved := canonicalThroughExisting(filepath.Join(base, filepath.FromSlash(trimmed)))
+	if !within(base, resolved) {
+		return "", errEscapes
+	}
+	return resolved, nil
 }
 
 // isPlainRelativePath reports whether every component is an ordinary name.
@@ -117,6 +117,54 @@ func canonical(path string) (string, error) {
 		return "", err
 	}
 	return resolved, nil
+}
+
+// canonicalThroughExisting is canonical for a path that may not exist yet: the deepest ancestor that
+// does exist is resolved, and the missing components are joined back on unchanged.
+//
+// The missing components need no resolving of their own — nothing is on disk to be a symlink — with
+// one exception this cannot see: a dangling symlink, which exists as a name but not as a target.
+// That case is left to os.Root, which refuses to follow a link out of the repository (see
+// inRepository).
+func canonicalThroughExisting(path string) string {
+	var missing []string
+	for current := path; ; {
+		if resolved, err := canonical(current); err == nil {
+			slices.Reverse(missing)
+			return filepath.Join(append([]string{resolved}, missing...)...)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Nothing along the path exists, not even the volume root. The containment check then
+			// judges the path as written, which is what it did before this existed.
+			return path
+		}
+		missing = append(missing, filepath.Base(current))
+		current = parent
+	}
+}
+
+// inRepository runs op against the repository through an os.Root, handing it the repo-relative form
+// of an absolute path the guards above already accepted.
+//
+// The guards decide, with the messages the renderer shows; os.Root enforces, at the moment of the
+// write, what a check made a moment earlier cannot: a dangling symlink as the final component, and
+// a link swapped in between the check and the use. Only writes go through it. os.Root also refuses
+// every absolute symlink, even one pointing inside the repository, and the guards hand it the
+// canonical path precisely so that intermediate links never reach it.
+func inRepository(base, path string, op func(root *os.Root, rel string) error) error {
+	rel, err := filepath.Rel(base, path)
+	if err != nil || !filepath.IsLocal(rel) {
+		return errEscapes
+	}
+	root, err := os.OpenRoot(base)
+	if err != nil {
+		return fmt.Errorf("invalid repo path: %w", err)
+	}
+	// A directory handle opened only to be read through; failing to close it changes nothing the
+	// caller could act on, and op's result is the one that matters.
+	defer func() { _ = root.Close() }()
+	return op(root, rel)
 }
 
 // within reports whether path is base or lies underneath it, comparing whole components.
