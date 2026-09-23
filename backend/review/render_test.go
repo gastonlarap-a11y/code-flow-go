@@ -44,9 +44,9 @@ func TestAReviewWithNothingClosedHasNoHistorySection(t *testing.T) {
 
 func TestTheHistorySectionNamesWhatWasResolvedAndWhatWasDiscarded(t *testing.T) {
 	resolved := stored("F-001", "src/a.ts", "race-condition", "resuelto", 2)
-	resolved.ResueltoEnIter = ptr(int64(5))
+	resolved.ResueltoEnIter = new(int64(5))
 	discarded := stored("F-002", "src/b.ts", "naming", "falso_positivo", 1)
-	discarded.MotivoDescarte = text("es intencional")
+	discarded.MotivoDescarte = new("es intencional")
 	ignored := stored("F-003", "", "typo", "ignorado", 1)
 
 	history := review.ResolvedHistorySection([]review.MemoryFinding{resolved, discarded, ignored})

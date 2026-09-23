@@ -157,7 +157,7 @@ func field(block, label string) string {
 	collected := make([]string, 0, 4)
 	inside := false
 
-	for _, raw := range strings.Split(block, "\n") {
+	for raw := range strings.SplitSeq(block, "\n") {
 		line := strings.TrimLeft(strings.TrimSuffix(raw, "\r"), " \t")
 
 		if !inside {

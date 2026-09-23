@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -64,12 +65,7 @@ func looksBinary(body []byte) bool {
 	if len(window) > binarySniffWindow {
 		window = window[:binarySniffWindow]
 	}
-	for _, b := range window {
-		if b == 0 {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(window, 0)
 }
 
 // charsetOf reads the `charset=` parameter, lower-cased.

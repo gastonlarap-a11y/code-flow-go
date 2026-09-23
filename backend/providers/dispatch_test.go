@@ -43,7 +43,7 @@ func gitHubProject(host *fakeGitHub) workspaces.Project {
 	hostname := host.hostname()
 	return workspaces.Project{
 		ID: "p1", WorkspaceID: "w1", Name: "Repo", LocalPath: "/repos/thing",
-		GitHubOwner: text("acme"), GitHubRepo: text("widget"), GitHubHost: &hostname,
+		GitHubOwner: new("acme"), GitHubRepo: new("widget"), GitHubHost: &hostname,
 	}
 }
 
@@ -51,7 +51,7 @@ func gitHubProject(host *fakeGitHub) workspaces.Project {
 func azureProject() workspaces.Project {
 	return workspaces.Project{
 		ID: "p1", WorkspaceID: "w1", Name: "Repo", LocalPath: "/repos/thing",
-		ADOOrg: text("contoso"), ADOProject: text("Dev"), ADORepoID: text("Dev.prueba"),
+		ADOOrg: new("contoso"), ADOProject: new("Dev"), ADORepoID: new("Dev.prueba"),
 	}
 }
 
@@ -108,7 +108,7 @@ func TestAProjectWithBothLinksDispatchesToGitHub(t *testing.T) {
 	host.answer(http.MethodGet, "/api/v3/repos/acme/widget/pulls", http.StatusOK, `[]`)
 
 	project := gitHubProject(host)
-	project.ADOOrg, project.ADOProject, project.ADORepoID = text("contoso"), text("Dev"), text("r")
+	project.ADOOrg, project.ADOProject, project.ADORepoID = new("contoso"), new("Dev"), new("r")
 
 	svc := newProviderService(t, providers.Deps{
 		Projects:    &fakeProjects{project: project},
@@ -468,7 +468,7 @@ func TestALinkWithNoMatchingLocalRepoOffersACloneURL(t *testing.T) {
 	hostname := host.hostname()
 	svc := newProviderService(t, providers.Deps{
 		Projects: &fakeProjects{
-			setting: text(fmt.Sprintf(`[{"host":%q}]`, hostname)),
+			setting: new(fmt.Sprintf(`[{"host":%q}]`, hostname)),
 			all:     []workspaces.Project{},
 		},
 		Remotes:     &fakeRemotes{},
@@ -495,7 +495,7 @@ func TestAlreadyLinkedProjectsAreFoundWithoutAWrite(t *testing.T) {
 
 	hostname := host.hostname()
 	projects := &fakeProjects{
-		setting: text(fmt.Sprintf(`[{"host":%q}]`, hostname)),
+		setting: new(fmt.Sprintf(`[{"host":%q}]`, hostname)),
 		project: gitHubProject(host),
 		all:     []workspaces.Project{gitHubProject(host)},
 	}
@@ -526,7 +526,7 @@ func TestAProjectWhoseRemotePointsAtTheLinkIsReLinked(t *testing.T) {
 
 	stale := workspaces.Project{
 		ID: "p1", WorkspaceID: "w1", Name: "Repo", LocalPath: "/repos/thing",
-		GitHubOwner: text("acme"), GitHubRepo: text("widget"),
+		GitHubOwner: new("acme"), GitHubRepo: new("widget"),
 	}
 	projects := &fakeProjects{project: stale, all: []workspaces.Project{stale}}
 
@@ -557,7 +557,7 @@ func TestAProjectWhoseFolderIsGoneIsSkippedNotFatal(t *testing.T) {
 	hostname := host.hostname()
 	svc := newProviderService(t, providers.Deps{
 		Projects: &fakeProjects{
-			setting: text(fmt.Sprintf(`[{"host":%q}]`, hostname)),
+			setting: new(fmt.Sprintf(`[{"host":%q}]`, hostname)),
 			all:     []workspaces.Project{{ID: "gone", LocalPath: "/repos/gone"}},
 		},
 		Remotes:     &fakeRemotes{err: errStoreGone},
@@ -602,7 +602,7 @@ func TestTheLinkReadsDispatchStraightToTheirHost(t *testing.T) {
 		`[{"user":{"login":"gaston"},"state":"APPROVED"}]`)
 
 	svc := newProviderService(t, providers.Deps{
-		Projects:    &fakeProjects{setting: text(fmt.Sprintf(`[{"host":%q}]`, hostname))},
+		Projects:    &fakeProjects{setting: new(fmt.Sprintf(`[{"host":%q}]`, hostname))},
 		Credentials: fakeCredentials{githubHosts: map[string]bool{hostname: true}},
 		HTTP:        host.server.Client(),
 	})
@@ -631,7 +631,7 @@ func TestActingThroughALinkFilesNothing(t *testing.T) {
 
 	log := &fakeActivity{}
 	svc := newProviderService(t, providers.Deps{
-		Projects:    &fakeProjects{setting: text(fmt.Sprintf(`[{"host":%q}]`, hostname))},
+		Projects:    &fakeProjects{setting: new(fmt.Sprintf(`[{"host":%q}]`, hostname))},
 		Credentials: fakeCredentials{githubHosts: map[string]bool{hostname: true}},
 		Activity:    log,
 		HTTP:        host.server.Client(),

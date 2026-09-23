@@ -22,7 +22,7 @@ type globSet struct {
 func buildGlobs(list string) *globSet {
 	patterns := make([]*regexp.Regexp, 0, 4)
 
-	for _, raw := range strings.Split(list, ",") {
+	for raw := range strings.SplitSeq(list, ",") {
 		pattern := strings.TrimSpace(raw)
 		if pattern == "" {
 			continue

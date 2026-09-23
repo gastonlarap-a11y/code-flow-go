@@ -23,8 +23,8 @@ func TestARefusedDatabaseCarriesItsSentinel(t *testing.T) {
 	saved, err := deps.SaveConnection(t.Context(), dbml.NewConnection{
 		Name: "apagada", Driver: dbml.DriverPostgres,
 		// Port 1 answers nothing on any machine this runs on.
-		Host: ptr("127.0.0.1"), Port: ptr(int64(1)), Database: ptr("app"),
-		Username: ptr("postgres"), Password: ptr("la-clave-secreta"),
+		Host: new("127.0.0.1"), Port: new(int64(1)), Database: new("app"),
+		Username: new("postgres"), Password: new("la-clave-secreta"),
 	})
 	require.NoError(t, err)
 
@@ -95,7 +95,7 @@ func TestThePasswordIsReadForTheDialAndNothingElse(t *testing.T) {
 	connection := sqliteAt(t, `CREATE TABLE t (id INTEGER PRIMARY KEY)`)
 	saved, err := deps.SaveConnection(t.Context(), dbml.NewConnection{
 		Name: "local", Driver: dbml.DriverSQLite, FilePath: connection.FilePath,
-		Password: ptr("la-clave"),
+		Password: new("la-clave"),
 	})
 	require.NoError(t, err)
 

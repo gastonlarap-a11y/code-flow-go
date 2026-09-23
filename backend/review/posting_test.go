@@ -135,7 +135,7 @@ func TestAFindingWithNoThreadOpensOneAndRecordsIt(t *testing.T) {
 func TestAFindingThatAlreadyHasAThreadIsRepliedTo(t *testing.T) {
 	host := gitHubHost()
 	finding := stored("F-001", "src/app.ts", "race", "posteado", 1)
-	finding.ThreadID = ptr(int64(555))
+	finding.ThreadID = new(int64(555))
 
 	_, err := review.PublishFindings(t.Context(), host, 7, []review.MemoryFinding{finding}, review.PostBatch{
 		Items: []review.PostFindingItem{item("src/app.ts", "race", "el mismo hallazgo", nil)},
@@ -179,7 +179,7 @@ func TestTheReplyWordingIsTheHostsOwn(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			finding := stored("F-001", "src/app.ts", "race", test.estado, 1)
-			finding.ThreadID = ptr(int64(9))
+			finding.ThreadID = new(int64(9))
 
 			_, err := review.PublishFindings(t.Context(), test.host, 7, []review.MemoryFinding{finding},
 				review.PostBatch{
@@ -359,7 +359,7 @@ func TestWhatSucceededIsStillRecordedWhenSomethingElseFails(t *testing.T) {
 	host.replyErr = errors.New("GitHub returned 500: boom")
 
 	withThread := stored("F-002", "src/b.ts", "naming", "posteado", 1)
-	withThread.ThreadID = ptr(int64(99))
+	withThread.ThreadID = new(int64(99))
 	findings := []review.MemoryFinding{stored("F-001", "src/a.ts", "race", "abierto", 1), withThread}
 
 	published, err := review.PublishFindings(t.Context(), host, 7, findings, review.PostBatch{
@@ -456,7 +456,7 @@ func TestPostingASavedRunReadsItsFindingsAndWritesThemBack(t *testing.T) {
 func TestPostingUsesTheRunsOwnIterationInItsReplies(t *testing.T) {
 	store, db := newStore(t)
 	finding := stored("F-001", "src/app.ts", "race", "posteado", 1)
-	finding.ThreadID = ptr(int64(42))
+	finding.ThreadID = new(int64(42))
 	insertRun(t, db, "r1", 7, 5, at(1), `{"head_sha":"","iter":5}`, storedFindingsJSON(t, finding))
 
 	host := gitHubHost()

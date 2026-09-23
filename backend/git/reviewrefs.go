@@ -71,7 +71,7 @@ func ChangedFilesBetween(ctx context.Context, repo, from, to string) ([]string, 
 	}
 
 	files := make([]string, 0, 16)
-	for _, line := range strings.Split(result.Stdout, "\n") {
+	for line := range strings.SplitSeq(result.Stdout, "\n") {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			files = append(files, trimmed)
 		}

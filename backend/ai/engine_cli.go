@@ -339,7 +339,7 @@ func withStaleSessionHint(detail string) string {
 func parseOpenCodeEvents(stdout string) (texts []string, failure, session string, parsed bool) {
 	texts = make([]string, 0, 8)
 
-	for _, line := range strings.Split(stdout, "\n") {
+	for line := range strings.SplitSeq(stdout, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "{") {
 			continue

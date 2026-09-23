@@ -54,7 +54,7 @@ func NoCriteria() Criteria {
 func CriteriaFieldOrder(setting *string) []string {
 	if setting != nil {
 		fields := make([]string, 0, 4)
-		for _, field := range strings.Split(*setting, ",") {
+		for field := range strings.SplitSeq(*setting, ",") {
 			if trimmed := strings.TrimSpace(field); trimmed != "" {
 				fields = append(fields, trimmed)
 			}

@@ -205,7 +205,7 @@ func negotiateQop(offered string) (string, error) {
 		return "", nil
 	}
 
-	for _, candidate := range strings.Split(trimmed, ",") {
+	for candidate := range strings.SplitSeq(trimmed, ",") {
 		if strings.EqualFold(strings.TrimSpace(candidate), "auth") {
 			return "auth", nil
 		}

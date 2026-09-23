@@ -176,7 +176,7 @@ func runPipeline(t *testing.T, reviewer *fakeReviewer, fetcher *fakeFetcher) (re
 		}},
 		Projects: &fakeWorkspace{project: workspaces.Project{
 			ID: "p1", WorkspaceID: "w1", Name: "Repo", LocalPath: repo,
-			GitHubOwner: text("acme"), GitHubRepo: text("widget"),
+			GitHubOwner: new("acme"), GitHubRepo: new("widget"),
 		}},
 		AI:       reviewer,
 		Fetcher:  fetcher,
@@ -396,11 +396,12 @@ func TestALinkReviewWritesItsOwnWorkspaceAndNeverSaves(t *testing.T) {
 	reviewer := &fakeReviewer{reply: reviewReply}
 	deps, store, _ := runPipeline(t, reviewer, &fakeFetcher{})
 
-	host := listingHost{fakeHost: gitHubHost(), pull: providers.PullRequestSummary{
+	github := gitHubHost()
+	github.diff = "diff --git a/app.go b/app.go\n--- a/app.go\n+++ b/app.go\n@@ -1,2 +1,2 @@\n-uno\n+dos\n"
+	host := listingHost{fakeHost: github, pull: providers.PullRequestSummary{
 		ID: 7, Title: "Shout the greeting", Description: "why",
 		SourceBranch: "feat/thing", TargetBranch: "main", URL: "https://example.test/pr/7",
 	}}
-	host.diff = "diff --git a/app.go b/app.go\n--- a/app.go\n+++ b/app.go\n@@ -1,2 +1,2 @@\n-uno\n+dos\n"
 	deps.Hosts = &fakeHosts{host: host, link: providers.PRLink{
 		Provider: providers.ProviderGitHub, Number: 7,
 		GitHub: providers.GitHubRepo{Host: "github.com", Owner: "acme", Repo: "widget"},
@@ -442,8 +443,9 @@ func TestALinkReviewWritesItsOwnWorkspaceAndNeverSaves(t *testing.T) {
 func TestAnAgentsInstructionsComeBeforeTheWarning(t *testing.T) {
 	reviewer := &fakeReviewer{reply: reviewReply}
 	deps, _, _ := runPipeline(t, reviewer, &fakeFetcher{})
-	host := listingHost{fakeHost: gitHubHost(), pull: providers.PullRequestSummary{ID: 7, Title: "t"}}
-	host.diff = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\n+y\n"
+	github := gitHubHost()
+	github.diff = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\n+y\n"
+	host := listingHost{fakeHost: github, pull: providers.PullRequestSummary{ID: 7, Title: "t"}}
 	deps.Hosts = &fakeHosts{host: host, link: providers.PRLink{Provider: providers.ProviderGitHub, Number: 7}}
 
 	_, err := deps.RunFromLink(t.Context(), review.LinkRunRequest{

@@ -66,8 +66,6 @@ func request(method, url string) apiclient.HTTPSendRequest {
 	}
 }
 
-func text(value string) *string { return &value }
-
 // ---- the basics --------------------------------------------------------------------------------
 
 func TestASendCarriesTheHeadersAndReadsTheBody(t *testing.T) {
@@ -83,7 +81,7 @@ func TestASendCarriesTheHeadersAndReadsTheBody(t *testing.T) {
 
 	send := request(http.MethodPost, server.URL+"/pagos")
 	send.Headers = [][2]string{{"X-Trace", "abc123"}}
-	send.BodyText = text(`{"importe":100}`)
+	send.BodyText = new(`{"importe":100}`)
 
 	response, err := apiclient.Send(t.Context(), send)
 	require.NoError(t, err)
@@ -172,8 +170,8 @@ func TestBodyPriority(t *testing.T) {
 	// Nothing enforces that only one arrives — the renderer's own type guarantees it — so what is
 	// asserted is the fixed order: text, then base64, then file, then urlencoded, then multipart.
 	send := request(http.MethodPost, server.URL+"/x")
-	send.BodyText = text("el texto gana")
-	send.BodyBase64 = text(base64.StdEncoding.EncodeToString([]byte("el base64 no")))
+	send.BodyText = new("el texto gana")
+	send.BodyBase64 = new(base64.StdEncoding.EncodeToString([]byte("el base64 no")))
 	send.Urlencoded = [][2]string{{"tampoco", "1"}}
 
 	_, err := apiclient.Send(t.Context(), send)
@@ -192,7 +190,7 @@ func TestABase64BodyIsDecodedBeforeItGoesOut(t *testing.T) {
 	defer server.Close()
 
 	send := request(http.MethodPost, server.URL+"/x")
-	send.BodyBase64 = text(base64.StdEncoding.EncodeToString([]byte{0x00, 0xff, 0x10}))
+	send.BodyBase64 = new(base64.StdEncoding.EncodeToString([]byte{0x00, 0xff, 0x10}))
 
 	_, err := apiclient.Send(t.Context(), send)
 	require.NoError(t, err)
@@ -203,7 +201,7 @@ func TestABase64BodyIsDecodedBeforeItGoesOut(t *testing.T) {
 
 func TestAnUndecodableBase64BodyFailsBeforeAnythingIsDialled(t *testing.T) {
 	send := request(http.MethodPost, "https://unreachable.invalid/x")
-	send.BodyBase64 = text("no es base64 !!!")
+	send.BodyBase64 = new("no es base64 !!!")
 
 	_, err := apiclient.Send(t.Context(), send)
 	require.Error(t, err)
@@ -285,8 +283,8 @@ func TestMultipartDiscardsTheCallersContentType(t *testing.T) {
 	send := request(http.MethodPost, server.URL+"/x")
 	send.Headers = [][2]string{{"Content-Type", "application/json"}}
 	send.FormData = []apiclient.FormPart{
-		{Name: "campo", Value: text("valor")},
-		{Name: "archivo", FilePath: &path, ContentType: text("text/plain")},
+		{Name: "campo", Value: new("valor")},
+		{Name: "archivo", FilePath: &path, ContentType: new("text/plain")},
 	}
 
 	_, err := apiclient.Send(t.Context(), send)
@@ -437,7 +435,7 @@ func TestTheManualPathDowngradesEveryNonGetMethod(t *testing.T) {
 			send := request(method, origin.URL+"/origen")
 			send.Headers = [][2]string{{"Authorization", "Bearer t"}}
 			send.Options.KeepAuthOnRedirect = true
-			send.BodyText = text("el cuerpo")
+			send.BodyText = new("el cuerpo")
 
 			_, err := apiclient.Send(t.Context(), send)
 			require.NoError(t, err)
@@ -467,7 +465,7 @@ func TestA307PreservesTheMethodAndBody(t *testing.T) {
 	send := request(http.MethodPost, origin.URL+"/origen")
 	send.Headers = [][2]string{{"Authorization", "Bearer t"}}
 	send.Options.KeepAuthOnRedirect = true
-	send.BodyText = text("el cuerpo")
+	send.BodyText = new("el cuerpo")
 
 	_, err := apiclient.Send(t.Context(), send)
 	require.NoError(t, err)
@@ -544,7 +542,7 @@ func TestAnAWSSignedRequestCarriesItsThreeHeaders(t *testing.T) {
 	defer server.Close()
 
 	send := request(http.MethodPost, server.URL+"/objeto")
-	send.BodyText = text("contenido")
+	send.BodyText = new("contenido")
 	send.Auth = &apiclient.BackendAuth{
 		Kind: apiclient.AuthAWSV4, AccessKey: "AKIDEXAMPLE",
 		SecretKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",

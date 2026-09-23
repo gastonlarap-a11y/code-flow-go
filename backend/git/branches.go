@@ -40,7 +40,7 @@ func ListBranches(ctx context.Context, repo string) ([]Branch, error) {
 	}
 
 	branches := make([]Branch, 0, 16)
-	for _, line := range strings.Split(result.Stdout, "\n") {
+	for line := range strings.SplitSeq(result.Stdout, "\n") {
 		if line == "" {
 			continue
 		}
@@ -83,7 +83,7 @@ func ListBranches(ctx context.Context, repo string) ([]Branch, error) {
 func parseTrack(track string) (int64, int64) {
 	var ahead, behind int64
 
-	for _, part := range strings.Split(track, ",") {
+	for part := range strings.SplitSeq(track, ",") {
 		part = strings.TrimSpace(part)
 		switch {
 		case strings.HasPrefix(part, "ahead "):

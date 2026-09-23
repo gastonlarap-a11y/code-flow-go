@@ -208,8 +208,8 @@ func TestResolveTicketAccountThrowsForAnUnknownProject(t *testing.T) {
 
 func TestResolveTicketAccountReadsTheWorkspaceFirst(t *testing.T) {
 	store := &fakeWorkspaces{
-		project:   workspaces.Project{ID: "p1", WorkspaceID: "w1", ADOOrg: ptr("desde-el-repo")},
-		workspace: workspaces.Workspace{ID: "w1", ADOOrg: ptr("elegida"), ADOProject: ptr("Tablero")},
+		project:   workspaces.Project{ID: "p1", WorkspaceID: "w1", ADOOrg: new("desde-el-repo")},
+		workspace: workspaces.Workspace{ID: "w1", ADOOrg: new("elegida"), ADOProject: new("Tablero")},
 	}
 	registry := registryFor(t, tickets.Deps{Workspaces: store})
 

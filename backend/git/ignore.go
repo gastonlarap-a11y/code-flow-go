@@ -39,7 +39,7 @@ func CheckIgnore(ctx context.Context, repo string, probes []string) (map[string]
 		return ignored, nil //nolint:nilerr // deliberate, see above
 	}
 
-	for _, path := range strings.Split(string(out), "\x00") {
+	for path := range strings.SplitSeq(string(out), "\x00") {
 		if path != "" {
 			ignored[path] = true
 		}

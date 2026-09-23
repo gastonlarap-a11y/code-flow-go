@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"testing/iotest"
+	"testing/synctest"
 	"time"
 
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
@@ -79,13 +80,14 @@ func TestAnUntrackedRunCollectsWithoutEmitting(t *testing.T) {
 // The deadline measures silence, and it is anchored to the read rather than to the emit: the emit
 // drops blank lines, so a CLI printing only whitespace would otherwise be judged dead.
 func TestWhitespaceOnlyOutputStillCountsAsAlive(t *testing.T) {
-	recorder := &bridge.RecordingEmitter{}
-	run := NewRunRegistry(recorder, time.Minute).Begin("run", true)
+	synctest.Test(t, func(t *testing.T) {
+		recorder := &bridge.RecordingEmitter{}
+		run := NewRunRegistry(recorder, time.Minute).Begin("run", true)
 
-	time.Sleep(20 * time.Millisecond)
-	before := run.silentFor()
-	pump(strings.NewReader("   \n\n   \n"), run, StreamStdout)
+		time.Sleep(20 * time.Millisecond)
+		pump(strings.NewReader("   \n\n   \n"), run, StreamStdout)
 
-	assert.Less(t, run.silentFor(), before, "the read pushed the deadline out")
-	assert.Empty(t, run.Trace(), "and nothing was emitted, which is why the emit is the wrong anchor")
+		assert.Zero(t, run.silentFor(), "the read pushed the deadline out")
+		assert.Empty(t, run.Trace(), "and nothing was emitted, which is why the emit is the wrong anchor")
+	})
 }

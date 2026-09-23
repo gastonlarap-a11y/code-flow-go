@@ -98,20 +98,20 @@ func captureLoginShellPath() (string, bool) {
 // wrong. A PATH value legitimately contains "=" (a directory can be named anything), so the line
 // is split once on the first "=" and the remainder taken whole.
 func ExtractPath(output string) (string, bool) {
-	start := strings.Index(output, envMarker)
-	if start < 0 {
+	_, after, ok := strings.Cut(output, envMarker)
+	if !ok {
 		return "", false
 	}
-	rest := output[start+len(envMarker):]
+	rest := after
 
-	end := strings.Index(rest, envMarker)
-	if end < 0 {
+	before0, _, ok0 := strings.Cut(rest, envMarker)
+	if !ok0 {
 		// One marker and not two means the shell died midway; whatever came after it is a partial
 		// dump we have no reason to trust.
 		return "", false
 	}
 
-	for line := range strings.SplitSeq(rest[:end], "\n") {
+	for line := range strings.SplitSeq(before0, "\n") {
 		value, found := strings.CutPrefix(strings.TrimSpace(line), "PATH=")
 		if !found {
 			continue

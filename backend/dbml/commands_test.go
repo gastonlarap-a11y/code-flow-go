@@ -107,8 +107,8 @@ func TestSavingWritesTheRowBeforeTheCredential(t *testing.T) {
 
 	saved, err := dbml.Deps{Store: store, Credentials: credentials}.SaveConnection(t.Context(),
 		dbml.NewConnection{
-			Name: "staging", Driver: dbml.DriverPostgres, Host: ptr("db.test"),
-			Password: ptr("la-clave"),
+			Name: "staging", Driver: dbml.DriverPostgres, Host: new("db.test"),
+			Password: new("la-clave"),
 		})
 	require.NoError(t, err)
 
@@ -123,7 +123,7 @@ func TestAFailedInsertFilesNoSecret(t *testing.T) {
 	credentials := newFakeCredentials()
 
 	_, err := dbml.Deps{Store: store, Credentials: credentials}.SaveConnection(t.Context(),
-		dbml.NewConnection{Name: "raro", Driver: "oracle", Password: ptr("la-clave")})
+		dbml.NewConnection{Name: "raro", Driver: "oracle", Password: new("la-clave")})
 	require.ErrorIs(t, err, dbml.ErrUnknownDriver)
 
 	assert.Empty(t, credentials.calls, "the credential store was never reached")
@@ -138,16 +138,16 @@ func TestABlankPasswordLeavesTheStoredOneAlone(t *testing.T) {
 	deps := dbml.Deps{Store: store, Credentials: credentials}
 
 	saved, err := deps.SaveConnection(t.Context(), dbml.NewConnection{
-		Name: "staging", Driver: dbml.DriverPostgres, Password: ptr("la-clave"),
+		Name: "staging", Driver: dbml.DriverPostgres, Password: new("la-clave"),
 	})
 	require.NoError(t, err)
 
-	for _, password := range []*string{nil, ptr(""), ptr("   ")} {
+	for _, password := range []*string{nil, new(""), new("   ")} {
 		credentials.calls = nil
 
 		_, err := deps.SaveConnection(t.Context(), dbml.NewConnection{
 			ID: &saved.ID, Name: "staging", Driver: dbml.DriverPostgres,
-			Port: ptr(int64(5433)), Password: password,
+			Port: new(int64(5433)), Password: password,
 		})
 		require.NoError(t, err)
 
@@ -162,12 +162,12 @@ func TestANewPasswordReplacesTheStoredOne(t *testing.T) {
 	deps := dbml.Deps{Store: store, Credentials: credentials}
 
 	saved, err := deps.SaveConnection(t.Context(), dbml.NewConnection{
-		Name: "staging", Driver: dbml.DriverPostgres, Password: ptr("vieja"),
+		Name: "staging", Driver: dbml.DriverPostgres, Password: new("vieja"),
 	})
 	require.NoError(t, err)
 
 	_, err = deps.SaveConnection(t.Context(), dbml.NewConnection{
-		ID: &saved.ID, Name: "staging", Driver: dbml.DriverPostgres, Password: ptr("nueva"),
+		ID: &saved.ID, Name: "staging", Driver: dbml.DriverPostgres, Password: new("nueva"),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "nueva", credentials.secrets[saved.ID])
@@ -181,7 +181,7 @@ func TestAFailureToStoreThePasswordIsReported(t *testing.T) {
 	credentials.setErr = errors.New("the keychain is locked")
 
 	saved, err := dbml.Deps{Store: store, Credentials: credentials}.SaveConnection(t.Context(),
-		dbml.NewConnection{Name: "staging", Driver: dbml.DriverPostgres, Password: ptr("x")})
+		dbml.NewConnection{Name: "staging", Driver: dbml.DriverPostgres, Password: new("x")})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "keychain is locked")
@@ -197,7 +197,7 @@ func TestDeletingRemovesTheCredentialBeforeTheRow(t *testing.T) {
 	deps := dbml.Deps{Store: store, Credentials: credentials}
 
 	saved, err := deps.SaveConnection(t.Context(), dbml.NewConnection{
-		Name: "staging", Driver: dbml.DriverPostgres, Password: ptr("la-clave"),
+		Name: "staging", Driver: dbml.DriverPostgres, Password: new("la-clave"),
 	})
 	require.NoError(t, err)
 

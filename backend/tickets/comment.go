@@ -94,7 +94,7 @@ func ToHTML(markdown string) string {
 		}
 	}
 
-	for _, raw := range strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n") {
+	for raw := range strings.SplitSeq(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n") {
 		line := strings.TrimRight(raw, " \t")
 
 		if strings.HasPrefix(strings.TrimSpace(line), "```") {

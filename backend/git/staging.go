@@ -258,7 +258,7 @@ func ListRemotes(ctx context.Context, repo string) ([]Remote, error) {
 
 	// `git remote -v` prints each remote twice, once for fetch and once for push. The UI shows one
 	// row per remote, so the second is dropped rather than shown as a duplicate.
-	for _, line := range strings.Split(result.Stdout, "\n") {
+	for line := range strings.SplitSeq(result.Stdout, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 2 || seen[fields[0]] {
 			continue
