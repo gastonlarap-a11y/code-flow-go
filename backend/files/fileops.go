@@ -132,7 +132,13 @@ func WriteFileText(repo, relPath, content string) error {
 	if err != nil {
 		return err
 	}
-	return writeUserFile(full, []byte(content))
+	base, err := canonical(repo)
+	if err != nil {
+		return fmt.Errorf("invalid repo path: %w", err)
+	}
+	return inRepository(base, full, func(root *os.Root, rel string) error {
+		return root.WriteFile(rel, []byte(content), userFilePerm)
+	})
 }
 
 // WriteFileBytes writes raw bytes to an absolute path (FILE-005).
@@ -156,14 +162,20 @@ func WriteFileBytes(path string, content []byte) error {
 	return writeUserFile(path, content)
 }
 
-// writeUserFile writes one of the user's own files.
+// userFilePerm and userDirPerm are the modes of what CodeFlow creates in the user's tree.
 //
-// 0644 rather than platform.FilePerm: this is their source tree, not CodeFlow's data directory, and
-// an editor that silently tightened the permissions of everything it saved would be a surprise
-// nobody asked for. An existing file keeps its own mode — os.WriteFile only applies the mode when
-// it creates the file.
+// 0644/0755 rather than platform.FilePerm: this is their source tree, not CodeFlow's data
+// directory, and an editor that silently tightened the permissions of everything it saved would be
+// a surprise nobody asked for. An existing file keeps its own mode — a write only applies the mode
+// when it creates the file.
+const (
+	userFilePerm os.FileMode = 0o644
+	userDirPerm  os.FileMode = 0o755
+)
+
+// writeUserFile writes one of the user's own files at an absolute path.
 func writeUserFile(path string, content []byte) error {
-	return os.WriteFile(path, content, 0o644) //nolint:gosec // G306: the user's file, not ours
+	return os.WriteFile(path, content, userFilePerm) //nolint:gosec // G306: the user's file, not ours
 }
 
 // MovePath moves or renames a file or folder within the repository (FILE-003).
@@ -220,7 +232,13 @@ func MovePath(repo, fromRel, destDir string) (string, error) {
 		return "", fmt.Errorf("%s already exists here", name)
 	}
 
-	if err := os.Rename(source, target); err != nil {
+	sourceRel, err := filepath.Rel(base, source)
+	if err != nil {
+		return "", errEscapes
+	}
+	if err := inRepository(base, target, func(root *os.Root, targetRel string) error {
+		return root.Rename(sourceRel, targetRel)
+	}); err != nil {
 		return "", err
 	}
 	return repoRelative(base, target)
@@ -236,7 +254,13 @@ func CreateDir(repo, relPath string) error {
 		// VERBATIM, with the trimmed name — unlike "invalid path", which uses the original.
 		return fmt.Errorf("%s already exists", strings.TrimSpace(relPath))
 	}
-	return os.MkdirAll(full, 0o755) //nolint:gosec // G301: the user's tree, not ours
+	base, err := canonical(repo)
+	if err != nil {
+		return fmt.Errorf("invalid repo path: %w", err)
+	}
+	return inRepository(base, full, func(root *os.Root, rel string) error {
+		return root.MkdirAll(rel, userDirPerm)
+	})
 }
 
 // CreateFile creates a new empty file, **never truncating an existing one** (FILE-004).
@@ -248,19 +272,24 @@ func CreateFile(repo, relPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil { //nolint:gosec // G301: the user's tree
-		return err
-	}
-
-	file, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // G302/G304
-	if errors.Is(err, os.ErrExist) {
-		// VERBATIM.
-		return fmt.Errorf("%s already exists", strings.TrimSpace(relPath))
-	}
+	base, err := canonical(repo)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid repo path: %w", err)
 	}
-	return file.Close()
+	return inRepository(base, full, func(root *os.Root, rel string) error {
+		if err := root.MkdirAll(filepath.Dir(rel), userDirPerm); err != nil {
+			return err
+		}
+		file, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, userFilePerm)
+		if errors.Is(err, os.ErrExist) {
+			// VERBATIM.
+			return fmt.Errorf("%s already exists", strings.TrimSpace(relPath))
+		}
+		if err != nil {
+			return err
+		}
+		return file.Close()
+	})
 }
 
 // Opener hands a path to the operating system.
