@@ -29,3 +29,11 @@ trustPolicyExclude:
   # downgrade. Pinned to that one version; it reaches the tree only through Babel, which
   # eslint-plugin-react-hooks pulls in as a dev dependency.
   - semver@6.3.1
+# Each entry names one version and why it could not wait the day out. pnpm writes these on its own
+# when `pnpm add` asks for a version younger than the policy, so an entry without a reason here was
+# not reviewed.
+minimumReleaseAgeExclude:
+  # Published the day it was adopted, to move with the Go module and the CLI (Wails betas land every
+  # few days). Its files are byte-identical to 3.0.0-beta.23's except the version field — checked
+  # with `npm diff` — so the day's wait would have protected nothing.
+  - '@wailsio/runtime@3.0.0-beta.25'

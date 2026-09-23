@@ -166,8 +166,31 @@ tasks:
 
   dev:
     desc: Run the app with hot reload (Go rebuild + Vite on 1420).
+    # `wails3 dev` runs the three `dev:*` tasks below, as listed under `dev_mode.executes` in
+    # build/config.yml. `-port` is what it exports as FRONTEND_DEVSERVER_URL, the address the dev
+    # build loads the renderer from, so it must be Vite's fixed port rather than Wails' default 9245.
     cmds:
-      - wails3 dev -config ./build/config.yml
+      - wails3 dev -config ./build/config.yml -port $VITE_PORT
+
+  dev:build:
+    internal: true
+    # No `-s -w` and inlining off (`-l`), so a debugger can attach; no `-X main.version`, so the
+    # build reports 0.0.0 and the updater never offers to replace a development binary. The
+    # renderer is not built: the dev binary loads it from Vite, and `frontend/dist` only has to
+    # hold the placeholder that keeps `go:embed` compiling.
+    cmds:
+      - go build -buildvcs=false -gcflags=all=-l -o {{.BIN_DIR}}/{{.APP_NAME}}-dev{{.EXE}} .
+
+  dev:frontend:
+    internal: true
+    dir: frontend
+    cmds:
+      - pnpm dev
+
+  dev:run:
+    internal: true
+    cmds:
+      - "{{.BIN_DIR}}/{{.APP_NAME}}-dev{{.EXE}}"
 
   smoke:
     desc: Run the packaged binary's own environment probes.
