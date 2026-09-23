@@ -17,3 +17,23 @@ overrides:
 # run without it.
 allowBuilds:
   esbuild: true
+
+# Refuse a version whose publishing provenance is weaker than an earlier one of the same package —
+# a release published by hand with a stolen token where the previous ones came from a trusted CI
+# publisher. That is the shape of the npm worm compromises; the rest of the defence is pnpm 11's
+# default `minimumReleaseAge` of one day, left at its default on purpose rather than restated.
+trustPolicy: no-downgrade
+trustPolicyExclude:
+  # Checked, not waved through: 6.3.1 is the ReDoS backport (CVE-2022-25883) a maintainer published
+  # by hand on 2023-07-10, three days after 7.5.4 had gone out with provenance, so it reads as a
+  # downgrade. Pinned to that one version; it reaches the tree only through Babel, which
+  # eslint-plugin-react-hooks pulls in as a dev dependency.
+  - semver@6.3.1
+# Each entry names one version and why it could not wait the day out. pnpm writes these on its own
+# when `pnpm add` asks for a version younger than the policy, so an entry without a reason here was
+# not reviewed.
+minimumReleaseAgeExclude:
+  # Published the day it was adopted, to move with the Go module and the CLI (Wails betas land every
+  # few days). Its files are byte-identical to 3.0.0-beta.23's except the version field — checked
+  # with `npm diff` — so the day's wait would have protected nothing.
+  - '@wailsio/runtime@3.0.0-beta.25'

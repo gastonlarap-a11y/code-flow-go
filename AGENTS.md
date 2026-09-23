@@ -54,7 +54,7 @@ its name to `newSincePort`.
 
 ```sh
 task check            # everything the CI gate runs
-task go:check         # go vet + golangci-lint + go test -race + the goroutine gate
+task go:check         # go vet + golangci-lint + go test -race + the goroutine gate + govulncheck
 task frontend:check   # pnpm typecheck + pnpm test
 task parity           # replay the scripted requests against the installed 2.7.x core (needs it)
 task inventory        # audit the Go tests against the C# suite they replace
@@ -68,10 +68,14 @@ task smoke            # the packaged binary's own environment probes
 Go needs `GOROOT`/`PATH` on 1.27.1; `task` sets the macOS deployment target for you.
 
 Two things that bite on a fresh machine: **`task` itself may not be installed** — `wails3` embeds the
-same runner, so `wails3 task check` runs the Taskfile as written. And **`task dev` fails** on
-`wails3 v3.0.0-beta.23` with `root path is required`: the beta expects a key `build/config.yml` does
-not carry. Nothing else in the Taskfile is affected, but there is currently no working way into a
-dev build with an inspectable webview, which is what diagnosing a renderer problem needs.
+same runner, so `wails3 task check` runs the Taskfile as written. And **the `wails3` CLI must be the
+exact Wails version in `go.mod`** — install it with the line in README, which reads it from there.
+
+`task dev` runs the `dev:*` tasks listed under `dev_mode.executes` in `build/config.yml`. That block
+is hand-written like the rest of that file's edits: `wails3 generate build-assets` would replace it
+with commands pointing at generated tasks the root Taskfile does not include. Through 3.7.0 it
+used an older schema, which the CLI no longer reads, and every `task dev` failed with `root path is
+required`.
 
 ## Hard rules
 

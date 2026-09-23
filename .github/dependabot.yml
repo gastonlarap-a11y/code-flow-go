@@ -1,0 +1,49 @@
+version: 2
+
+# Weekly, grouped, and never the day a version is published.
+#
+# `cooldown` is the supply-chain half: a compromised release is usually found and yanked within
+# days, and waiting them out costs nothing on a desktop app released by hand. It also has to be at
+# least pnpm 11's own `minimumReleaseAge` (one day by default), or the lockfile Dependabot writes
+# names a version `pnpm install` then refuses.
+#
+# Majors are left ungrouped on purpose: each one is a migration of its own (the TypeScript 7 /
+# typescript-eslint split is what a grouped major would have hidden).
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      go:
+        update-types: [minor, patch]
+    ignore:
+      # Wails v3 ships a nightly beta every few days, and the library, `@wailsio/runtime` and the
+      # CLI release.yml installs must move together (the CLI version is read from this go.mod).
+      # Moved by hand, as one change, after `task dev` and `task smoke` pass on it.
+      - dependency-name: github.com/wailsapp/wails/v3
+
+  - package-ecosystem: npm # pnpm is detected from pnpm-lock.yaml
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      renderer:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "@wailsio/runtime" # moves with the Go module, see above
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        update-types: [minor, patch]

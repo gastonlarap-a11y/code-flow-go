@@ -24,12 +24,38 @@ info:
   productCopyright: © 2026 Gastón Lara P.
   productComments: Code review and API workbench
 
-# Where wails3 dev finds the renderer. The port is fixed because frontend/vite.config.ts sets
-# strictPort: a mismatch would load someone else's dev server, or nothing.
+# What `wails3 dev` watches and runs. Written by hand in the schema the CLI reads today
+# (`root_path`, `ignore`, `executes`); the earlier `frontend.dir`/`dev_url` block was a schema the
+# CLI no longer reads, which left `root_path` empty and failed every run with "root path is
+# required".
+#
+# The commands are this repository's own `dev:*` tasks, not the generator's
+# `common:dev:frontend`/`run`: the root Taskfile deliberately does not include the generated build
+# tasks (see its header). The Vite port lives in `task dev`, which passes it as `-port`.
 dev_mode:
-  frontend:
-    dir: frontend
-    install: pnpm install
-    build: pnpm build
-    dev: pnpm dev
-    dev_url: http://localhost:1420
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - .pnpm-store
+      - bin
+      - build
+      - docs
+      - frontend # Vite reloads the renderer itself
+      - node_modules
+    file:
+      - .DS_Store
+      - "*_test.go"
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: wails3 task dev:build
+      type: blocking
+    - cmd: wails3 task dev:frontend
+      type: background
+    - cmd: wails3 task dev:run
+      type: primary
+      exit_policy: shutdown
