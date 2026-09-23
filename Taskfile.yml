@@ -97,6 +97,15 @@ tasks:
       - task: go:lint:other-platform
       - go test -race -count=1 ./...
       - task: go:no-bare-goroutines
+      - task: go:vuln
+
+  go:vuln:
+    desc: Report known vulnerabilities this code actually reaches.
+    # Through `go run …@version` rather than a `tool` directive: that would add the scanner's own
+    # dependencies to go.mod for a program the app never links. Same version as CI's
+    # GOVULNCHECK_VERSION.
+    cmds:
+      - go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
   go:lint:other-platform:
     desc: Lint the build-tagged files the host platform never compiles.

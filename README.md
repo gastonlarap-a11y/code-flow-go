@@ -105,7 +105,7 @@ same way. The release workflow smoke-tests it against every image it publishes.
 | | Version | Notes |
 |---|---|---|
 | Go | 1.27.1 | `mise use -g go@1.27.1` |
-| wails3 CLI | v3.0.0-beta.23 | must match the module version exactly |
+| wails3 CLI | the `github.com/wailsapp/wails/v3` version in `go.mod` | must match it exactly; the install line below reads it from there |
 | Node | 24 | |
 | pnpm | 11.20.0 | pinned by `frontend/package.json` |
 | git | 2.40+ | a runtime dependency, not just a build one |
@@ -114,7 +114,7 @@ same way. The release workflow smoke-tests it against every image it publishes.
 
 ```sh
 mise use -g go@1.27.1
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23
+go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 wails3 doctor          # must be clean before anything else
 pnpm -C frontend install --frozen-lockfile
@@ -129,7 +129,7 @@ Run with `task <name>` (or `wails3 task <name>`, which bundles the runner).
 | `task dev` | Hot reload: Go rebuild plus Vite on port 1420 |
 | `task build` | Builds the renderer and the binary into `bin/` |
 | `task check` | Everything the CI gate runs |
-| `task go:check` | `go vet`, `golangci-lint`, `go test -race`, and the goroutine gate |
+| `task go:check` | `go vet`, `golangci-lint`, `go test -race`, the goroutine gate and `govulncheck` |
 | `task frontend:check` | `pnpm typecheck` and `pnpm test` |
 | `task smoke` | Runs the built binary's own environment probes |
 

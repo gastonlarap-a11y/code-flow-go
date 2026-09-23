@@ -54,7 +54,7 @@ its name to `newSincePort`.
 
 ```sh
 task check            # everything the CI gate runs
-task go:check         # go vet + golangci-lint + go test -race + the goroutine gate
+task go:check         # go vet + golangci-lint + go test -race + the goroutine gate + govulncheck
 task frontend:check   # pnpm typecheck + pnpm test
 task parity           # replay the scripted requests against the installed 2.7.x core (needs it)
 task inventory        # audit the Go tests against the C# suite they replace

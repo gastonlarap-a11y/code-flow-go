@@ -31,14 +31,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
+# Nothing by default; each job asks for what it uses. `contents: write` is the release itself, and
+# holding it in a job that only builds would hand it to every build script that job runs.
+permissions: {}
 
 env:
   GO_VERSION: "1.27.1"
   NODE_VERSION: "24"
   PNPM_VERSION: "11.20.0"
-  WAILS_VERSION: v3.0.0-beta.23
   MACOSX_DEPLOYMENT_TARGET: "26.0"
 
 jobs:
@@ -46,11 +46,18 @@ jobs:
     name: Version
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # Write, although this job only reads: the API lists a *draft* release only to a token with push
+    # access. With `read` the draft a failed run left behind reads as "absent", and the retry below
+    # stops saying it is completing that draft.
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.read.outputs.version }}
       publish: ${{ steps.read.outputs.publish }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The version lives in three places and the updater compares against one of them. They are
       # required to agree here rather than discovered to disagree by a user whose update loops.
@@ -85,10 +92,11 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
             [ "$state" = "true" ] && echo "v$config exists as a draft; this run will complete it"
-            echo "publish=${{ github.event_name == 'workflow_dispatch' && inputs.publish || 'true' }}" >> "$GITHUB_OUTPUT"
+            echo "publish=$PUBLISH_REQUESTED" >> "$GITHUB_OUTPUT"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+          PUBLISH_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || 'true' }}
 
   draft:
     name: Draft
@@ -96,14 +104,20 @@ jobs:
     if: needs.gate.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.gate.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Created only when there is none. A draft left by a failed run is reused rather than fought
       # over: `gh release create` fails outright on an existing tag, which would turn every retry
       # into a failure at its first step.
       - name: Create the draft release
         run: |
-          version="v${{ needs.gate.outputs.version }}"
+          version="v$RELEASE_VERSION"
           if gh release view "$version" >/dev/null 2>&1; then
             echo "$version already exists as a draft; reusing it"
             exit 0
@@ -122,35 +136,54 @@ jobs:
     if: always() && needs.gate.result == 'success'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    permissions:
+      contents: write # uploading to the draft
+      id-token: write # the OIDC token Sigstore signs the provenance with
+      attestations: write
+      artifact-metadata: write
+    env:
+      RELEASE_VERSION: ${{ needs.gate.outputs.version }}
+      PACKAGE_TASK: ${{ matrix.task }}
     strategy:
       fail-fast: false # one platform's failure must not hide the other's
       matrix:
         include:
           - os: macos-15
             task: package:mac:dmg
+            installers: bin/CodeFlow-*-arm64.dmg
           - os: windows-2025
             task: package:win
+            installers: bin/CodeFlow-*-x64.exe
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
+      # The CLI's version is read from go.mod rather than written here: the CLI, the library it
+      # packages and `@wailsio/runtime` have to be the same beta, and a second copy of the number is
+      # one that drifts. Not a `tool` directive, which would put the CLI's ~140 dependencies in
+      # go.mod for a program the app never links.
       - name: Install the Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+        shell: bash
+        run: |
+          wails=$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@$wails"
 
       # The installer is built with NSIS, and windows-2025 does not ship it — the first release run
       # failed with `"makensis": executable file not found in $PATH` after building everything else.
@@ -169,14 +202,14 @@ jobs:
 
       - name: Package
         shell: bash
-        run: wails3 task ${{ matrix.task }} VERSION=${{ needs.gate.outputs.version }}
+        run: wails3 task "$PACKAGE_TASK" VERSION="$RELEASE_VERSION"
 
       # The packaged binary answers "is this viable on this machine?" and exits. A build that
       # cannot probe its own environment is not one to upload.
       - name: Smoke-test what was built
         shell: bash
         run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          if [ "$RUNNER_OS" = "Windows" ]; then
             ./bin/CodeFlow.exe --smoke-test
           else
             ./bin/CodeFlow.app/Contents/MacOS/CodeFlow --smoke-test
@@ -186,8 +219,8 @@ jobs:
         shell: bash
         run: |
           cd bin
-          version="${{ needs.gate.outputs.version }}"
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          version="$RELEASE_VERSION"
+          if [ "$RUNNER_OS" = "Windows" ]; then
             expected=("CodeFlow-Setup-$version-x64.exe" "CodeFlow-Setup-$version-x64.exe.sha256" \
                       "CodeFlow-Portable-$version-x64.exe" "CodeFlow-Portable-$version-x64.exe.sha256")
           else
@@ -217,7 +250,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          version="${{ needs.gate.outputs.version }}"
+          version="$RELEASE_VERSION"
           name="CodeFlow-$version-arm64.dmg"
 
           staging="$RUNNER_TEMP/staging"
@@ -237,7 +270,20 @@ jobs:
           [ "$got" = "$version" ] || {
             echo "::error::the bundle declares $got, not $version"; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      # A signed SLSA provenance statement per installer: which commit and which workflow run built
+      # it, checkable with `gh attestation verify <file> --repo gastonlarap-a11y/code-flow-go`.
+      #
+      # Beside the `.sha256`, never instead of it. The digest proves the download is the file the
+      # release lists and is what every installed updater checks (BOOT-021); this proves where that
+      # file came from, for a person who asks. Nothing reads it automatically, so it changes no
+      # contract. Only for a run that publishes, so a trial build leaves no statement behind.
+      - name: Attest build provenance
+        if: needs.gate.outputs.publish == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ matrix.installers }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: installers-${{ runner.os }}
           path: |
@@ -255,8 +301,8 @@ jobs:
         shell: bash
         run: |
           cd bin
-          version="${{ needs.gate.outputs.version }}"
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          version="$RELEASE_VERSION"
+          if [ "$RUNNER_OS" = "Windows" ]; then
             names=("CodeFlow-Setup-$version-x64.exe" "CodeFlow-Portable-$version-x64.exe")
           else
             names=("CodeFlow-$version-arm64.dmg")
@@ -271,8 +317,14 @@ jobs:
     if: needs.gate.outputs.publish == 'true' && needs.installers.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.gate.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The last gate before every installed 2.7.x starts offering this release. Four assets, by
       # the patterns the updater itself selects on — not by count, because four files of the wrong
@@ -280,7 +332,7 @@ jobs:
       - name: Require every asset the updater needs
         shell: bash
         run: |
-          assets=$(gh release view "v${{ needs.gate.outputs.version }}" --json assets --jq '.assets[].name')
+          assets=$(gh release view "v$RELEASE_VERSION" --json assets --jq '.assets[].name')
           echo "$assets"
           for pattern in '\.dmg$' '\.dmg\.sha256$' '\-Setup\-.*\.exe$' '\-Setup\-.*\.exe\.sha256$'; do
             echo "$assets" | grep -qE "$pattern" || {
@@ -299,7 +351,7 @@ jobs:
       - name: Explain the first launch
         shell: bash
         run: |
-          version="${{ needs.gate.outputs.version }}"
+          version="$RELEASE_VERSION"
           body=$(gh release view "v$version" --json body --jq .body)
           preamble=$(sed "s/{{VERSION}}/$version/g" .github/release-preamble.md)
           printf '%s\n\n%s\n' "$preamble" "$body" > notes.md
@@ -309,6 +361,6 @@ jobs:
 
       - name: Publish
         run: |
-          gh release edit "v${{ needs.gate.outputs.version }}" --draft=false --latest
+          gh release edit "v$RELEASE_VERSION" --draft=false --latest
         env:
           GH_TOKEN: ${{ github.token }}
