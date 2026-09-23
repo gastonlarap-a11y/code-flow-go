@@ -3,6 +3,7 @@ package ai
 import (
 	"strconv"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -52,15 +53,18 @@ func TestAnUnstoppedRunHasNoReason(t *testing.T) {
 	assert.False(t, run.Cancelled())
 }
 
-// The deadline measures silence, so a read pushes it out.
+// The deadline measures silence, so a read pushes it out. In a synctest bubble the sleep advances a
+// fake clock exactly, so the comparison cannot pass or fail on a slow runner's scheduling.
 func TestTouchPushesTheDeadlineOut(t *testing.T) {
-	run := NewRunRegistry(nil, time.Minute).Begin("run", false)
+	synctest.Test(t, func(t *testing.T) {
+		run := NewRunRegistry(nil, time.Minute).Begin("run", false)
 
-	time.Sleep(20 * time.Millisecond)
-	before := run.silentFor()
-	run.Touch()
+		time.Sleep(20 * time.Millisecond)
+		assert.Equal(t, 20*time.Millisecond, run.silentFor())
+		run.Touch()
 
-	assert.Less(t, run.silentFor(), before)
+		assert.Zero(t, run.silentFor())
+	})
 }
 
 // The ring buffer keeps the newest, so a long run's trace stays storable.

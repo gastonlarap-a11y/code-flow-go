@@ -161,7 +161,7 @@ func SeverityOf(severityWord, emoji string) string {
 // Positional, because the format gives it no marker: the first non-empty line after the header that
 // is not the location or the "why".
 func subtitleOf(block string) string {
-	for _, line := range strings.Split(block, "\n") {
+	for line := range strings.SplitSeq(block, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "📍") || strings.HasPrefix(trimmed, "💭") {
 			continue

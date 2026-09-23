@@ -54,8 +54,6 @@ func at(minute int) string {
 	return storage.FixedClock{At: time.Date(2026, 9, 17, 12, minute, 0, 0, time.UTC)}.Now()
 }
 
-func ptr(s string) *string { return &s }
-
 func newStore(t *testing.T) (*activity.Store, *storage.DB) {
 	t.Helper()
 	db := newDB(t)
@@ -65,8 +63,8 @@ func newStore(t *testing.T) (*activity.Store, *storage.DB) {
 // A conversation's title is its FIRST turn's question, in insertion order.
 func TestConversationTitleIsTheFirstQuestion(t *testing.T) {
 	store, db := newStore(t)
-	insertTurn(t, db, "t1", ptr("s1"), "how do I start?", "like this", at(1))
-	insertTurn(t, db, "t2", ptr("s1"), "and then?", "like that", at(2))
+	insertTurn(t, db, "t1", new("s1"), "how do I start?", "like this", at(1))
+	insertTurn(t, db, "t2", new("s1"), "and then?", "like that", at(2))
 
 	list, err := store.ListConversations(t.Context(), projectID, nil)
 	require.NoError(t, err)
@@ -83,7 +81,7 @@ func TestConversationTitleIsTheFirstQuestion(t *testing.T) {
 func TestTurnsWithoutASessionAreExcluded(t *testing.T) {
 	store, db := newStore(t)
 	insertTurn(t, db, "old", nil, "before sessions", "answer", at(1))
-	insertTurn(t, db, "new", ptr("s1"), "after sessions", "answer", at(2))
+	insertTurn(t, db, "new", new("s1"), "after sessions", "answer", at(2))
 
 	list, err := store.ListConversations(t.Context(), projectID, nil)
 	require.NoError(t, err)
@@ -96,9 +94,9 @@ func TestTurnsWithoutASessionAreExcluded(t *testing.T) {
 // the Clock's format sorts lexicographically.
 func TestConversationsAreOrderedByLastActivity(t *testing.T) {
 	store, db := newStore(t)
-	insertTurn(t, db, "a1", ptr("older"), "first conversation", "x", at(1))
-	insertTurn(t, db, "b1", ptr("newer"), "second conversation", "x", at(2))
-	insertTurn(t, db, "a2", ptr("older"), "revived", "x", at(3))
+	insertTurn(t, db, "a1", new("older"), "first conversation", "x", at(1))
+	insertTurn(t, db, "b1", new("newer"), "second conversation", "x", at(2))
+	insertTurn(t, db, "a2", new("older"), "revived", "x", at(3))
 
 	list, err := store.ListConversations(t.Context(), projectID, nil)
 	require.NoError(t, err)
@@ -112,23 +110,23 @@ func TestConversationsAreOrderedByLastActivity(t *testing.T) {
 // something said in its middle, not only on its title.
 func TestSearchMatchesAnyTurnInEitherDirection(t *testing.T) {
 	store, db := newStore(t)
-	insertTurn(t, db, "a1", ptr("s1"), "about storage", "some answer", at(1))
-	insertTurn(t, db, "a2", ptr("s1"), "follow-up", "mentions MIGRATIONS here", at(2))
-	insertTurn(t, db, "b1", ptr("s2"), "unrelated", "nothing to see", at(3))
+	insertTurn(t, db, "a1", new("s1"), "about storage", "some answer", at(1))
+	insertTurn(t, db, "a2", new("s1"), "follow-up", "mentions MIGRATIONS here", at(2))
+	insertTurn(t, db, "b1", new("s2"), "unrelated", "nothing to see", at(3))
 
 	for name, needle := range map[string]string{
 		"matches a later answer":     "migrations",
 		"matches the first question": "STORAGE",
 	} {
 		t.Run(name, func(t *testing.T) {
-			list, err := store.ListConversations(t.Context(), projectID, ptr(needle))
+			list, err := store.ListConversations(t.Context(), projectID, new(needle))
 			require.NoError(t, err)
 			require.Len(t, list, 1)
 			assert.Equal(t, "s1", list[0].SessionID)
 		})
 	}
 
-	none, err := store.ListConversations(t.Context(), projectID, ptr("absent"))
+	none, err := store.ListConversations(t.Context(), projectID, new("absent"))
 	require.NoError(t, err)
 	assert.Empty(t, none)
 }
@@ -137,7 +135,7 @@ func TestSearchMatchesAnyTurnInEitherDirection(t *testing.T) {
 // conversation_titles exists.
 func TestAStoredTitleOverridesTheDerivedOne(t *testing.T) {
 	store, db := newStore(t)
-	insertTurn(t, db, "t1", ptr("s1"), "how do I start?", "like this", at(1))
+	insertTurn(t, db, "t1", new("s1"), "how do I start?", "like this", at(1))
 
 	require.NoError(t, store.RenameConversation(t.Context(), projectID, "s1", "Getting started"))
 
@@ -150,8 +148,8 @@ func TestAStoredTitleOverridesTheDerivedOne(t *testing.T) {
 // Oldest first, so the renderer can flatten turns straight into [user, assistant, user, …].
 func TestConversationTurnsComeBackOldestFirst(t *testing.T) {
 	store, db := newStore(t)
-	insertTurn(t, db, "t2", ptr("s1"), "second", "b", at(2))
-	insertTurn(t, db, "t1", ptr("s1"), "first", "a", at(1))
+	insertTurn(t, db, "t2", new("s1"), "second", "b", at(2))
+	insertTurn(t, db, "t1", new("s1"), "first", "a", at(1))
 
 	turns, err := store.GetConversation(t.Context(), projectID, "s1")
 	require.NoError(t, err)
@@ -163,7 +161,7 @@ func TestConversationTurnsComeBackOldestFirst(t *testing.T) {
 
 func TestDeletingAConversationRemovesItsTurnsAndItsTitle(t *testing.T) {
 	store, db := newStore(t)
-	insertTurn(t, db, "t1", ptr("s1"), "q", "a", at(1))
+	insertTurn(t, db, "t1", new("s1"), "q", "a", at(1))
 	require.NoError(t, store.RenameConversation(t.Context(), projectID, "s1", "Named"))
 
 	require.NoError(t, store.DeleteConversation(t.Context(), projectID, "s1"))
@@ -173,7 +171,7 @@ func TestDeletingAConversationRemovesItsTurnsAndItsTitle(t *testing.T) {
 	assert.Empty(t, list)
 
 	// The title must go too, or a new conversation reusing the id would inherit it.
-	insertTurn(t, db, "t2", ptr("s1"), "a fresh question", "a", at(5))
+	insertTurn(t, db, "t2", new("s1"), "a fresh question", "a", at(5))
 	list, err = store.ListConversations(t.Context(), projectID, nil)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
@@ -184,7 +182,7 @@ func TestDeletingAConversationRemovesItsTurnsAndItsTitle(t *testing.T) {
 // from one that does not exist. 2.x's ambiguity, kept — the caller's fallback is the same.
 func TestLastTurnProviderIgnoresRowsFromBeforeTheColumn(t *testing.T) {
 	store, db := newStore(t)
-	insertTurn(t, db, "t1", ptr("s1"), "q", "a", at(1))
+	insertTurn(t, db, "t1", new("s1"), "q", "a", at(1))
 
 	provider, err := store.LastTurnProvider(t.Context(), projectID, "s1")
 	require.NoError(t, err)
@@ -274,7 +272,7 @@ func TestEmptyListsAreArraysNotNull(t *testing.T) {
 
 func TestChatTurnFieldNamesMatchTheRenderer(t *testing.T) {
 	svc, db := newService(t)
-	insertTurn(t, db, "t1", ptr("s1"), "q", "a", at(1))
+	insertTurn(t, db, "t1", new("s1"), "q", "a", at(1))
 
 	out, err := svc.Invoke(t.Context(), "get_chat_conversation",
 		json.RawMessage(fmt.Sprintf(`{"projectId":%q,"sessionId":"s1"}`, projectID)))

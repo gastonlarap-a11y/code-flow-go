@@ -78,8 +78,8 @@ func parseEndpoint(rawURL string) (mqttEndpoint, error) {
 
 	scheme := ""
 	rest := trimmed
-	if index := strings.Index(trimmed, "://"); index >= 0 {
-		scheme, rest = strings.ToLower(trimmed[:index]), trimmed[index+3:]
+	if before, after, ok := strings.Cut(trimmed, "://"); ok {
+		scheme, rest = strings.ToLower(before), after
 	}
 
 	useTLS := false

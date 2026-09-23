@@ -115,7 +115,7 @@ func refsByCommit(ctx context.Context, runner Runner) (map[string][]string, erro
 	}
 
 	refs := make(map[string][]string, 16)
-	for _, line := range strings.Split(result.Stdout, "\n") {
+	for line := range strings.SplitSeq(result.Stdout, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			continue

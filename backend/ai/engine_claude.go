@@ -3,6 +3,7 @@ package ai
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -110,8 +111,8 @@ func (c ClaudeInterpreter) Interpret(stdout, stderr string, exitCode int) (Resul
 // reply. Falling back to parsing the whole buffer covers a CLI that ignored the streaming flag.
 func lastResultPayload(stdout string) (claudeResult, bool) {
 	lines := strings.Split(stdout, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
+	for _, line := range slices.Backward(lines) {
+		line := strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "{") {
 			continue
 		}

@@ -211,10 +211,7 @@ func (run *Run) silentFor() time.Duration {
 func (run *Run) WatchSilence() {
 	// A tenth of the window: fine enough that the reported deadline is honest, coarse enough to
 	// cost nothing.
-	interval := run.timeout / 10
-	if interval < 100*time.Millisecond {
-		interval = 100 * time.Millisecond
-	}
+	interval := max(run.timeout/10, 100*time.Millisecond)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

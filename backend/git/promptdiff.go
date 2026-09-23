@@ -3,6 +3,7 @@ package git
 import (
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -337,10 +338,8 @@ func SkipReason(filePath string) (string, bool) {
 	lower := strings.ToLower(filePath)
 	base := path.Base(lower)
 
-	for _, lock := range lockFiles {
-		if base == lock {
-			return "lock file", true
-		}
+	if slices.Contains(lockFiles, base) {
+		return "lock file", true
 	}
 	for _, suffix := range generatedSuffixes {
 		if strings.HasSuffix(lower, suffix) {
@@ -350,7 +349,7 @@ func SkipReason(filePath string) (string, bool) {
 	if strings.Contains(base, ".generated.") {
 		return "generated", true
 	}
-	for _, segment := range strings.Split(lower, "/") {
+	for segment := range strings.SplitSeq(lower, "/") {
 		if segment == "node_modules" || segment == "vendor" {
 			return "vendored", true
 		}

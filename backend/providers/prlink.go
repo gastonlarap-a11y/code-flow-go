@@ -79,7 +79,7 @@ func splitLink(rawURL string) (host string, segments []string, ok bool) {
 	}
 
 	decoded := make([]string, 0, 6)
-	for _, segment := range strings.Split(path, "/") {
+	for segment := range strings.SplitSeq(path, "/") {
 		if segment != "" {
 			decoded = append(decoded, percentDecode(segment))
 		}

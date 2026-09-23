@@ -3,6 +3,7 @@ package platform
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -43,12 +44,7 @@ func IsTransientNetwork(err error) bool {
 		// them being transient is enough. errors.Unwrap does not follow this shape, so it is
 		// checked first and explicitly.
 		if joined, ok := err.(interface{ Unwrap() []error }); ok { //nolint:errorlint // walking the chain, not matching a type
-			for _, branch := range joined.Unwrap() {
-				if IsTransientNetwork(branch) {
-					return true
-				}
-			}
-			return false
+			return slices.ContainsFunc(joined.Unwrap(), IsTransientNetwork)
 		}
 
 		err = errors.Unwrap(err)

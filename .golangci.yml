@@ -11,6 +11,10 @@ version: "2"
 #   - contextcheck: a Wails call's context is cancelled when the call returns (§3.7). Handing it to
 #     an AI run or a stream connector would close the thing the moment it started.
 #   - gosec: this process holds the user's tokens and spawns CLIs with their arguments.
+#   - modernize: the same analyzers `go fix` applies. Code written against an older idiom
+#     (`strings.Split` in a range, `errors.As` into a pre-declared variable, a `ptr(v)` helper where
+#     `new(v)` now does it) is flagged when it is written, not found in a batch a year later — the
+#     first `go fix` pass here touched 51 files.
 
 linters:
   default: none
@@ -22,6 +26,7 @@ linters:
     - govet
     - ineffassign
     - misspell
+    - modernize
     - noctx
     - revive
     - staticcheck

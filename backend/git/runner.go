@@ -142,8 +142,7 @@ func (r Runner) RunRaw(ctx context.Context, args ...string) (RawResult, error) {
 	if err == nil {
 		return result, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		result.ExitCode = exitErr.ExitCode()
 		return result, nil
 	}
@@ -178,8 +177,7 @@ func execute(ctx context.Context, args, extraEnv []string, dir string) (Result, 
 
 	// A non-zero exit is data, not a failure: several callers classify on the code. Only a failure
 	// to *run* git at all is an error worth returning.
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		result.ExitCode = exitErr.ExitCode()
 		return result, nil
 	}

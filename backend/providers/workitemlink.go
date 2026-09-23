@@ -78,7 +78,7 @@ func parseWorkItemURL(text string) (WorkItemAddress, bool) {
 	}
 
 	segments := make([]string, 0, 6)
-	for _, segment := range strings.Split(path, "/") {
+	for segment := range strings.SplitSeq(path, "/") {
 		if segment != "" {
 			segments = append(segments, percentDecode(segment))
 		}
@@ -127,7 +127,7 @@ func workItemIDFromQuery(query string) (int64, bool) {
 		return 0, false
 	}
 
-	for _, pair := range strings.Split(query, "&") {
+	for pair := range strings.SplitSeq(query, "&") {
 		key, value, found := strings.Cut(pair, "=")
 		if !found || !strings.EqualFold(strings.TrimSpace(key), "workitem") {
 			continue

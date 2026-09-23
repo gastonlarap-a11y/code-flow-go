@@ -66,7 +66,7 @@ func WriteMCPConfig(path string, mcps []MCP) string {
 // stray line there must not stop a review.
 func ParseEnvLines(raw string) map[string]string {
 	env := make(map[string]string, 4)
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		key, value, found := strings.Cut(line, "=")
 		if !found {
 			continue

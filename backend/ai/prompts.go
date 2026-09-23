@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"fmt"
+	"slices"
 )
 
 // The seventeen prompt files, embedded byte-for-byte.
@@ -98,12 +99,7 @@ var formerDefaults = map[string][]string{
 // prompt, and therefore safe to replace.
 func IsFormerDefault(name, stored string) bool {
 	digest := Digest(stored)
-	for _, former := range formerDefaults[name] {
-		if digest == former {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(formerDefaults[name], digest)
 }
 
 // RefreshSeededPrompt returns the text a stored prompt row should hold now.

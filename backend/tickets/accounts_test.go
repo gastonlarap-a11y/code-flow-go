@@ -10,8 +10,6 @@ import (
 	"github.com/gastonlarap-a11y/code-flow/backend/workspaces"
 )
 
-func ptr(value string) *string { return &value }
-
 // `WI-005`: the organisation is workspace → project → the single connection → none, and the board
 // project follows the same "explicit choice wins" order.
 func TestResolveAccount(t *testing.T) {
@@ -26,18 +24,18 @@ func TestResolveAccount(t *testing.T) {
 	}{
 		{
 			name:      "the workspace's choice wins over the repository's link",
-			project:   workspaces.Project{ADOOrg: ptr("desde-el-repo"), ADOProject: ptr("Repo")},
-			workspace: workspaces.Workspace{ADOOrg: ptr("elegida"), ADOProject: ptr("Tablero")},
-			org:       ptr("elegida"),
-			board:     ptr("Tablero"),
+			project:   workspaces.Project{ADOOrg: new("desde-el-repo"), ADOProject: new("Repo")},
+			workspace: workspaces.Workspace{ADOOrg: new("elegida"), ADOProject: new("Tablero")},
+			org:       new("elegida"),
+			board:     new("Tablero"),
 			source:    tickets.SourceWorkspace,
 		},
 		{
 			name:      "with nothing chosen, the repository's own link answers",
-			project:   workspaces.Project{ADOOrg: ptr("desde-el-repo"), ADOProject: ptr("Repo")},
+			project:   workspaces.Project{ADOOrg: new("desde-el-repo"), ADOProject: new("Repo")},
 			workspace: workspaces.Workspace{},
-			org:       ptr("desde-el-repo"),
-			board:     ptr("Repo"),
+			org:       new("desde-el-repo"),
+			board:     new("Repo"),
 			source:    tickets.SourceProject,
 		},
 		{
@@ -45,10 +43,10 @@ func TestResolveAccount(t *testing.T) {
 			// This is the defect that proved the board project needs a column of its own: the
 			// organisation resolved, the module rendered, and the picker then asked for the very
 			// thing the user had just configured.
-			project:   workspaces.Project{GitHubOwner: ptr("acme"), GitHubRepo: ptr("web")},
-			workspace: workspaces.Workspace{ADOOrg: ptr("elegida"), ADOProject: ptr("Tablero")},
-			org:       ptr("elegida"),
-			board:     ptr("Tablero"),
+			project:   workspaces.Project{GitHubOwner: new("acme"), GitHubRepo: new("web")},
+			workspace: workspaces.Workspace{ADOOrg: new("elegida"), ADOProject: new("Tablero")},
+			org:       new("elegida"),
+			board:     new("Tablero"),
 			source:    tickets.SourceWorkspace,
 		},
 		{
@@ -56,7 +54,7 @@ func TestResolveAccount(t *testing.T) {
 			project:     workspaces.Project{},
 			workspace:   workspaces.Workspace{},
 			connections: []string{"la-unica"},
-			org:         ptr("la-unica"),
+			org:         new("la-unica"),
 			source:      tickets.SourceOnlyConnection,
 		},
 		{
@@ -70,14 +68,14 @@ func TestResolveAccount(t *testing.T) {
 		},
 		{
 			name:      "nothing at all is none, and the board goes with it",
-			project:   workspaces.Project{ADOProject: ptr("Huérfano")},
+			project:   workspaces.Project{ADOProject: new("Huérfano")},
 			workspace: workspaces.Workspace{},
 			source:    tickets.SourceNone,
 		},
 		{
 			name:      "a blank column counts as unset",
-			project:   workspaces.Project{ADOOrg: ptr("   ")},
-			workspace: workspaces.Workspace{ADOOrg: ptr("")},
+			project:   workspaces.Project{ADOOrg: new("   ")},
+			workspace: workspaces.Workspace{ADOOrg: new("")},
 			source:    tickets.SourceNone,
 		},
 	}
@@ -111,19 +109,19 @@ func TestADOConnections(t *testing.T) {
 	}{
 		{
 			name:     "the object form Settings writes",
-			setting:  ptr(`[{"org":"contoso","pat_saved":true},{"org":"acme"}]`),
+			setting:  new(`[{"org":"contoso","pat_saved":true},{"org":"acme"}]`),
 			expected: []string{"contoso", "acme"},
 		},
 		{
 			name:     "a bare list of names",
-			setting:  ptr(`["contoso","acme"]`),
+			setting:  new(`["contoso","acme"]`),
 			expected: []string{"contoso", "acme"},
 		},
 		{
 			name: "malformed JSON reads as no connections rather than throwing",
 			// This is called to decide which board to show, and a JSON error would take down a panel
 			// over a stored string nobody can see to fix.
-			setting:  ptr(`{"org": "contoso"`),
+			setting:  new(`{"org": "contoso"`),
 			expected: nil,
 		},
 		{
@@ -133,7 +131,7 @@ func TestADOConnections(t *testing.T) {
 		},
 		{
 			name:     "an empty list",
-			setting:  ptr(`[]`),
+			setting:  new(`[]`),
 			expected: nil,
 		},
 	}

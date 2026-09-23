@@ -175,14 +175,12 @@ func TestTextWithNoFindingsParsesToNone(t *testing.T) {
 // A finding with neither a file nor a category would otherwise share the key "|" with every other
 // such finding, and the two would reconcile as one.
 func TestIdentityFallsBackToTheSubtitleWhenThereIsNothingElse(t *testing.T) {
-	assert.Equal(t, "src/app.ts|race", review.FindingIdentity(text("src/app.ts"), "race"))
-	assert.Equal(t, "src/app.ts|race", review.FindingIdentity(text("/src/app.ts"), "RACE"),
+	assert.Equal(t, "src/app.ts|race", review.FindingIdentity(new("src/app.ts"), "race"))
+	assert.Equal(t, "src/app.ts|race", review.FindingIdentity(new("/src/app.ts"), "RACE"),
 		"the leading slash and the case are normalised")
 	assert.Equal(t, "|race", review.FindingIdentity(nil, "race"), "a category with no file is still a key")
 	assert.Equal(t, "|", review.FindingIdentity(nil, ""))
 }
-
-func text(value string) *string { return &value }
 
 // The renderer and this parser are two implementations of one format. They are exercised over the
 // same fixture in `frontend/src/lib/parseAnalysis.crosslang.test.ts`, which reads the file below;

@@ -338,13 +338,11 @@ func TestInvokeIsSafeForConcurrentCalls(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := range 100 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			out, err := svc.Invoke(t.Context(), "echo", json.RawMessage(`{"n":`+string(rune('0'+i%10))+`}`))
 			assert.NoError(t, err)
 			assert.NotEmpty(t, out)
-		}()
+		})
 	}
 	wg.Wait()
 }

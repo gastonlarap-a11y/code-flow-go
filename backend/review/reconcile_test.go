@@ -21,7 +21,7 @@ func finding(id, file, categoria string) review.MemoryFinding {
 		Subtitulo: "algo", Estado: "abierto",
 	}
 	if file != "" {
-		f.Archivo = text(file)
+		f.Archivo = new(file)
 	}
 	return f
 }
@@ -111,7 +111,7 @@ func TestAFindingThatIsStillThereKeepsItsIdentityAndItsThread(t *testing.T) {
 func TestAFindingIsMatchedByFileAndCategoryNotByLines(t *testing.T) {
 	previous := stored("F-002", "/src/A.ts", "Race", "abierto", 1)
 	current := finding("F-001", "src/a.ts", "race")
-	current.Lineas = text("40-44")
+	current.Lineas = new("40-44")
 
 	merged, delta := review.Reconcile([]review.MemoryFinding{previous}, []review.MemoryFinding{current}, 1, nil, "completo")
 
@@ -137,7 +137,7 @@ func TestADismissedFindingPersistsWithoutBeingCounted(t *testing.T) {
 	for _, estado := range []string{"falso_positivo", "ignorado"} {
 		t.Run(estado, func(t *testing.T) {
 			previous := stored("F-002", "src/a.ts", "race", estado, 1)
-			previous.MotivoDescarte = text("es intencional")
+			previous.MotivoDescarte = new("es intencional")
 
 			merged, delta := review.Reconcile([]review.MemoryFinding{previous},
 				[]review.MemoryFinding{finding("F-001", "src/a.ts", "race")}, 1, nil, "completo")
@@ -157,7 +157,7 @@ func TestAResolvedFindingThatComesBackIsBrandNew(t *testing.T) {
 	oldThread := int64(99)
 	previous := stored("F-002", "src/a.ts", "race", "resuelto", 1)
 	previous.ThreadID = &oldThread
-	previous.ResueltoEnIter = ptr(int64(2))
+	previous.ResueltoEnIter = new(int64(2))
 
 	merged, delta := review.Reconcile([]review.MemoryFinding{previous},
 		[]review.MemoryFinding{finding("F-001", "src/a.ts", "race")}, 2, nil, "completo")
@@ -268,7 +268,7 @@ func TestClosedFindingsAreCarriedForwardVerbatim(t *testing.T) {
 // A shallower run did not look for what a deeper one found, so it cannot claim it is fixed.
 func TestAShallowerRunMarksWhatItCouldNotHaveSeenOutOfScope(t *testing.T) {
 	previous := stored("F-002", "src/a.ts", "race", "abierto", 1)
-	previous.Nivel = text("ultra")
+	previous.Nivel = new("ultra")
 
 	merged, delta := review.Reconcile([]review.MemoryFinding{previous}, nil, 1, nil, "basico")
 
@@ -282,7 +282,7 @@ func TestASameOrDeeperRunResolvesNormally(t *testing.T) {
 	for _, level := range []string{"completo", "ultra"} {
 		t.Run(level, func(t *testing.T) {
 			previous := stored("F-002", "src/a.ts", "race", "abierto", 1)
-			previous.Nivel = text("completo")
+			previous.Nivel = new("completo")
 
 			merged, delta := review.Reconcile([]review.MemoryFinding{previous}, nil, 1, nil, level)
 
@@ -365,5 +365,3 @@ func TestAFirstRunNeedsNoReconciliation(t *testing.T) {
 		assert.Equal(t, int64(1), f.IntroducidoEnIter)
 	}
 }
-
-func ptr[T any](value T) *T { return &value }

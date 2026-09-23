@@ -142,13 +142,11 @@ func call(t *testing.T, svc *bridge.Service, method, params string) json.RawMess
 	return out
 }
 
-func text(value string) *string { return &value }
-
 // ---- LinkedRepoTests --------------------------------------------------------------------------
 
 func TestAGitHubLinkedProjectResolvesToGitHub(t *testing.T) {
 	linked, err := providers.LinkedRepoFor(workspaces.Project{
-		GitHubOwner: text("acme"), GitHubRepo: text("widget"),
+		GitHubOwner: new("acme"), GitHubRepo: new("widget"),
 	})
 
 	require.NoError(t, err)
@@ -160,7 +158,7 @@ func TestAGitHubLinkedProjectResolvesToGitHub(t *testing.T) {
 
 func TestAnExplicitEnterpriseHostIsCarriedThrough(t *testing.T) {
 	linked, err := providers.LinkedRepoFor(workspaces.Project{
-		GitHubOwner: text("team"), GitHubRepo: text("app"), GitHubHost: text("ghe.contoso.com"),
+		GitHubOwner: new("team"), GitHubRepo: new("app"), GitHubHost: new("ghe.contoso.com"),
 	})
 
 	require.NoError(t, err)
@@ -169,7 +167,7 @@ func TestAnExplicitEnterpriseHostIsCarriedThrough(t *testing.T) {
 
 func TestAnADOLinkedProjectResolvesToAzure(t *testing.T) {
 	linked, err := providers.LinkedRepoFor(workspaces.Project{
-		ADOOrg: text("contoso"), ADOProject: text("Web"), ADORepoID: text("api"),
+		ADOOrg: new("contoso"), ADOProject: new("Web"), ADORepoID: new("api"),
 	})
 
 	require.NoError(t, err)
@@ -182,8 +180,8 @@ func TestAnADOLinkedProjectResolvesToAzure(t *testing.T) {
 // Both links set is a real state — nothing in the schema prevents it — and GitHub wins.
 func TestGitHubWinsWhenAProjectCarriesBothLinks(t *testing.T) {
 	linked, err := providers.LinkedRepoFor(workspaces.Project{
-		ADOOrg: text("contoso"), ADOProject: text("Web"), ADORepoID: text("api"),
-		GitHubOwner: text("acme"), GitHubRepo: text("widget"),
+		ADOOrg: new("contoso"), ADOProject: new("Web"), ADORepoID: new("api"),
+		GitHubOwner: new("acme"), GitHubRepo: new("widget"),
 	})
 
 	require.NoError(t, err)
@@ -192,11 +190,11 @@ func TestGitHubWinsWhenAProjectCarriesBothLinks(t *testing.T) {
 
 func TestAHalfFilledLinkDoesNotCount(t *testing.T) {
 	tests := map[string]workspaces.Project{
-		"github without a repository":     {GitHubOwner: text("acme")},
-		"github without an owner":         {GitHubRepo: text("widget")},
-		"azure without a repository id":   {ADOOrg: text("contoso"), ADOProject: text("Web")},
-		"azure without a project":         {ADOOrg: text("contoso"), ADORepoID: text("api")},
-		"a host with nothing to go on it": {GitHubHost: text("ghe.contoso.com")},
+		"github without a repository":     {GitHubOwner: new("acme")},
+		"github without an owner":         {GitHubRepo: new("widget")},
+		"azure without a repository id":   {ADOOrg: new("contoso"), ADOProject: new("Web")},
+		"azure without a project":         {ADOOrg: new("contoso"), ADORepoID: new("api")},
+		"a host with nothing to go on it": {GitHubHost: new("ghe.contoso.com")},
 	}
 
 	for name, project := range tests {
@@ -228,7 +226,7 @@ func TestEveryAutoLinkVariantCarriesTheDiscriminatorTheRendererSwitchesOn(t *tes
 			name: "Linked",
 			deps: providers.Deps{
 				Projects: &fakeProjects{project: workspaces.Project{
-					ID: "p1", Name: "Repo", GitHubOwner: text("acme"), GitHubRepo: text("widget"),
+					ID: "p1", Name: "Repo", GitHubOwner: new("acme"), GitHubRepo: new("widget"),
 				}},
 				Remotes:     &fakeRemotes{},
 				Credentials: fakeCredentials{},
@@ -277,7 +275,7 @@ func TestAVariantsOwnFieldsStaySnakeCaseWhileItsTagStaysPascalCase(t *testing.T)
 		Projects: &fakeProjects{project: workspaces.Project{
 			ID: "p1", WorkspaceID: "w1", Name: "Repo", LocalPath: "/repos/thing",
 			Color: "#6366f1", Icon: "git-branch", CreatedAt: "2026-09-18T12:00:00Z",
-			GitHubOwner: text("acme"), GitHubRepo: text("widget"), GitHubHost: text("github.com"),
+			GitHubOwner: new("acme"), GitHubRepo: new("widget"), GitHubHost: new("github.com"),
 		}},
 		Remotes:     &fakeRemotes{},
 		Credentials: fakeCredentials{},
@@ -331,7 +329,7 @@ func TestTheAutoLinkResultCarriesNoNilSlices(t *testing.T) {
 
 func TestAnAlreadyLinkedProjectIsANoOp(t *testing.T) {
 	projects := &fakeProjects{project: workspaces.Project{
-		ID: "p1", GitHubOwner: text("acme"), GitHubRepo: text("widget"),
+		ID: "p1", GitHubOwner: new("acme"), GitHubRepo: new("widget"),
 	}}
 	remotes := &fakeRemotes{remotes: []providers.Remote{
 		{Name: "origin", URL: "https://dev.azure.com/contoso/Web/_git/api"},
@@ -479,7 +477,7 @@ func TestAMissingWorkingCopyIsAHardError(t *testing.T) {
 func TestAConnectedEnterpriseRemoteIsDetected(t *testing.T) {
 	projects := &fakeProjects{
 		project: workspaces.Project{ID: "p1", LocalPath: "/repos/thing"},
-		setting: text(`[{"host":"ghe.contoso.com","username":"gaston"}]`),
+		setting: new(`[{"host":"ghe.contoso.com","username":"gaston"}]`),
 	}
 	deps := providers.Deps{
 		Projects: projects,
@@ -501,10 +499,10 @@ func TestAConnectedEnterpriseRemoteIsDetected(t *testing.T) {
 func TestAMalformedConnectionsSettingLeavesTheDefaultHost(t *testing.T) {
 	tests := map[string]*string{
 		"absent":               nil,
-		"empty":                text(""),
-		"not json":             text("{{{"),
-		"not an array":         text(`{"host":"ghe.contoso.com"}`),
-		"entries with no host": text(`[{"username":"gaston"}]`),
+		"empty":                new(""),
+		"not json":             new("{{{"),
+		"not an array":         new(`{"host":"ghe.contoso.com"}`),
+		"entries with no host": new(`[{"username":"gaston"}]`),
 	}
 
 	for name, setting := range tests {
@@ -562,8 +560,8 @@ func TestTheRepositoryWebURLIsRebuiltFromTheRemoteNotFromTheStoredLink(t *testin
 		Projects: &fakeProjects{project: workspaces.Project{
 			ID:        "p1",
 			LocalPath: "/repos/thing",
-			ADOOrg:    text("contoso"), ADOProject: text("Web"),
-			ADORepoID: text("6f9619ff-8b86-d011-b42d-00c04fc964ff"),
+			ADOOrg:    new("contoso"), ADOProject: new("Web"),
+			ADORepoID: new("6f9619ff-8b86-d011-b42d-00c04fc964ff"),
 		}},
 		Remotes: &fakeRemotes{remotes: []providers.Remote{
 			{Name: "origin", URL: "https://dev.azure.com/contoso/Marketing%20Website/_git/site"},
@@ -582,7 +580,7 @@ func TestAGitHubRemoteRebuildsItsOwnHost(t *testing.T) {
 	deps := providers.Deps{
 		Projects: &fakeProjects{
 			project: workspaces.Project{ID: "p1", LocalPath: "/repos/thing"},
-			setting: text(`[{"host":"ghe.contoso.com"}]`),
+			setting: new(`[{"host":"ghe.contoso.com"}]`),
 		},
 		Remotes: &fakeRemotes{remotes: []providers.Remote{
 			{Name: "origin", URL: "git@ghe.contoso.com:team/app.git"},

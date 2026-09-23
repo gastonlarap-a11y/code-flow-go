@@ -72,7 +72,7 @@ func Reconcile(prev, current []MemoryFinding, prevIter int64, changedFiles []str
 			nextID++
 			cur.Estado = StateOpen
 			cur.IntroducidoEnIter = iterActual
-			cur.Delta = text("nuevo")
+			cur.Delta = new("nuevo")
 			cur.Nivel = &levelOfThisRun
 			delta.Nuevos++
 			merged = append(merged, cur)
@@ -89,7 +89,7 @@ func Reconcile(prev, current []MemoryFinding, prevIter int64, changedFiles []str
 			// "not assigned" everywhere else.
 			cur.IntroducidoEnIter = max(prevIter, 1)
 		}
-		cur.Delta = text("persiste")
+		cur.Delta = new("persiste")
 		cur.Nivel = &levelOfThisRun
 
 		matchedPrev[key] = true
@@ -111,7 +111,7 @@ func Reconcile(prev, current []MemoryFinding, prevIter int64, changedFiles []str
 		if !p.IsActive() {
 			// Resolved or discarded: carried forward untouched. Traceability, and nothing is ever
 			// re-evaluated once a person has answered it.
-			p.Delta = text("persiste")
+			p.Delta = new("persiste")
 			merged = append(merged, p)
 			continue
 		}
@@ -119,7 +119,7 @@ func Reconcile(prev, current []MemoryFinding, prevIter int64, changedFiles []str
 		if !fileWasExamined(p, changedFiles) {
 			// The file was not in this run's diff, so the model was never shown it. Silence is not
 			// evidence of a fix.
-			p.Delta = text("persiste")
+			p.Delta = new("persiste")
 			delta.Persisten++
 			merged = append(merged, p)
 			continue
@@ -130,7 +130,7 @@ func Reconcile(prev, current []MemoryFinding, prevIter int64, changedFiles []str
 			// `basico` pass does not look for what `ultra` found. Reporting it fixed would be a
 			// claim nobody made (`DIVERGENCE-REVIEW-b`).
 			p.Estado = StateOutOfScope
-			p.Delta = text("persiste")
+			p.Delta = new("persiste")
 			delta.FueraDeAlcance++
 			merged = append(merged, p)
 			continue
@@ -138,7 +138,7 @@ func Reconcile(prev, current []MemoryFinding, prevIter int64, changedFiles []str
 
 		p.Estado = StateResolved
 		p.ResueltoEnIter = &iterActual
-		p.Delta = text("resuelto")
+		p.Delta = new("resuelto")
 		p.Nivel = &levelOfThisRun
 		delta.Resueltos++
 		merged = append(merged, p)
@@ -237,5 +237,3 @@ func pad3(n int64) string {
 	}
 	return digits
 }
-
-func text(value string) *string { return &value }

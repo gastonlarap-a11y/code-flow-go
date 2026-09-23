@@ -63,7 +63,7 @@ func probeVersion(ctx context.Context, binary string) string {
 // whose banner has no recognisable token at all.
 func parseVersion(output string) string {
 	firstLine := ""
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			firstLine = trimmed
 			break
@@ -73,7 +73,7 @@ func parseVersion(output string) string {
 		return ""
 	}
 
-	for _, token := range strings.Fields(firstLine) {
+	for token := range strings.FieldsSeq(firstLine) {
 		candidate := strings.TrimPrefix(token, "v")
 		if strings.Contains(candidate, ".") && candidate != "" &&
 			unicode.IsDigit(rune(candidate[0])) {

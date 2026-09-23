@@ -369,7 +369,7 @@ func checkpointRefs(ctx context.Context, runner Runner) ([]checkpointRef, error)
 	}
 
 	refs := make([]checkpointRef, 0, maxCheckpoints)
-	for _, line := range strings.Split(result.Stdout, "\n") {
+	for line := range strings.SplitSeq(result.Stdout, "\n") {
 		fields := strings.Split(line, "\x00")
 		if len(fields) < 4 {
 			continue

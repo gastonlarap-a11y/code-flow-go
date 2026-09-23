@@ -24,7 +24,7 @@ func TestStashSaveAndList(t *testing.T) {
 	repo.commit("initial")
 	repo.write("a.txt", "work in progress\n")
 
-	require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("my changes"), false))
+	require.NoError(t, git.StashSave(ctx(t), repo.Path, new("my changes"), false))
 
 	list := stashes(t, repo)
 	require.Len(t, list, 1)
@@ -38,8 +38,6 @@ func TestStashSaveAndList(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "committed\n", string(content))
 }
-
-func ptr(s string) *string { return &s }
 
 // A stash with a blank label is one the user cannot tell apart from the others in the list.
 func TestAnEmptyStashMessageBecomesWIP(t *testing.T) {
@@ -57,7 +55,7 @@ func TestStashIncludingUntracked(t *testing.T) {
 	repo.seed()
 	repo.write("brand-new.txt", "loose\n")
 
-	require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("with untracked"), true))
+	require.NoError(t, git.StashSave(ctx(t), repo.Path, new("with untracked"), true))
 
 	assert.NoFileExists(t, filepath.Join(repo.Path, "brand-new.txt"))
 	assert.Len(t, stashes(t, repo), 1)
@@ -69,9 +67,9 @@ func TestIndexZeroIsTheNewest(t *testing.T) {
 	repo.seed()
 
 	repo.write("README.md", "first change\n")
-	require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("older"), false))
+	require.NoError(t, git.StashSave(ctx(t), repo.Path, new("older"), false))
 	repo.write("README.md", "second change\n")
-	require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("newer"), false))
+	require.NoError(t, git.StashSave(ctx(t), repo.Path, new("newer"), false))
 
 	list := stashes(t, repo)
 	require.Len(t, list, 2)
@@ -84,7 +82,7 @@ func TestApplyKeepsTheEntryAndPopRemovesIt(t *testing.T) {
 	repo := newTestRepo(t)
 	repo.seed()
 	repo.write("README.md", "stashed work\n")
-	require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("work"), false))
+	require.NoError(t, git.StashSave(ctx(t), repo.Path, new("work"), false))
 
 	outcome, err := git.StashApply(ctx(t), repo.Path, 0)
 	require.NoError(t, err)
@@ -124,7 +122,7 @@ func TestOutcomesAreClassifiedNotRaised(t *testing.T) {
 		repo := newTestRepo(t)
 		repo.seed()
 		repo.write("README.md", "change\n")
-		require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("only one"), false))
+		require.NoError(t, git.StashSave(ctx(t), repo.Path, new("only one"), false))
 
 		outcome, err := git.StashApply(ctx(t), repo.Path, 7)
 
@@ -138,7 +136,7 @@ func TestOutcomesAreClassifiedNotRaised(t *testing.T) {
 		repo.commit("initial")
 
 		repo.write("shared.txt", "stashed version\n")
-		require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("mine"), false))
+		require.NoError(t, git.StashSave(ctx(t), repo.Path, new("mine"), false))
 
 		// A conflicting commit on top of what the stash was taken from.
 		repo.write("shared.txt", "committed version\n")
@@ -161,7 +159,7 @@ func TestOutcomesAreClassifiedNotRaised(t *testing.T) {
 		repo.commit("initial")
 
 		repo.write("shared.txt", "stashed version\n")
-		require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("mine"), false))
+		require.NoError(t, git.StashSave(ctx(t), repo.Path, new("mine"), false))
 
 		// An uncommitted edit to the same file blocks the apply before any merging happens.
 		repo.write("shared.txt", "local work I have not committed\n")
@@ -181,7 +179,7 @@ func TestAConflictedPopKeepsTheEntry(t *testing.T) {
 	repo.write("shared.txt", "base\n")
 	repo.commit("initial")
 	repo.write("shared.txt", "stashed version\n")
-	require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("mine"), false))
+	require.NoError(t, git.StashSave(ctx(t), repo.Path, new("mine"), false))
 	repo.write("shared.txt", "committed version\n")
 	repo.commit("conflicting change")
 
@@ -196,7 +194,7 @@ func TestStashDrop(t *testing.T) {
 	repo := newTestRepo(t)
 	repo.seed()
 	repo.write("README.md", "change\n")
-	require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("throwaway"), false))
+	require.NoError(t, git.StashSave(ctx(t), repo.Path, new("throwaway"), false))
 
 	require.NoError(t, git.StashDrop(ctx(t), repo.Path, 0))
 
@@ -210,9 +208,9 @@ func TestRenamingAStashMovesItToTheTop(t *testing.T) {
 	repo.seed()
 
 	repo.write("README.md", "first\n")
-	require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("the one I care about"), false))
+	require.NoError(t, git.StashSave(ctx(t), repo.Path, new("the one I care about"), false))
 	repo.write("README.md", "second\n")
-	require.NoError(t, git.StashSave(ctx(t), repo.Path, ptr("newer"), false))
+	require.NoError(t, git.StashSave(ctx(t), repo.Path, new("newer"), false))
 
 	// The older entry is at index 1.
 	before := stashes(t, repo)
