@@ -6,7 +6,7 @@ toolchain go1.27.1
 
 require (
 	github.com/charmbracelet/x/xpty v0.1.4
-	github.com/coder/websocket v1.8.14
+	github.com/coder/websocket v1.8.15
 	github.com/danieljoos/wincred v1.2.3
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/google/uuid v1.6.0
