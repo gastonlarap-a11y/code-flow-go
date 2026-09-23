@@ -41,7 +41,7 @@ and need no fallback. What WKWebView still does *not* do:
 
 ## Known gap: lint is off
 
-`pnpm lint` fails outright — typescript-eslint refuses to load against TypeScript 7 and no release,
-canary included, supports it yet (its tracking issue targets TS ≥ 7.1). `eslint.config.js` is kept
-intact so this becomes one command again the day support lands. Until then `pnpm typecheck` is the
-only static check, so prefer explicit types over inference in new code.
+typescript-eslint refuses to load against TypeScript 7 until 7.1 ships a compiler API, so
+`pnpm lint` runs **oxlint** (type-aware, on typescript-go) from `.oxlintrc.json`, which mirrors
+`eslint.config.js`. A rule added to one belongs in the other until one is retired; `pnpm lint:eslint`
+is the old command, kept for the day support lands.

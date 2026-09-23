@@ -81,11 +81,11 @@ tasks:
     dir: frontend
     cmds:
       - pnpm typecheck
+      - pnpm lint
       - pnpm test
-      # `pnpm lint` is deliberately absent. typescript-eslint refuses to load against TypeScript 7
-      # ("typescript-eslint does not support TS 7.0"); its tracking issue targets TS >= 7.1. The
-      # ESLint config is kept intact so this becomes one line again the day support lands.
-      # See README, "Known gaps".
+      # `pnpm lint` is oxlint, type-aware on typescript-go, because typescript-eslint refuses to
+      # load against TypeScript 7 until 7.1 ships a compiler API. `pnpm lint:eslint` is the old
+      # command, kept with its config for the day that support lands.
 
   # ---- backend ----------------------------------------------------------------------------
 

@@ -118,21 +118,12 @@ export function DbmlView() {
   const [model, setModel] = useState<DbmlSchemaModel>(emptyModel);
   if (parsed.ok && parsed.model !== model) setModel(parsed.model);
 
-  if (project === null || rootPath === null) {
-    return <EmptyState icon={Database} title={t("dbml.noDocumentOpen")} />;
-  }
-
-  const arrange = async () => {
-    // Nothing to lose when nothing was placed by hand, so nothing to confirm.
-    const hasPlacements = Object.keys(positions).length > 0;
-    if (hasPlacements && !(await confirmAction(t("dbml.arrangeConfirm"), false, t("dbml.arrange")))) return;
-    await arrangeAll(project.id);
-    // After the cleared positions have re-rendered the layout, so the fit measures the new one.
-    requestAnimationFrame(() => canvasRef.current?.fit());
-  };
-
   // The rules are `useCardEditing`, shared with the Editor's preview; what this passes is what it
   // owns — its buffer, its source pane, and the positions a rename has to carry over (DBML-028).
+  //
+  // Above the early return below, not after it: it is named and called as a hook so that the day it
+  // needs one no call site has to move, and a hook after a conditional return is the hook-order
+  // crash `rules-of-hooks` exists for — the view mounts with no project and then gets one.
   const editing = useCardEditing({
     readSource: () => useDbmlStore.getState().source,
     parsed,
@@ -140,7 +131,7 @@ export function DbmlView() {
     onSource: setSource,
     onRenamed: (table, name) => {
       const carried = carriedPosition(positions, table, name);
-      if (carried) void placeTable(project.id, carried.key, carried.point);
+      if (carried && project !== null) void placeTable(project.id, carried.key, carried.point);
     },
     onReveal: (from, to) => {
       setEditorCollapsed(false);
@@ -160,6 +151,19 @@ export function DbmlView() {
       });
     },
   });
+
+  if (project === null || rootPath === null) {
+    return <EmptyState icon={Database} title={t("dbml.noDocumentOpen")} />;
+  }
+
+  const arrange = async () => {
+    // Nothing to lose when nothing was placed by hand, so nothing to confirm.
+    const hasPlacements = Object.keys(positions).length > 0;
+    if (hasPlacements && !(await confirmAction(t("dbml.arrangeConfirm"), false, t("dbml.arrange")))) return;
+    await arrangeAll(project.id);
+    // After the cleared positions have re-rendered the layout, so the fit measures the new one.
+    requestAnimationFrame(() => canvasRef.current?.fit());
+  };
 
   const onEditorMount: OnMount = (instance) => {
     editorRef.current = instance;

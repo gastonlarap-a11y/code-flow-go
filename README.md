@@ -130,7 +130,7 @@ Run with `task <name>` (or `wails3 task <name>`, which bundles the runner).
 | `task build` | Builds the renderer and the binary into `bin/` |
 | `task check` | Everything the CI gate runs |
 | `task go:check` | `go vet`, `golangci-lint`, `go test -race`, the goroutine gate and `govulncheck` |
-| `task frontend:check` | `pnpm typecheck` and `pnpm test` |
+| `task frontend:check` | `pnpm typecheck`, `pnpm lint` (oxlint) and `pnpm test` |
 | `task smoke` | Runs the built binary's own environment probes |
 
 `bin/CodeFlow --smoke-test` answers "is this binary viable on this machine?" and exits 0 or 1. Three
@@ -181,10 +181,11 @@ the macOS keychain or Windows Credential Manager under `com.codeflow.app`, never
 
 ## Known gaps
 
-- **`pnpm lint` does not run.** typescript-eslint refuses to load against TypeScript 7
-  (`typescript-eslint does not support TS 7.0`), and no release — canary included — supports it yet;
-  its tracking issue targets TS ≥ 7.1. `eslint.config.js` is kept intact so this becomes one command
-  again the day support lands. `pnpm typecheck` is the static check until then.
+- **ESLint does not run; oxlint stands in for it.** typescript-eslint refuses to load against
+  TypeScript 7 until 7.1 ships a compiler API (scheduled for November 2026). `pnpm lint` is oxlint,
+  type-aware on typescript-go, configured in `frontend/.oxlintrc.json` to mirror
+  `eslint.config.js` rule for rule; `pnpm lint:eslint` and its config are kept for the day support
+  lands, when one of the two should be retired.
 - **Windows is verified by machine, not by hand.** The gate and the smoke test both run on
   `windows-2025`, and the installer is built and published from CI — so the suite, the packaging and
   the binary's own environment probes are exercised there every run. What has not happened is a

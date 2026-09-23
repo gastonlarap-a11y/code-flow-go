@@ -135,10 +135,12 @@ jobs:
         working-directory: frontend
         run: pnpm typecheck
 
-      # `pnpm lint` is deliberately absent. typescript-eslint refuses to load against TypeScript 7
-      # ("typescript-eslint does not support TS 7.0"); its tracking issue targets TS >= 7.1. The
-      # ESLint config is kept intact, so this becomes one more step the day support lands.
-      # Tracked in README, "Known gaps".
+      # oxlint, type-aware on typescript-go: typescript-eslint cannot load against TypeScript 7 until
+      # 7.1 ships a compiler API. Its first run found a hook called after an early return, which is
+      # the bug class this step exists for and `tsc` cannot see.
+      - name: Lint
+        working-directory: frontend
+        run: pnpm lint
 
       - name: Test
         working-directory: frontend
