@@ -267,24 +267,20 @@ func TestConcurrentReadsAndWritesAreSerialised(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			id := string(rune('a' + i%26))
 			_ = db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 				_, err := tx.ExecContext(ctx,
 					`INSERT OR IGNORE INTO workspaces (id, name, created_at) VALUES (?, ?, 'now')`, id, id)
 				return err
 			})
-		}()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		})
+		wg.Go(func() {
 			_ = db.Read(ctx, func(ctx context.Context, sqlDB *sql.DB) error {
 				var count int
 				return sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspaces`).Scan(&count)
 			})
-		}()
+		})
 	}
 	wg.Wait()
 }

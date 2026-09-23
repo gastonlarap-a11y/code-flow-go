@@ -192,7 +192,7 @@ func ParseLimitsReport(report string, now time.Time) Limits {
 func parseClaudeReport(report string, now time.Time) Limits {
 	limits := Limits{}
 
-	for _, raw := range strings.Split(report, "\n") {
+	for raw := range strings.SplitSeq(report, "\n") {
 		match := claudeLimitLine.FindStringSubmatch(strings.TrimSpace(raw))
 		if match == nil {
 			continue
@@ -306,7 +306,7 @@ func ParseAntigravityReport(report string, now time.Time) Limits {
 func parseAntigravityReport(report string, _ time.Time) Limits {
 	limits := Limits{}
 
-	for _, raw := range strings.Split(report, "\n") {
+	for raw := range strings.SplitSeq(report, "\n") {
 		match := antigravityLimitLine.FindStringSubmatch(strings.TrimRight(raw, "\r"))
 		if match == nil {
 			continue

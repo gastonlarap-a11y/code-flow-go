@@ -9,7 +9,12 @@ the change surfaces later as an unexplained difference nobody chose.
 Each row states what the code does and what it probably should do. Fixing any of them is a decision
 to take as its own change, with its own test and its own release note.
 
-**Ten are now closed**, which is that decision being taken rather than an exception to the rule
+One row is not among the twenty-three: `BUG-FILE-c`, found in 3.7.0 and closed in the change that
+found it. It is listed here because it is `BUG-FILE-a`'s shape one step further — the same guard,
+fooled by a symlink instead of a `..` — and a reader auditing the containment guards should find
+both in one place.
+
+**Ten of the twenty-three are now closed**, which is that decision being taken rather than an exception to the rule
 above. The chosen ones lose data, refuse to start, leak resources, weaken transport security or a
 security check, or degrade what the user sees — and each was fixed with its own test. They are
 struck through below with their reasoning kept, so nobody reads a closed row as still-current
@@ -29,6 +34,7 @@ are pre-existing defects of the reference, not behaviours to reproduce.
 | ~~`BUG-WS-a`~~ **CLOSED** | A skill folder that could not be deleted was **orphaned with no row left to find it by**, permanently blocking its name | Folder first, failure propagated (`SkillFiles.RemoveDirectory`), row second — an undeletable folder aborts before the row is touched and the remove is retryable |
 | ~~`BUG-WS-b`~~ **CLOSED** | Re-installing a skill name ran npx over the shared folder and **added a duplicate row** | The same `Directory.Exists` guard its two sibling creation paths always had, run before npx |
 | ~~`BUG-FILE-a`~~ **CLOSED** | A write through `../` to a file not yet on disk **landed outside the repository** | The containment fallback is a lexical `Path.GetFullPath`, so `..` resolves away before the check — same shape as the shell's `isWithinRoot` (F0.6) |
+| ~~`BUG-FILE-c`~~ **CLOSED** | A write or create beneath a symlink the repository contains, pointing out of it, **landed where the link pointed** | Both guards resolve a missing path through its deepest existing ancestor, and every write goes through an `os.Root` on the repository |
 | ~~`BUG-AI-a`~~ **CLOSED** | Engine temp payload files were never deleted — **unbounded temp growth** for the life of the app | `EngineScratch`: one owner for creation, recognition, deletion in the runner's `finally` on every exit path, and an age-gated (1 h) startup sweep |
 | ~~`BUG-GIT-a`~~ **CLOSED** | Every rename displayed as an **unrelated delete + add pair**; the `"renamed"` label was dead code | `SimilarityOptions.Renames` on the user-facing diffs and both status detection flags on; Checkpoints' internal compare keeps `None` on purpose |
 
@@ -55,6 +61,7 @@ user-visible impact, not a field from the source.
 |---|---|---|---|
 | ~~`BUG-API-d`~~ **CLOSED** | `08-api-client.md` | **high** | MQTT's and gRPC's `verify_ssl: false` certificate verifiers skip TLS 1.2/1.3 signature verification entirely (unconditional `assertion()`), unlike WebSocket's equivalent, which keeps genuine signature checking. The three should behave the same way; the WebSocket one is the correct model. |
 | ~~`BUG-FILE-a`~~ **CLOSED** | `11-files-search-terminal.md` | medium | `resolve_within_repo`'s containment check degraded to a lexical `starts_with` when the candidate path does not yet exist: `canonicalize()` fails and the code falls back to the raw joined path, so `..` segments are never normalised. The source comment notes the guard is defensive only — the app opens files the user picked from its own tree — which is why this is medium rather than high. |
+| ~~`BUG-FILE-c`~~ **CLOSED** | `11-files-search-terminal.md` | medium | Found in 3.7.0, not inherited from a 2.x finding. Both containment guards judged a not-yet-existing path by its spelling, so a folder symlink **committed in the repository** and pointing out of it let `write_file_text`, `create_file` and `create_dir` beneath it write outside the repository; a dangling link as the leaf did the same for `write_file_text`. Medium, not high, for the same reason as `BUG-FILE-a`: every path comes from the app's own tree, so it takes a repository crafted with such a link plus a user writing beneath it. |
 | `BUG-FILE-b` **OPEN, upstream** | `11-files-search-terminal.md` | medium | **The file watcher's Windows backend does pointer arithmetic Go considers invalid.** `github.com/syncthing/notify` walks the `FILE_NOTIFY_INFORMATION` records the kernel returns by converting an offset into its read buffer with `unsafe.Pointer`, and `checkptr` rejects the conversion: `fatal error: checkptr: converted pointer straddles multiple allocations`, at `watcher_readdcw.go:406`. It is a fatal error, so it takes the whole package's test run with it. **Not ours** — no frame of this repository appears in the trace — and there is no newer version: the pinned pseudo-version is the latest the proxy offers. `checkptr` exists only in a `-race` build, so what ships carries the same arithmetic **unchecked** rather than crashing, which is why this is recorded rather than dismissed: it is either a `checkptr` false positive over a buffer the kernel guarantees, or a genuine over-read, and nothing here has established which. The watcher tests skip on Windows **under `-race` only**, so they still run for a developer there and in the manual acceptance pass — which is where "does the watcher actually work on Windows" gets answered. Found when the suite first ran on a Windows runner (Phase 9). |
 
 ## Protocol and standards conformance

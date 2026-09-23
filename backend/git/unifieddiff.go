@@ -66,7 +66,7 @@ func parseUnifiedDiff(output string) []FileDiff {
 		}
 	}
 
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		switch {
 		case strings.HasPrefix(line, "diff --git "):
 			flushFile()
@@ -136,18 +136,18 @@ func parseUnifiedDiff(output string) []FileDiff {
 
 		case strings.HasPrefix(line, "+"):
 			hunk.Lines = append(hunk.Lines, DiffLine{
-				Origin: "+", Content: line[1:], NewLineNo: int64Ptr(newLine),
+				Origin: "+", Content: line[1:], NewLineNo: new(newLine),
 			})
 			newLine++
 		case strings.HasPrefix(line, "-"):
 			hunk.Lines = append(hunk.Lines, DiffLine{
-				Origin: "-", Content: line[1:], OldLineNo: int64Ptr(oldLine),
+				Origin: "-", Content: line[1:], OldLineNo: new(oldLine),
 			})
 			oldLine++
 		case strings.HasPrefix(line, " "):
 			hunk.Lines = append(hunk.Lines, DiffLine{
 				Origin: " ", Content: line[1:],
-				OldLineNo: int64Ptr(oldLine), NewLineNo: int64Ptr(newLine),
+				OldLineNo: new(oldLine), NewLineNo: new(newLine),
 			})
 			oldLine++
 			newLine++
@@ -225,5 +225,3 @@ func strPtr(value string) *string {
 	}
 	return &value
 }
-
-func int64Ptr(value int64) *int64 { return &value }

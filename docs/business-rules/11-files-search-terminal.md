@@ -51,7 +51,9 @@ opening in the default app. Algorithm:
 1. Canonicalize `repo_path` → `base`. Failure → `"invalid repo path: {e}"`.
 2. Join `base` with `rel_path` → `candidate` (no existence check yet).
 3. Canonicalize `candidate`; if canonicalization fails (path doesn't exist, e.g. mid-drag or a
-   stale reference), **fall back to the un-canonicalized `candidate`** rather than erroring.
+   stale reference), canonicalize its **deepest existing ancestor** and join the missing
+   components back on, rather than erroring. (2.x fell back to the un-canonicalized `candidate`
+   here; that is `BUG-FILE-c`, closed below.)
 4. Reject unless `resolved.starts_with(&base)`. Rejection message, `VERBATIM`:
    `"path escapes the repository root"`.
 
@@ -69,8 +71,20 @@ through a crafted `..` segment (there is nothing on disk to canonicalize). Algor
    message, `VERBATIM`: `"invalid path: {rel_path}"` (note: original, untrimmed `rel_path` is
    interpolated here, not the trimmed `rel`).
 3. Canonicalize `repo_path` → `base` (same error as above on failure).
-4. Join `base` with the validated relative path. No existence or containment check is needed
-   beyond step 2, because a path made only of `Normal` components cannot climb out of `base`.
+4. Join `base` with the validated relative path, resolve it through its deepest existing
+   ancestor as `resolve_within_repo` step 3 does, and reject with `"path escapes the repository
+   root"` unless the result is inside `base`. Plain names cannot climb out by spelling, but they
+   can by walking through a symlinked folder that already exists (`BUG-FILE-c`); 2.x had no
+   check here.
+
+**The writes themselves** (`write_file_text`, `create_file`, `create_dir`, `move_path`) go through
+an `os.Root` opened on `base`, with the repo-relative form of the path the guard accepted. The
+guards decide and word the refusal; `os.Root` enforces at the moment of the write what a check a
+moment earlier cannot see — a dangling symlink as the final component, or a link swapped in
+between check and use — and refuses with the operating system's own message. Reads do not go
+through it: `os.Root` also refuses every absolute symlink, including one pointing inside the
+repository, and the guards pass it the canonical path precisely so that no intermediate link ever
+reaches it.
 
 Net effect: `resolve_within_repo` trusts the filesystem (via canonicalization) to collapse
 `..`; `resolve_new_path` trusts component-kind inspection instead, because there is no
@@ -94,6 +108,15 @@ fallback branch is exercised mainly when a caller races a delete or types a path
 that was never created. The suspected-correct behaviour is to canonicalize the parent
 directory (which does exist) and join only the final component, the way `resolve_new_path`
 effectively does. Ported as-is; not fixed.
+
+`BUG-FILE-c`, **closed** (found in 3.7.0, not a 2.x port finding): the not-on-disk fallback, and
+`resolve_new_path` with no containment check at all, judged a path by its spelling. A symlink the
+repository itself contains — a cloned repository carries whatever its author committed — is an
+existing folder the name can pass through, and a create or write beneath a link pointing out of the
+repository landed where the link pointed. Fixed by the deepest-existing-ancestor resolution in both
+guards and by routing the writes through `os.Root`; `backend/files/files_test.go` holds the shapes
+(a symlinked folder, a nested path under one, a dangling link as the leaf) and the link that stays
+inside, relative and absolute, which must keep working.
 
 ### `list_dir`
 

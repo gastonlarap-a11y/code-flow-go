@@ -293,8 +293,7 @@ func (s *Streams) handleFrame(frame incoming, report reporter) (keepGoing bool, 
 // closeReason tells a clean close from a failure, and carries the far side's own words when it gave
 // any — `"Closed by server"` is what a close frame with no reason reads as.
 func closeReason(err error) (status, detail string) {
-	var closed websocket.CloseError
-	if errors.As(err, &closed) {
+	if closed, ok := errors.AsType[websocket.CloseError](err); ok {
 		reason := closed.Reason
 		if strings.TrimSpace(reason) == "" {
 			reason = "Closed by server"

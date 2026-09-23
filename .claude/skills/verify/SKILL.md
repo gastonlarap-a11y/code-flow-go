@@ -29,9 +29,11 @@ and read back) and exits 0 or 1 — do that first when something looks environme
 ## Watching what it does
 
 The renderer's console is reached through **Safari's Web Inspector** (Develop → the CodeFlow
-process). Chromium's remote debugging port does not exist here — that is what the 2.x version of
-this skill used, and WKWebView has no equivalent. On Windows the WebView2 equivalent is
-`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`.
+process) — **in a `task dev` build only**. `task build` compiles with `-tags production`
+(BOOT-040), which turns the inspector off, so the packaged artefact is for checking what ships, not
+for reading its console. Chromium's remote debugging port does not exist here — that is what the
+2.x version of this skill used, and WKWebView has no equivalent. On Windows the WebView2 equivalent
+is `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`, also in a dev build.
 
 Go's side writes to `~/CodeFlow/logs/`:
 

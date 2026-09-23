@@ -1037,6 +1037,27 @@ could not install on its own: there was nothing to come back to. Once `BOOT-038`
 before the command returns, the only thing between the user and the new version is a launch nobody
 was performing.
 
+### BOOT-040 A release binary is built for production, and as a GUI program on Windows
+**Implementation**: `Taskfile.yml` (`build`) · `.github/workflows/ci.yml` (the smoke build)
+**Behaviour**: every binary that ships — the `.app`, the NSIS installer's payload, the portable
+`.exe` — is compiled with `-tags production`, and on Windows also linked with `-H windowsgui`.
+`task dev` builds without either, on purpose.
+**Why each flag**: Wails selects its development behaviour by the *absence* of the `production`
+tag. Without it the shipped app enabled the web inspector unconditionally (macOS
+`webView.inspectable`, WebView2 `AreDevToolsEnabled`), and honoured `FRONTEND_DEVSERVER_URL`: set in
+the user's environment, it made the window load its renderer — with the whole bridge, tokens and
+process spawning included — from that URL instead of the embedded one. With the tag the inspector
+is off, the variable is ignored, and Wails' own logger discards its output (this app's logs are its
+own, under `~/CodeFlow/logs/`). `-H windowsgui` marks the executable as a GUI program; without it
+Windows opened a console window beside the app on every launch.
+**Edge cases**: a GUI-subsystem program started from `cmd.exe` is not attached to that console, so
+`CodeFlow.exe --smoke-test` typed there prints nothing and returns at once. Its exit code and its
+output are intact when the caller pipes them — a shell script, the CI job, `… | more`.
+**Frontend dependency**: none. Diagnosing the renderer now means `task dev`, whose untagged build
+keeps the inspector.
+**Markers**: `DIVERGENCE-BOOT-f` — 3.0.0 through 3.7.0 shipped without both flags; found while
+upgrading Wails (the generated build tasks carry them, the hand-written `build` task did not).
+
 ### BOOT-030 A startup failure is recorded before it ends the process
 **Implementation**: `src/CodeFlow.App/Program.cs` (`Stage`) · `src/CodeFlow.App/Diagnostics/StartupLog.cs`
 **Behaviour**: steps 1–3 of `RunAsync` each run through `Stage(name, work)`, which catches, calls

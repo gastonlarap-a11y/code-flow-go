@@ -168,6 +168,65 @@ func TestTheExistenceGuardNormalisesAPathThatIsNotThere(t *testing.T) {
 	assert.EqualError(t, err, "path escapes the repository root")
 }
 
+// A repository can carry a symlink, and a cloned one carries whatever its author committed. A
+// directory link pointing out of the repository must not become a way to write there: a path that
+// does not exist yet is resolved through its deepest existing ancestor, not judged on its spelling.
+func TestASymlinkedFolderCannotCarryAWriteOutOfTheRepository(t *testing.T) {
+	outside := t.TempDir()
+	for name, op := range map[string]func(repo string) error{
+		"write_file_text": func(repo string) error { return files.WriteFileText(repo, "link/new.txt", "x") },
+		"create_file":     func(repo string) error { return files.CreateFile(repo, "link/new.txt") },
+		"create_dir":      func(repo string) error { return files.CreateDir(repo, "link/new.txt") },
+		"nested":          func(repo string) error { return files.CreateFile(repo, "link/deeper/new.txt") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := tempRepo(t)
+			require.NoError(t, os.Symlink(outside, filepath.Join(repo, "link")))
+
+			err := op(repo)
+
+			assert.EqualError(t, err, "path escapes the repository root")
+			assert.NoFileExists(t, filepath.Join(outside, "new.txt"))
+			assert.NoDirExists(t, filepath.Join(outside, "new.txt"))
+			assert.NoDirExists(t, filepath.Join(outside, "deeper"))
+		})
+	}
+}
+
+// The leaf itself can be the link: dangling, so there is nothing to canonicalise, and pointing at a
+// file that does not exist outside. Refused by the operating system through os.Root, which is why
+// the message is its own rather than ours.
+func TestADanglingSymlinkCannotCarryAWriteOutOfTheRepository(t *testing.T) {
+	repo, outside := tempRepo(t), t.TempDir()
+	target := filepath.Join(outside, "new.txt")
+	require.NoError(t, os.Symlink(target, filepath.Join(repo, "dangling")))
+
+	assert.Error(t, files.WriteFileText(repo, "dangling", "x"))
+	assert.Error(t, files.CreateFile(repo, "dangling"))
+	assert.NoFileExists(t, target)
+}
+
+// The guard is about escaping, not about symlinks: a link that stays inside the repository still
+// works both ways, including an absolute one, which os.Root on its own would refuse.
+func TestASymlinkThatStaysInsideStillWorks(t *testing.T) {
+	repo := tempRepo(t)
+	require.NoError(t, files.CreateDir(repo, "real"))
+	require.NoError(t, os.Symlink("real", filepath.Join(repo, "relative")))
+	require.NoError(t, os.Symlink(filepath.Join(repo, "real"), filepath.Join(repo, "absolute")))
+
+	for _, link := range []string{"relative", "absolute"} {
+		t.Run(link, func(t *testing.T) {
+			require.NoError(t, files.WriteFileText(repo, link+"/written.txt", link))
+			require.NoError(t, files.CreateFile(repo, link+"/created-"+link+".txt"))
+
+			content, err := os.ReadFile(filepath.Join(repo, "real", "written.txt"))
+			require.NoError(t, err)
+			assert.Equal(t, link, string(content))
+			assert.FileExists(t, filepath.Join(repo, "real", "created-"+link+".txt"))
+		})
+	}
+}
+
 func TestReadingAFolder(t *testing.T) {
 	repo := tempRepo(t)
 	require.NoError(t, files.CreateDir(repo, "src"))

@@ -200,7 +200,7 @@ func canonicalQuery(parsed *url.URL) string {
 	}
 
 	pairs := make([]string, 0, 8)
-	for _, pair := range strings.Split(raw, "&") {
+	for pair := range strings.SplitSeq(raw, "&") {
 		if pair == "" {
 			continue
 		}

@@ -264,10 +264,8 @@ func (b *snapshotBuilder) buildIndexes(constraintSize map[string]int) []placedIn
 
 		name := key.name
 		out = append(out, placedIndex{
-			SnapshotIndex: SnapshotIndex{
-				Name: &name, Columns: columns,
-				Unique: rows[0].unique, PK: rows[0].primary,
-			},
+			Name: &name, Columns: columns,
+			Unique: rows[0].unique, PK: rows[0].primary,
 			schema: key.schema, table: key.table,
 		})
 	}

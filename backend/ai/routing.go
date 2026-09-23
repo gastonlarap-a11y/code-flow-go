@@ -196,7 +196,7 @@ func (r Router) toolsFor(ctx context.Context, provider string, task Task) []stri
 	}
 
 	tools := make([]string, 0, 4)
-	for _, tool := range strings.Split(*stored, ",") {
+	for tool := range strings.SplitSeq(*stored, ",") {
 		if trimmed := strings.TrimSpace(tool); trimmed != "" {
 			tools = append(tools, trimmed)
 		}

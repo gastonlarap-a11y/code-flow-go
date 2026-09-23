@@ -37,8 +37,6 @@ func newStore(t *testing.T) (*dbml.Store, *storage.DB) {
 	return dbml.NewStore(db, clock), db
 }
 
-func ptr[T any](value T) *T { return &value }
-
 // ---- layouts (DBML-005) --------------------------------------------------------------------------
 
 func TestPositionsRoundTripOrderedByTableKey(t *testing.T) {
@@ -204,9 +202,9 @@ func TestConnectionsRoundTripWithoutAPassword(t *testing.T) {
 
 	saved, err := store.UpsertConnection(t.Context(), dbml.NewConnection{
 		Name: "staging", Driver: dbml.DriverPostgres,
-		Host: ptr("db.test"), Port: ptr(int64(5432)), Database: ptr("app"),
-		Username: ptr("readonly"), UseTLS: true,
-		Password: ptr("no-debería-viajar"),
+		Host: new("db.test"), Port: new(int64(5432)), Database: new("app"),
+		Username: new("readonly"), UseTLS: true,
+		Password: new("no-debería-viajar"),
 	})
 	require.NoError(t, err)
 
@@ -231,12 +229,12 @@ func TestUpdatingAConnectionKeepsItsIDAndCreationTime(t *testing.T) {
 	store, _ := newStore(t)
 
 	first, err := store.UpsertConnection(t.Context(), dbml.NewConnection{
-		Name: "staging", Driver: dbml.DriverMySQL, Host: ptr("old.test"),
+		Name: "staging", Driver: dbml.DriverMySQL, Host: new("old.test"),
 	})
 	require.NoError(t, err)
 
 	second, err := store.UpsertConnection(t.Context(), dbml.NewConnection{
-		ID: &first.ID, Name: "staging renamed", Driver: dbml.DriverMySQL, Host: ptr("new.test"),
+		ID: &first.ID, Name: "staging renamed", Driver: dbml.DriverMySQL, Host: new("new.test"),
 	})
 	require.NoError(t, err)
 
@@ -281,7 +279,7 @@ func TestASQLiteConnectionCarriesAPathRatherThanAHost(t *testing.T) {
 	store, _ := newStore(t)
 
 	saved, err := store.UpsertConnection(t.Context(), dbml.NewConnection{
-		Name: "local", Driver: dbml.DriverSQLite, FilePath: ptr("/data/app.db"),
+		Name: "local", Driver: dbml.DriverSQLite, FilePath: new("/data/app.db"),
 	})
 	require.NoError(t, err)
 
@@ -316,7 +314,7 @@ func TestConnectionsAreNotScopedToAnything(t *testing.T) {
 	store, db := newStore(t)
 
 	_, err := store.UpsertConnection(t.Context(), dbml.NewConnection{
-		Name: "staging", Driver: dbml.DriverPostgres, Host: ptr("db.test"),
+		Name: "staging", Driver: dbml.DriverPostgres, Host: new("db.test"),
 	})
 	require.NoError(t, err)
 

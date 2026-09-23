@@ -208,8 +208,8 @@ func splitHostPath(remoteURL string) (host, path string, ok bool) {
 		return "", "", false
 	}
 
-	if scheme := strings.Index(remote, "://"); scheme >= 0 {
-		rest := remote[scheme+3:]
+	if _, after, ok := strings.Cut(remote, "://"); ok {
+		rest := after
 		hostPart, pathPart, _ := strings.Cut(rest, "/")
 		host, path = stripUser(hostPart), pathPart
 	} else {
@@ -242,7 +242,7 @@ func stripUser(host string) string {
 
 func nonEmptySegments(path string) []string {
 	out := make([]string, 0, 4)
-	for _, segment := range strings.Split(path, "/") {
+	for segment := range strings.SplitSeq(path, "/") {
 		if segment != "" {
 			out = append(out, segment)
 		}
