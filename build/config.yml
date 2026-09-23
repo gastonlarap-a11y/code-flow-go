@@ -19,7 +19,7 @@ info:
   productName: CodeFlow
   productIdentifier: com.codeflow.app
   description: Code review and API workbench
-  productVersion: "3.7.0"
+  productVersion: "3.8.0"
   productCompany: Gastón Lara P.
   productCopyright: © 2026 Gastón Lara P.
   productComments: Code review and API workbench
