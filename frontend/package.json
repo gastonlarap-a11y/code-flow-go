@@ -15,7 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dbml/core": "^10.1.1",
+    "@dbml/core": "^10.2.0",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@monaco-editor/react": "^4.7.0",
@@ -23,10 +23,10 @@
     "@wailsio/runtime": "3.0.0-beta.25",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "dompurify": "^3.4.13",
-    "framer-motion": "^13.1.0",
-    "lucide-react": "^1.43.0",
-    "marked": "^18.0.9",
+    "dompurify": "^3.4.16",
+    "framer-motion": "^13.4.2",
+    "lucide-react": "^1.47.0",
+    "marked": "^18.0.14",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zustand": "^5.0.15"
@@ -40,7 +40,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.0.5",
-    "eslint": "^10.8.1",
+    "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.4",
     "globals": "^17.11.0",
@@ -50,7 +50,7 @@
     "oxlint-tsgolint": "^7.0.2002",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
-    "typescript-eslint": "^8.70.0",
+    "typescript-eslint": "^8.70.1",
     "vite": "^8.2.0",
     "vitest": "5.0.1"
   }
