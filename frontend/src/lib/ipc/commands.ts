@@ -8,6 +8,14 @@ import type {
   AutoLinkResult,
   BranchInfo,
   ChatConversationSummary,
+  CodemapFlow,
+  CodemapImpact,
+  CodemapKind,
+  CodemapLang,
+  CodemapOverview,
+  CodemapStatus,
+  CodemapSymbolLookup,
+  CodemapSymbolRef,
   CommitFileInfo,
   CommitInfo,
   ConflictFile,
@@ -824,6 +832,37 @@ export const dbmlListDocuments = (rootPath: string) =>
  */
 export const diagramListDocuments = (rootPath: string) =>
   invoke<string[]>("diagram_list_documents", { rootPath });
+
+// ---------- code map (18-code-map.md) ----------
+//
+// Every command takes the repository's folder and builds its map on first use — seconds on a cold
+// start, while `codemap:progress` says which stage it is in — then answers from memory until a file
+// changes.
+
+/** What the map covers per language, and what it could not do (CODEMAP-002). */
+export const codemapStatus = (rootPath: string) => invoke<CodemapStatus>("codemap_status", { rootPath });
+
+/** The map at a glance: areas, Wails services, endpoints, tables and hotspots (CODEMAP-011). */
+export const codemapOverview = (rootPath: string) => invoke<CodemapOverview>("codemap_overview", { rootPath });
+
+/** Symbols ranked by how well their name matches: exact, prefix, camel humps, substring (CODEMAP-007). */
+export const codemapSearch = (
+  rootPath: string,
+  query: string,
+  options: { kind?: CodemapKind; lang?: CodemapLang; limit?: number } = {},
+) => invoke<CodemapSymbolRef[]>("codemap_search", { rootPath, query, ...options });
+
+/** A symbol by ID, name or `file:line`, with its neighbourhood — or the candidates (CODEMAP-008). */
+export const codemapSymbol = (rootPath: string, symbol: string) =>
+  invoke<CodemapSymbolLookup>("codemap_symbol", { rootPath, symbol });
+
+/** Everything a symbol leads to, across languages, down to the tables (CODEMAP-009). */
+export const codemapFlow = (rootPath: string, symbol: string, options: { depth?: number; dataOnly?: boolean } = {}) =>
+  invoke<CodemapFlow>("codemap_flow", { rootPath, symbol, ...options });
+
+/** What may break when a symbol changes, and the exact tests to run (CODEMAP-010). */
+export const codemapImpact = (rootPath: string, symbol: string, depth?: number) =>
+  invoke<CodemapImpact>("codemap_impact", { rootPath, symbol, depth });
 
 /**
  * Everything the usage indicator draws, in one answer (USAGE-001).

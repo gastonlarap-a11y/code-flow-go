@@ -741,3 +741,183 @@ export interface UsageSnapshot {
   activity: UsageActivity;
   taken_at: string;
 }
+
+// ---------- code map (18-code-map.md) ----------
+
+/** What a node of the code map is (CODEMAP-001). */
+export type CodemapKind =
+  | "func"
+  | "method"
+  | "type"
+  | "interface"
+  | "interface_method"
+  | "component"
+  | "hook"
+  | "test"
+  | "test_file"
+  | "module"
+  | "table"
+  | "endpoint";
+
+/** How two nodes relate: `cross` is a hop from TypeScript into Go (CODEMAP-004). */
+export type CodemapEdgeKind = "call" | "ref" | "render" | "dispatch" | "cross" | "read" | "write" | "mention";
+
+export type CodemapLang = "go" | "ts" | "sql";
+
+/** One language's share of a map. `missing_tool` names a toolchain the machine does not have. */
+export interface CodemapLanguageStatus {
+  lang: CodemapLang;
+  state: "mapped" | "partial" | "missing_tool" | "absent" | "failed";
+  files: number;
+  symbols: number;
+  detail: string;
+}
+
+/** What a build of the map produced and what it could not do (CODEMAP-002). */
+export interface CodemapStatus {
+  root_path: string;
+  nodes: number;
+  edges: number;
+  languages: CodemapLanguageStatus[];
+  notes: string[];
+  built_at: string;
+  duration_ms: number;
+}
+
+/** The stage a build is in, as `codemap:progress` reports it. */
+export type CodemapStage = "scanning" | "go" | "typescript" | "linking" | "ready";
+
+export interface CodemapProgressEvent {
+  root_path: string;
+  stage: CodemapStage;
+}
+
+export interface CodemapSymbolRef {
+  id: string;
+  name: string;
+  kind: CodemapKind;
+  lang: CodemapLang;
+  file: string;
+  line: number;
+  end_line: number;
+  signature: string;
+}
+
+export interface CodemapLocation {
+  file: string;
+  line: number;
+}
+
+/** A neighbour; `via` is the interface method or endpoint a caller reaches the symbol through. */
+export interface CodemapRelation {
+  symbol: CodemapSymbolRef;
+  kind: CodemapEdgeKind;
+  file: string;
+  line: number;
+  via: CodemapSymbolRef | null;
+}
+
+export interface CodemapTableUse {
+  table: CodemapSymbolRef;
+  read: boolean;
+  write: boolean;
+  mention: boolean;
+  direct: boolean;
+  via: CodemapSymbolRef | null;
+}
+
+/** A symbol and its neighbourhood (CODEMAP-008). */
+export interface CodemapSymbolDetail {
+  symbol: CodemapSymbolRef;
+  doc: string;
+  parent: CodemapSymbolRef | null;
+  bound: string;
+  callers: CodemapRelation[];
+  callees: CodemapRelation[];
+  implementations: CodemapRelation[];
+  implements: CodemapRelation[];
+  tables: CodemapTableUse[];
+  tests: CodemapSymbolRef[];
+  unresolved: CodemapLocation[];
+}
+
+/** A name resolved: the detail when it names one symbol, the candidates when it names several. */
+export interface CodemapSymbolLookup {
+  detail: CodemapSymbolDetail | null;
+  candidates: CodemapSymbolRef[];
+}
+
+export interface CodemapFlowNode {
+  symbol: CodemapSymbolRef;
+  via: CodemapEdgeKind | "";
+  file: string;
+  line: number;
+  children: CodemapFlowNode[];
+  repeat: boolean;
+  truncated: boolean;
+}
+
+/** Everything a symbol leads to (CODEMAP-009). */
+export interface CodemapFlow {
+  root: CodemapFlowNode;
+  steps: number;
+  truncated: boolean;
+}
+
+export interface CodemapGoTestGroup {
+  package_dir: string;
+  tests: string[];
+  working_dir: string;
+  command: string;
+}
+
+export interface CodemapTsTestGroup {
+  package_dir: string;
+  files: string[];
+  runner: string;
+  command: string;
+}
+
+/** What may break when a symbol changes, and the tests to run (CODEMAP-010). */
+export interface CodemapImpact {
+  root: CodemapSymbolRef;
+  levels: CodemapSymbolRef[][];
+  entry_points: CodemapSymbolRef[];
+  go_tests: CodemapGoTestGroup[];
+  ts_tests: CodemapTsTestGroup[];
+  truncated: boolean;
+}
+
+export interface CodemapArea {
+  path: string;
+  lang: CodemapLang;
+  symbols: number;
+}
+
+export interface CodemapBoundService {
+  name: string;
+  file: string;
+  methods: number;
+  called_by: number;
+}
+
+export interface CodemapTableSummary {
+  table: CodemapSymbolRef;
+  readers: number;
+  writers: number;
+}
+
+export interface CodemapHotspot {
+  symbol: CodemapSymbolRef;
+  callers: number;
+}
+
+/** The whole map at a glance (CODEMAP-011). */
+export interface CodemapOverview {
+  status: CodemapStatus;
+  areas: CodemapArea[];
+  services: CodemapBoundService[];
+  endpoints: number;
+  tables: CodemapTableSummary[];
+  hotspots: CodemapHotspot[];
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/gastonlarap-a11y/code-flow/backend/ai"
 	"github.com/gastonlarap-a11y/code-flow/backend/apiclient"
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
+	"github.com/gastonlarap-a11y/code-flow/backend/codemap"
 	"github.com/gastonlarap-a11y/code-flow/backend/dbml"
 	"github.com/gastonlarap-a11y/code-flow/backend/diagram"
 	"github.com/gastonlarap-a11y/code-flow/backend/files"
@@ -369,6 +370,10 @@ func BuildRegistry(deps Deps) (*bridge.Registry, func(method string, err error))
 	// so it registers here with the rest of what survives a failed storage stage, and takes no deps
 	// at all (DIAG-002).
 	diagram.Register(registry)
+
+	// The code map reads a folder and runs the user's own go and node — no database, no credential —
+	// so it too survives a failed storage stage (CODEMAP-012). Its emitter reports build progress.
+	codemap.Register(registry, codemap.Deps{Service: codemap.NewService(codemap.DiscoverTools, deps.Emitter)})
 
 	// The usage indicator is registered further down, once the AI router exists: it needs to ask
 	// which engine is active in order to attribute a quota failure to the provider that hit it

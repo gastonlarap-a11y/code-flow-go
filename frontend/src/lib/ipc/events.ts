@@ -1,7 +1,7 @@
 import { listen } from "../bridge/host";
 // Re-exported so components can type an unsubscribe handle without reaching into lib/bridge.
 export type { UnlistenFn } from "../bridge/host";
-import type { GitDoneEvent, GitProgressEvent } from "../../types/domain";
+import type { CodemapProgressEvent, GitDoneEvent, GitProgressEvent } from "../../types/domain";
 import type {
   StreamMessage as ApiStreamMessage,
   StreamStatusEvent as ApiStreamStatusEvent,
@@ -66,6 +66,10 @@ export const onApiStreamMessage = (handler: (event: ApiStreamMessage) => void) =
 
 export const onApiStreamStatus = (handler: (event: ApiStreamStatusEvent) => void) =>
   listen<ApiStreamStatusEvent>("api:stream-status", (e) => handler(e.payload));
+
+/** The stage a code map build is in (CODEMAP-002). Routed by `root_path`, exactly as it was sent. */
+export const onCodemapProgress = (handler: (event: CodemapProgressEvent) => void) =>
+  listen<CodemapProgressEvent>("codemap:progress", (e) => handler(e.payload));
 
 export interface SidecarStatusEvent {
   status: "starting" | "ready" | "down";

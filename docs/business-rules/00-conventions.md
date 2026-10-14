@@ -61,7 +61,7 @@ Every rule is written in one shape:
 `
 
 Rule ids use a per-document prefix (`BOOT`, `STORE`, `GIT`, `AI`, `PROV`, `REVIEW`, `API`,
-`WS`, `SEC`, `FILE`, `DBG`, `XLANG`, `DBML`, `DIAG`) plus a zero-padded sequence. Ids are stable
+`WS`, `SEC`, `FILE`, `DBG`, `XLANG`, `DBML`, `DIAG`, `USAGE`, `CODEMAP`) plus a zero-padded sequence. Ids are stable
 once written — later documents reference them.
 
 ## Markers
@@ -114,10 +114,10 @@ correction when it is a port.
 | Commands invoked by the frontend | 246 | the `invoke<…>("name"` call sites in `commands.ts`, `apiCommands.ts` and `bridge/updater.ts`, re-derived on every test run. 2.x: 232, counted before the updater's three were included |
 | Commands deferred on purpose | 11 | nine `debug_*`, two `api_grpc_*`; asserted to stay **un**registered |
 | Dead commands | 1 | `debug_is_running` — no call site, no registration, no wrapper (DBG-037) |
-| Event names | 13 + 1 | the 13 with a wrapper in `lib/ipc/events.ts`, plus `update:progress`, subscribed inline by `lib/bridge/updater.ts` |
-| Event (name, producer) pairs | 19 | the four `debug:*` and the two `api:*` names have two producers each |
-| Emit call sites | 23 | — |
-| Rows in the event table | 20 | 19 pairs, with `git:progress` split into its stdout and stderr sites |
+| Event names | 14 + 1 | the 14 with a wrapper in `lib/ipc/events.ts`, plus `update:progress`, subscribed inline by `lib/bridge/updater.ts`. 2.x: 13 + 1, before `codemap:progress` |
+| Event (name, producer) pairs | 20 | the four `debug:*` and the two `api:*` names have two producers each |
+| Emit call sites | 24 | — |
+| Rows in the event table | 21 | 20 pairs, with `git:progress` split into its stdout and stderr sites |
 | Tables | 23 | `CREATE TABLE` in `backend/storage`. 2.x: this document said 21 and `sqlite_master` held 23 (see `03-storage.md`) |
 | extracted case functions | **133** across 25 files | 128 ` + 5 ` |
 | Secret-scan rules | **15** | 14 `new Rule(...)`(…)` literals plus the appended `generic` rule, `src/CodeFlow.App/Security/SecretScan.cs` |

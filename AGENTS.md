@@ -44,7 +44,7 @@ its name to `newSincePort`.
 | `backend/<feature>/` | One package per feature; each exposes `Register(r, deps)` |
 | `backend/shared/` | `proc` (child processes), `safego` (goroutines), `sentinel` (error prefixes), `docwalk` (finding a folder's documents) |
 | `frontend/` | The React 19 renderer, copied from 2.x and grown since; reaches Go only through `src/lib/bridge/host.ts` |
-| `docs/business-rules/` | The specification: every command, the 13 events, the storage schema |
+| `docs/business-rules/` | The specification: every command, the 14 events, the storage schema |
 | `scripts/` | What the release page tells users to run: `install-macos.sh` installs without the quarantine flag that makes Gatekeeper refuse an unnotarized build |
 | `tools/parity/` | The differential oracle: drives the installed 2.7.x core and this one, compares |
 | `tools/inventory/` | The test audit: the 1 232 C# behaviours against this tree's, re-counted on each run |
