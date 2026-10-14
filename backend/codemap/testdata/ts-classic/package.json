@@ -1,0 +1,8 @@
+{
+  "name": "codemap-ts-classic",
+  "private": true,
+  "description": "TypeScript 6, the last JavaScript compiler. CI checks the code map's classic checker adapter against it (CODEMAP-005); the lockfile pins it with its integrity hash.",
+  "dependencies": {
+    "typescript": "6.0.3"
+  }
+}
