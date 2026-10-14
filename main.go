@@ -14,6 +14,7 @@ import (
 	"github.com/gastonlarap-a11y/code-flow/backend/ai"
 	"github.com/gastonlarap-a11y/code-flow/backend/app"
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
+	"github.com/gastonlarap-a11y/code-flow/backend/codemap"
 	"github.com/gastonlarap-a11y/code-flow/backend/desktop"
 	"github.com/gastonlarap-a11y/code-flow/backend/diagnostics"
 	"github.com/gastonlarap-a11y/code-flow/backend/files"
@@ -44,6 +45,12 @@ func main() {
 	// user's data. It answers "is this binary viable on this machine?" and exits.
 	if len(os.Args) > 1 && os.Args[1] == "--smoke-test" {
 		os.Exit(app.RunSmokeTest(app.DefaultProbes()))
+	}
+	// Same rule for the code map's MCP server (CODEMAP-015): an AI run CodeFlow started launches
+	// this binary to ask the map questions, and it must serve stdio and nothing else — no window, no
+	// single-instance lock, no write into the user's data.
+	if len(os.Args) > 1 && os.Args[1] == codemap.MCPCommand {
+		os.Exit(codemap.RunMCP(context.Background(), os.Args[2:], version, os.Stdin, os.Stdout, os.Stderr))
 	}
 
 	paths := platform.DefaultPaths()

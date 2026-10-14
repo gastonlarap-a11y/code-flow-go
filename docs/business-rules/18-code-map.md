@@ -17,7 +17,8 @@ time — a table name held in a variable — is recorded as *unresolved* and sho
 ## Scope
 
 - `backend/codemap/` — the scan, the Go and TypeScript halves, the SQL tables, the links across the
-  language boundary, the queries and the six commands
+  language boundary, the queries, the seven commands, asking the AI and the MCP server
+- `main.go` — only the `codemap-mcp` mode switch at the top of `main` (CODEMAP-015)
 - `backend/codemap/extract.mjs` — the TypeScript extractor, embedded in the binary and run by Node
 - `frontend/src/components/codemap/` — the «Code map» module's view
 - `frontend/src/state/codemapStore.ts` — what the view holds, and in what order answers are kept
@@ -241,9 +242,9 @@ most distinct callers.
 
 ### CODEMAP-012 Registered whether or not the database opened
 **Implementation**: `backend/codemap/commands.go` · `backend/app/registry.go`
-**Behaviour**: the six commands are registered beside the diagram editor's, outside the storage
-stage: the map reads a folder and runs the user's own toolchains, and needs no database and no
-credential. Every command takes the repository's folder as `rootPath`.
+**Behaviour**: the seven commands are registered outside the storage stage, right after the AI
+layer they ask through: the map reads a folder and runs the user's own toolchains, and needs no
+database and no credential. Every command takes the repository's folder as `rootPath`.
 **Inputs / outputs**: see `01-ipc-surface.md`.
 **Edge cases**: none
 **Frontend dependency**: `frontend/src/lib/ipc/commands.ts`.
@@ -269,17 +270,64 @@ doc — with three views:
 | Relations | callers, callees, implementations, what it implements, the tables it reaches, the tests that reach it, its unresolved sites (CODEMAP-008) |
 | Flow | the tree of CODEMAP-009, each step labelled with how it was reached; four levels open on arrival; *Only what reaches data or Go* is `dataOnly` |
 | Impact | the tests to run, each group with its command and a copy button; where the change surfaces; the levels above it (CODEMAP-010) |
+| Ask the AI | a conversation about the symbol (CODEMAP-014): three suggested questions, a free one, the run's live log with its stop button, each answer as Markdown |
 
 Every symbol in every list moves the map to it; every location opens its file at the line in the
 editor. A back button returns to the symbol before, fifty deep.
-**Inputs / outputs**: the six commands, through `frontend/src/lib/ipc/commands.ts`;
+**Inputs / outputs**: the seven commands, through `frontend/src/lib/ipc/commands.ts`;
 `codemap:progress`, through `onCodemapProgress`.
 **Edge cases**: an answer is kept only if it is still the latest of its kind — a search answer per
 keystroke, a symbol per click, a tab per selection — so a slow answer to an earlier question never
 replaces a newer one. A flow or an impact is asked for only when its tab is opened, once per symbol.
 Switching project drops everything the previous one answered. A name several symbols share lists
-them and asks which.
+them and asks which. One question at a time; the conversation starts over with each symbol, and a
+stopped run is not reported as a failure.
 **Frontend dependency**: this is it.
+**Markers**: none
+
+### CODEMAP-014 Asking the AI about the code
+**Implementation**: `backend/codemap/ask.go` · `backend/codemap/text.go` ·
+`frontend/src/components/codemap/AskPanel.tsx`
+**Behaviour**: a question about a symbol — or, with none, about the repository — goes to the AI
+engine the *chat* task routes to (AI-046), through the same `Operations.Invoke` every feature uses,
+so the provider, the model, the live `ai:output` log, `cancel_ai_run` and the error classification
+are the ones the user already configured and knows. What reaches the engine:
+
+| channel | carries |
+|---|---|
+| argv (`-p`) | the question, at most 4 000 characters |
+| system prompt | the role, the instruction to cite file:line and say what is only known at run time, never to change anything, and the interface's language |
+| stdin | the map's facts as text: the overview, and for a symbol its detail, its flow (8 deep, 150 steps) and its impact (4 levels), each part clipped |
+| tools | `Read`, `Grep`, `Glob` and `mcp__codemap` — reading and asking the map; nothing that writes or runs a command |
+| `--mcp-config` | this binary as the map's MCP server (CODEMAP-015), in a configuration file readable by its owner only and deleted on every exit path |
+
+The run is read-only, so a transient network failure retries it (AI-055). A follow-up continues
+the engine's own session (`--resume`). Engines without MCP support still get the facts on stdin.
+**Inputs / outputs**: `codemap_ask(rootPath, question, symbol?, runId?, sessionId?, language?)` →
+`{ answer, session_id }`. Refusals: `ask a question first`, `no AI engine is configured`,
+`ErrUnknownSymbol`; an engine's own failure is returned unchanged.
+**Edge cases**: zero cost by construction — the engine is the user's own CLI on its own login; no
+key is added to its environment (SEC-007).
+**Frontend dependency**: `codemapAsk`; `AskPanel`.
+**Markers**: none
+
+### CODEMAP-015 The map as an MCP server
+**Implementation**: `backend/codemap/mcp.go` · `main.go`
+**Behaviour**: `CodeFlow codemap-mcp --root <repository>` serves the map over stdio (the official
+MCP Go SDK) instead of opening a window. `main` checks for it first, beside `--smoke-test`, so the
+mode takes no single-instance lock, opens no window and writes nothing into the user's data. Five
+read-only tools — `codemap_overview`, `codemap_search`, `codemap_symbol`, `codemap_flow`,
+`codemap_impact` — answer text that cites file:line, clipped to 8 000 bytes on a line boundary.
+The map is built in the background as soon as the server starts; a tool waits at most twenty
+seconds for a cold build and otherwise says the map is still being built, while the build carries
+on for the next call.
+**Inputs / outputs**: MCP over newline-delimited JSON-RPC on stdin/stdout. Exit `2` without
+`--root`.
+**Edge cases**: a name several symbols share answers their IDs, so the model can ask again
+precisely. Measured against Claude Code 2.1.299: the server connects, its five tools appear as
+`mcp__codemap__*`, and a model given only them answered a flow question by calling
+`codemap_search` and `codemap_flow`.
+**Frontend dependency**: none.
 **Markers**: none
 
 ## Deliberately not in this version

@@ -912,6 +912,12 @@ export interface CodemapHotspot {
   callers: number;
 }
 
+/** An AI answer about the code, and the conversation to continue it in (CODEMAP-014). */
+export interface CodemapAskAnswer {
+  answer: string;
+  session_id: string;
+}
+
 /** The whole map at a glance (CODEMAP-011). */
 export interface CodemapOverview {
   status: CodemapStatus;

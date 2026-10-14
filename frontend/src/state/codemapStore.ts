@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as api from "../lib/ipc/commands";
+import { isCancellation, newRunId, useAiRunStore } from "./aiRunStore";
 import { pushErrorToast } from "./toastStore";
 import type {
   CodemapFlow,
@@ -19,7 +20,14 @@ import type {
  * one per click, and a slow answer to an earlier question must not overwrite a newer one.
  */
 
-export type CodemapTab = "relations" | "flow" | "impact";
+export type CodemapTab = "relations" | "flow" | "impact" | "ask";
+
+/** One question asked about the selected symbol, and its answer once it arrives. */
+export interface CodemapExchange {
+  question: string;
+  answer: string | null;
+  error: string | null;
+}
 
 /** How many symbols the back button remembers. */
 const TRAIL_LIMIT = 50;
@@ -50,6 +58,13 @@ interface CodemapState {
   loadingSymbol: boolean;
   loadingTab: boolean;
 
+  /** The conversation about the selected symbol, oldest first; it starts over with each symbol. */
+  exchanges: CodemapExchange[];
+  /** The AI run in flight, for its live log and its stop button. */
+  askRunId: string | null;
+  /** The engine's conversation, so a follow-up continues it rather than starting cold. */
+  askSession: string;
+
   open: (rootPath: string) => Promise<void>;
   refresh: () => Promise<void>;
   setStage: (stage: CodemapStage) => void;
@@ -58,6 +73,8 @@ interface CodemapState {
   back: () => Promise<void>;
   setTab: (tab: CodemapTab) => Promise<void>;
   setDataOnly: (dataOnly: boolean) => Promise<void>;
+  /** Asks the AI about the selected symbol (CODEMAP-014), in the interface's language. */
+  ask: (question: string, language: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -80,18 +97,22 @@ const INITIAL = {
   impact: null,
   loadingSymbol: false,
   loadingTab: false,
+  exchanges: [] as CodemapExchange[],
+  askRunId: null as string | null,
+  askSession: "",
 } satisfies Partial<CodemapState>;
 
 /** A counter per kind of request, so an answer can tell whether it is still the latest one. */
 let searchSeq = 0;
 let symbolSeq = 0;
 let tabSeq = 0;
+let askSeq = 0;
 
 export const useCodemapStore = create<CodemapState>((set, get) => {
   /** Loads what the current tab shows for the selected symbol. */
   const loadTab = async () => {
     const { rootPath, selected, tab, dataOnly } = get();
-    if (rootPath === null || selected === null || tab === "relations") return;
+    if (rootPath === null || selected === null || (tab !== "flow" && tab !== "impact")) return;
     const seq = ++tabSeq;
     set({ loadingTab: true });
     try {
@@ -114,7 +135,17 @@ export const useCodemapStore = create<CodemapState>((set, get) => {
     const { rootPath } = get();
     if (rootPath === null) return;
     const seq = ++symbolSeq;
-    set({ selected: symbol, loadingSymbol: true, flow: null, impact: null, candidates: [] });
+    askSeq++;
+    set({
+      selected: symbol,
+      loadingSymbol: true,
+      flow: null,
+      impact: null,
+      candidates: [],
+      exchanges: [],
+      askRunId: null,
+      askSession: "",
+    });
     try {
       const lookup = await api.codemapSymbol(rootPath, symbol);
       if (seq !== symbolSeq) return;
@@ -215,10 +246,38 @@ export const useCodemapStore = create<CodemapState>((set, get) => {
       await loadTab();
     },
 
+    ask: async (question, language) => {
+      const { rootPath, selected, askSession, askRunId } = get();
+      const text = question.trim();
+      if (rootPath === null || selected === null || text === "" || askRunId !== null) return;
+      const seq = ++askSeq;
+      const runId = newRunId("codemap");
+      const index = get().exchanges.length;
+      set({ exchanges: [...get().exchanges, { question: text, answer: null, error: null }], askRunId: runId });
+      useAiRunStore.getState().start(runId);
+
+      const settle = (patch: Partial<CodemapExchange>) =>
+        set({ exchanges: get().exchanges.map((exchange, i) => (i === index ? { ...exchange, ...patch } : exchange)) });
+      try {
+        const reply = await api.codemapAsk({ rootPath, question: text, symbol: selected, runId, sessionId: askSession, language });
+        if (seq !== askSeq) return;
+        settle({ answer: reply.answer });
+        if (reply.session_id) set({ askSession: reply.session_id });
+      } catch (e) {
+        if (seq !== askSeq) return;
+        // A stop is the user's own decision, not a failure to report.
+        settle({ error: isCancellation(e) ? null : String(e), answer: isCancellation(e) ? "" : null });
+      } finally {
+        useAiRunStore.getState().finish(runId);
+        if (seq === askSeq) set({ askRunId: null });
+      }
+    },
+
     reset: () => {
       searchSeq++;
       symbolSeq++;
       tabSeq++;
+      askSeq++;
       set(INITIAL);
     },
   };

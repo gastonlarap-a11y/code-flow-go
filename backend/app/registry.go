@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/gastonlarap-a11y/code-flow/backend/activity"
 	"github.com/gastonlarap-a11y/code-flow/backend/ai"
@@ -151,6 +152,19 @@ func (c chatTurns) LastTurnProvider(ctx context.Context, projectID, conversation
 }
 
 // projectPaths resolves a project id to the repository it names.
+// currentExecutable is this binary's resolved path, "" when the OS cannot say — in which case an AI
+// run simply goes without the code map's tools.
+func currentExecutable() string {
+	path, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}
+
 type projectPaths struct{ store *workspaces.Store }
 
 func (p projectPaths) ProjectPath(ctx context.Context, projectID string) (string, error) {
@@ -371,9 +385,8 @@ func BuildRegistry(deps Deps) (*bridge.Registry, func(method string, err error))
 	// at all (DIAG-002).
 	diagram.Register(registry)
 
-	// The code map reads a folder and runs the user's own go and node — no database, no credential —
-	// so it too survives a failed storage stage (CODEMAP-012). Its emitter reports build progress.
-	codemap.Register(registry, codemap.Deps{Service: codemap.NewService(codemap.DiscoverTools, deps.Emitter)})
+	// The code map is registered further down, once the AI layer exists: asking about the code goes
+	// through it (CODEMAP-014).
 
 	// The usage indicator is registered further down, once the AI router exists: it needs to ask
 	// which engine is active in order to attribute a quota failure to the provider that hit it
@@ -418,6 +431,15 @@ func BuildRegistry(deps Deps) (*bridge.Registry, func(method string, err error))
 		Turns:       aiTurns,
 		Checkpoints: aiCheckpoints{},
 		Branches:    gitBranches{},
+	})
+
+	// The code map reads a folder and runs the user's own go and node — no database, no credential —
+	// so it survives a failed storage stage (CODEMAP-012). Its emitter reports build progress; an AI
+	// run it starts is handed this very binary as the map's MCP server (CODEMAP-015).
+	codemap.Register(registry, codemap.Deps{
+		Service:    codemap.NewService(codemap.DiscoverTools, deps.Emitter),
+		AI:         ai.NewOperations(aiRouter, runs, httpClient, credentials),
+		Executable: currentExecutable(),
 	})
 
 	// Everything below needs the database. When the storage stage failed it is nil, and these

@@ -8,6 +8,7 @@ import type {
   AutoLinkResult,
   BranchInfo,
   ChatConversationSummary,
+  CodemapAskAnswer,
   CodemapFlow,
   CodemapImpact,
   CodemapKind,
@@ -863,6 +864,20 @@ export const codemapFlow = (rootPath: string, symbol: string, options: { depth?:
 /** What may break when a symbol changes, and the exact tests to run (CODEMAP-010). */
 export const codemapImpact = (rootPath: string, symbol: string, depth?: number) =>
   invoke<CodemapImpact>("codemap_impact", { rootPath, symbol, depth });
+
+/**
+ * Asks the configured AI engine about the code, with the map's facts about `symbol` on its stdin
+ * and the map itself offered as tools (CODEMAP-014). Read-only: the engine may read and ask, never
+ * write. `runId` streams the run on `ai:output` and makes it stoppable with `cancel_ai_run`.
+ */
+export const codemapAsk = (request: {
+  rootPath: string;
+  question: string;
+  symbol?: string;
+  runId?: string;
+  sessionId?: string;
+  language?: string;
+}) => invoke<CodemapAskAnswer>("codemap_ask", request);
 
 /**
  * Everything the usage indicator draws, in one answer (USAGE-001).

@@ -13,9 +13,12 @@ vi.mock("../../lib/ipc/commands", () => ({
   codemapSymbol: vi.fn((_root: string, symbol: string) => Promise.resolve({ detail: detail(symbol), candidates: [] })),
   codemapFlow: vi.fn((_root: string, symbol: string) => Promise.resolve(flow(symbol))),
   codemapImpact: vi.fn((_root: string, symbol: string) => Promise.resolve(impact(symbol))),
+  codemapAsk: vi.fn(() => Promise.resolve({ answer: "It **saves** one item, through `Save`.", session_id: "s1" })),
+  cancelAiRun: vi.fn(() => Promise.resolve()),
 }));
 vi.mock("../../lib/ipc/events", () => ({
   onCodemapProgress: vi.fn(() => Promise.resolve(() => {})),
+  onAiOutput: vi.fn(() => Promise.resolve(() => {})),
 }));
 vi.mock("../../lib/ui/useCopy", () => ({
   useCopy: () => [false, copied] as const,
@@ -117,6 +120,26 @@ describe("CodemapView", () => {
     expect(useUiStore.getState().activeView).toBe("editor");
     expect(useUiStore.getState().pendingEditorPath).toBe("src/app.ts");
     expect(useUiStore.getState().pendingEditorLine).toBe(3);
+  });
+
+  it("asks the AI about the symbol and shows its answer", async () => {
+    const user = userEvent.setup();
+    withProject("/repo");
+    render(<CodemapView />);
+    await screen.findByText(t("codemap.hotspots"));
+    await user.click(screen.getByRole("button", { name: `${t("codemap.kind.func")} invoke` }));
+    await screen.findByRole("heading", { name: "invoke" });
+
+    await user.click(screen.getByRole("tab", { name: t("codemap.tab.ask") }));
+    await user.click(screen.getByRole("button", { name: t("codemap.ask.suggestHow") }));
+
+    const answer = await screen.findByText("saves");
+    expect(answer.tagName).toBe("STRONG");
+    expect(api.codemapAsk).toHaveBeenCalledWith(
+      expect.objectContaining({ rootPath: "/repo", symbol: "ts:src/api.ts#invoke", question: t("codemap.ask.suggestHow") }),
+    );
+    expect(screen.getByText(t("codemap.ask.suggestHow"))).toBeTruthy();
+    expect(screen.getByLabelText(t("codemap.ask.label"))).toBeTruthy();
   });
 
   it("goes back to the symbol it came from", async () => {
