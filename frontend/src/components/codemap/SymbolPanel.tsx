@@ -9,6 +9,7 @@ import {
   Layers,
   Route,
   Share2,
+  Sparkles,
   TriangleAlert,
   Waypoints,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import { useT } from "../../state/languageStore";
 import { useCodemapStore, type CodemapTab } from "../../state/codemapStore";
 import { useUiStore } from "../../state/uiStore";
 import type { CodemapRelation, CodemapSymbolDetail } from "../../types/domain";
+import { AskPanel } from "./AskPanel";
 import { EdgeChip, FlowTree } from "./FlowTree";
 import { ImpactPanel } from "./ImpactPanel";
 import { SymbolRow } from "./SymbolRow";
@@ -31,6 +33,7 @@ const TABS: readonly TabOption<CodemapTab>[] = [
   { id: "relations", labelKey: "codemap.tab.relations", icon: Share2 },
   { id: "flow", labelKey: "codemap.tab.flow", icon: Route },
   { id: "impact", labelKey: "codemap.tab.impact", icon: Waypoints },
+  { id: "ask", labelKey: "codemap.tab.ask", icon: Sparkles },
 ];
 
 /** A symbol's header and its three views: what is next to it, where it leads, what it affects. */
@@ -99,6 +102,7 @@ export function SymbolPanel({ detail }: { detail: CodemapSymbolDetail }) {
         {tab === "flow" && (loadingTab || !flow ? <SkeletonRows count={8} /> : <FlowTree flow={flow} onSelect={onSelect} />)}
         {tab === "impact" &&
           (loadingTab || !impact ? <SkeletonRows count={8} /> : <ImpactPanel impact={impact} onSelect={onSelect} />)}
+        {tab === "ask" && <AskPanel />}
       </div>
     </div>
   );

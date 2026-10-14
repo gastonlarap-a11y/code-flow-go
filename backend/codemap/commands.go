@@ -11,13 +11,18 @@ import (
 // Deps is what the code map's commands need.
 type Deps struct {
 	Service *Service
+	// AI answers `codemap_ask`. Nil means asking refuses with ErrNoEngine.
+	AI Asker
+	// Executable is this binary, which an AI run starts as the map's MCP server. Empty runs the AI
+	// without the map's tools; the map's facts still reach it on stdin.
+	Executable string
 }
 
 // ErrUnknownSymbol is a flow or an impact asked of a name that is no symbol, or of one that names
 // several — the renderer always sends an ID, so either means the map moved under it.
 var ErrUnknownSymbol = errors.New("no single symbol has that name") //nolint:staticcheck // ST1005: shown to the user as a sentence
 
-// Register adds the code map's six commands (CODEMAP-007 … CODEMAP-011).
+// Register adds the code map's seven commands (CODEMAP-007 … CODEMAP-011, CODEMAP-014).
 //
 // Every one takes the repository's folder as `rootPath`, like the diagram editor's: the map is of a
 // folder on this machine, whichever project it belongs to. Registered unconditionally — a start-up
@@ -95,6 +100,24 @@ func Register(r *bridge.Registry, deps Deps) {
 			return nil, err
 		}
 		return g.Impact(n, depth), nil
+	})
+
+	r.Add("codemap_ask", func(ctx context.Context, p bridge.Params) (any, error) {
+		var request struct {
+			RootPath  string `json:"rootPath"`
+			Question  string `json:"question"`
+			Symbol    string `json:"symbol"`
+			RunID     string `json:"runId"`
+			SessionID string `json:"sessionId"`
+			Language  string `json:"language"`
+		}
+		if err := bridge.Bind(p, &request); err != nil {
+			return nil, err
+		}
+		if request.RootPath == "" {
+			return nil, bridge.MissingParameterError("rootPath")
+		}
+		return service.Ask(ctx, deps.AI, deps.Executable, AskRequest(request))
 	})
 }
 

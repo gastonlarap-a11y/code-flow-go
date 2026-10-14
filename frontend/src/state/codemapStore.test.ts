@@ -17,6 +17,7 @@ vi.mock("../lib/ipc/commands", () => ({
   codemapSymbol: vi.fn((_root: string, symbol: string) => Promise.resolve({ detail: detail(symbol), candidates: [] })),
   codemapFlow: vi.fn((_root: string, symbol: string) => Promise.resolve(flow(symbol))),
   codemapImpact: vi.fn((_root: string, symbol: string) => Promise.resolve(impact(symbol))),
+  codemapAsk: vi.fn(() => Promise.resolve({ answer: "It saves an item.", session_id: "s1" })),
 }));
 
 const toasts: string[] = [];
@@ -139,6 +140,63 @@ describe("the code map's state", () => {
     expect(useCodemapStore.getState().stage).toBe("typescript");
     useCodemapStore.getState().setStage("ready");
     expect(useCodemapStore.getState().stage).toBeNull();
+  });
+
+  test("asking about a symbol sends it with the question, and a follow-up continues the conversation", async () => {
+    await useCodemapStore.getState().open("/repo");
+    await useCodemapStore.getState().select("go:app.Save");
+
+    await useCodemapStore.getState().ask("  How does it work?  ", "es");
+    const first = api.codemapAsk.mock.calls[0]![0];
+    expect(first).toMatchObject({ rootPath: "/repo", question: "How does it work?", symbol: "go:app.Save", sessionId: "", language: "es" });
+    expect(first.runId).toMatch(/^codemap/);
+    expect(useCodemapStore.getState().exchanges).toEqual([{ question: "How does it work?", answer: "It saves an item.", error: null }]);
+    expect(useCodemapStore.getState().askRunId).toBeNull();
+
+    await useCodemapStore.getState().ask("And its tests?", "es");
+    expect(api.codemapAsk.mock.calls[1]![0].sessionId).toBe("s1");
+    expect(useCodemapStore.getState().exchanges).toHaveLength(2);
+  });
+
+  test("a failed answer says why; a stopped one is not an error", async () => {
+    await useCodemapStore.getState().open("/repo");
+    await useCodemapStore.getState().select("go:app.Save");
+
+    api.codemapAsk.mockRejectedValueOnce(new Error("claude: not logged in"));
+    await useCodemapStore.getState().ask("Why?", "en");
+    expect(useCodemapStore.getState().exchanges[0]!.error).toContain("not logged in");
+
+    api.codemapAsk.mockRejectedValueOnce(new Error("RUN_CANCELLED:: stopped by the user"));
+    await useCodemapStore.getState().ask("Again?", "en");
+    expect(useCodemapStore.getState().exchanges[1]).toMatchObject({ error: null, answer: "" });
+  });
+
+  test("one question at a time, and nothing without a symbol", async () => {
+    await useCodemapStore.getState().open("/repo");
+    await useCodemapStore.getState().ask("Orphan?", "en");
+    expect(api.codemapAsk).not.toHaveBeenCalled();
+
+    await useCodemapStore.getState().select("go:app.Save");
+    const slow = deferred<{ answer: string; session_id: string }>();
+    api.codemapAsk.mockReturnValueOnce(slow.promise);
+    const first = useCodemapStore.getState().ask("First", "en");
+    await useCodemapStore.getState().ask("Second", "en");
+    slow.release({ answer: "done", session_id: "" });
+    await first;
+
+    expect(api.codemapAsk).toHaveBeenCalledTimes(1);
+    expect(useCodemapStore.getState().exchanges.map((e) => e.question)).toEqual(["First"]);
+  });
+
+  test("the conversation starts over with each symbol", async () => {
+    await useCodemapStore.getState().open("/repo");
+    await useCodemapStore.getState().select("go:app.Save");
+    await useCodemapStore.getState().ask("How?", "en");
+
+    await useCodemapStore.getState().select("go:app.Other");
+
+    expect(useCodemapStore.getState().exchanges).toEqual([]);
+    expect(useCodemapStore.getState().askSession).toBe("");
   });
 
   test("switching repository forgets the previous one's answers", async () => {

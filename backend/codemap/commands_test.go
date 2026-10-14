@@ -18,8 +18,13 @@ func noTools() codemap.Tools { return codemap.Tools{} }
 
 func registryWith(t *testing.T, service *codemap.Service) *bridge.Registry {
 	t.Helper()
+	return bridgeRegistry(t, codemap.Deps{Service: service})
+}
+
+func bridgeRegistry(t *testing.T, deps codemap.Deps) *bridge.Registry {
+	t.Helper()
 	registry := bridge.NewRegistry()
-	codemap.Register(registry, codemap.Deps{Service: service})
+	codemap.Register(registry, deps)
 	registry.Seal()
 	return registry
 }
@@ -57,15 +62,16 @@ func schemaOnly(t *testing.T) string {
 	return root
 }
 
-func TestTheSixCommandsAreRegistered(t *testing.T) {
+func TestTheSevenCommandsAreRegistered(t *testing.T) {
 	registry := registryWith(t, codemap.NewService(noTools, nil))
 	for _, name := range []string{
 		"codemap_status", "codemap_overview", "codemap_search", "codemap_symbol", "codemap_flow", "codemap_impact",
+		"codemap_ask",
 	} {
 		_, found := registry.Lookup(name)
 		assert.True(t, found, name)
 	}
-	assert.Equal(t, 6, registry.Len())
+	assert.Equal(t, 7, registry.Len())
 }
 
 // A machine without the toolchains still answers: each language says what it is missing, and the
