@@ -140,10 +140,11 @@ func TestTheToolListDistinguishesUnsetFromBlank(t *testing.T) {
 		}
 	})
 
+	// nil, not empty: the engines read an empty list as "no tools at all" (AI-047).
 	t.Run("unset on any other task means no restriction", func(t *testing.T) {
 		for _, task := range []ai.Task{ai.TaskChat, ai.TaskFix, ai.TaskCommit, ai.TaskDBML} {
 			t.Run(string(task), func(t *testing.T) {
-				assert.Empty(t, resolve(t, settings{}, task).AllowedTools)
+				assert.Nil(t, resolve(t, settings{}, task).AllowedTools)
 			})
 		}
 	})
@@ -152,7 +153,9 @@ func TestTheToolListDistinguishesUnsetFromBlank(t *testing.T) {
 	// away from the person who made it.
 	t.Run("blank means no tools, even on a judging task", func(t *testing.T) {
 		rows := settings{"claude_allowed_tools": ""}
-		assert.Empty(t, resolve(t, rows, ai.TaskReview).AllowedTools)
+		tools := resolve(t, rows, ai.TaskReview).AllowedTools
+		assert.NotNil(t, tools, "an empty list, which the engines send as --tools \"\"")
+		assert.Empty(t, tools)
 	})
 
 	t.Run("a stored list is split and trimmed, empties dropped", func(t *testing.T) {

@@ -192,7 +192,9 @@ func (r Router) toolsFor(ctx context.Context, provider string, task Task) []stri
 		return append([]string(nil), defaultJudgingTools...)
 	}
 	if stored == nil {
-		return []string{}
+		// nil, not empty: an engine reads an empty list as "no tools at all" (AI-047), and unset
+		// means the CLI's own defaults.
+		return nil
 	}
 
 	tools := make([]string, 0, 4)

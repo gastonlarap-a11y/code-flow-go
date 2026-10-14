@@ -40,7 +40,22 @@ func (ClaudeCommands) BuildCommand(inv Invocation) []string {
 	// holding the process open long after the review had finished. Observed live 2026-08-02.
 	args = append(args, "--setting-sources", "user")
 
-	if len(inv.AllowedTools) > 0 {
+	// Three states, not two (AI-047): nil is "unset" and leaves the CLI's own defaults; an empty
+	// list is "none" — what a review below `ultra` and every link review ask for (REVIEW-039); a
+	// list is what exists and runs. Testing only the length used to send nothing for "none", so
+	// those runs got every default tool.
+	switch {
+	case inv.AllowedTools == nil:
+	case len(inv.AllowedTools) == 0:
+		// `--tools ""` removes only the built-in set: the user's own MCP servers — claude.ai
+		// connectors included, 47 tools across Gmail, Calendar, Drive and Docs on the machine
+		// measured 2026-10-14 — stay loaded. Strict MCP with no config is what makes it zero. A
+		// run that brings its own config keeps it; the flag is added below with that path.
+		args = append(args, "--tools", "")
+		if inv.MCPConfig == "" {
+			args = append(args, "--strict-mcp-config")
+		}
+	default:
 		list := strings.Join(inv.AllowedTools, ",")
 		// Both flags, and the difference is the whole point: `--allowedTools` names what runs
 		// without asking, `--tools` names what *exists*. Passing only the former changed nothing
