@@ -65,6 +65,10 @@ const DbmlView = lazyRetry(() => import("./components/dbml/DbmlView").then((m) =
 const DiagramView = lazyRetry(() =>
   import("./components/diagram/DiagramView").then((m) => ({ default: m.DiagramView })),
 );
+// Only a user who opens the code map pays for its view; the map itself is built by the backend.
+const CodemapView = lazyRetry(() =>
+  import("./components/codemap/CodemapView").then((m) => ({ default: m.CodemapView })),
+);
 const SettingsView = lazyRetry(() =>
   import("./components/settings/SettingsView").then((m) => ({ default: m.SettingsView })),
 );
@@ -89,6 +93,7 @@ const MODULE_VIEWS: Record<ModuleId, () => ReactElement> = {
   editor: () => <EditorView />,
   dbml: () => <DbmlView />,
   diagram: () => <DiagramView />,
+  codemap: () => <CodemapView />,
   workitems: () => <WorkItemsView />,
   api: () => <ApiView />,
 };

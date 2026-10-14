@@ -19,6 +19,9 @@ time — a table name held in a variable — is recorded as *unresolved* and sho
 - `backend/codemap/` — the scan, the Go and TypeScript halves, the SQL tables, the links across the
   language boundary, the queries and the six commands
 - `backend/codemap/extract.mjs` — the TypeScript extractor, embedded in the binary and run by Node
+- `frontend/src/components/codemap/` — the «Code map» module's view
+- `frontend/src/state/codemapStore.ts` — what the view holds, and in what order answers are kept
+- `frontend/src/lib/codemap/` — the vocabulary the view shows for each kind of node and edge
 
 ---
 
@@ -246,6 +249,38 @@ credential. Every command takes the repository's folder as `rootPath`.
 **Frontend dependency**: `frontend/src/lib/ipc/commands.ts`.
 **Markers**: none. These are commands this repository invented, so they are listed in
 `newSincePort` in `backend/app/contract_test.go`.
+
+### CODEMAP-013 The «Code map» module
+**Implementation**: `frontend/src/components/codemap/CodemapView.tsx` · `SymbolPanel.tsx` ·
+`FlowTree.tsx` · `ImpactPanel.tsx` · `SymbolRow.tsx` · `frontend/src/state/codemapStore.ts`
+**Behaviour**: a repo-scoped module, listed after the diagram editor, with no context column — it
+carries its own. Opening it builds the map of the selected project's folder (CODEMAP-002), showing
+the build's stage until the overview arrives; the header then names, per language, what was mapped,
+with the size of the map and how long it took, and what could not be mapped is said once beneath it
+(a missing toolchain, a package that did not type-check).
+
+The left column searches every symbol as it is typed (CODEMAP-007), and before anything is typed
+lists where to start: the most used symbols, the Go services Wails binds, the tables and the number
+of endpoints. Choosing a symbol shows it on the right — its kind, its location, its signature and its
+doc — with three views:
+
+| tab | shows |
+|---|---|
+| Relations | callers, callees, implementations, what it implements, the tables it reaches, the tests that reach it, its unresolved sites (CODEMAP-008) |
+| Flow | the tree of CODEMAP-009, each step labelled with how it was reached; four levels open on arrival; *Only what reaches data or Go* is `dataOnly` |
+| Impact | the tests to run, each group with its command and a copy button; where the change surfaces; the levels above it (CODEMAP-010) |
+
+Every symbol in every list moves the map to it; every location opens its file at the line in the
+editor. A back button returns to the symbol before, fifty deep.
+**Inputs / outputs**: the six commands, through `frontend/src/lib/ipc/commands.ts`;
+`codemap:progress`, through `onCodemapProgress`.
+**Edge cases**: an answer is kept only if it is still the latest of its kind — a search answer per
+keystroke, a symbol per click, a tab per selection — so a slow answer to an earlier question never
+replaces a newer one. A flow or an impact is asked for only when its tab is opened, once per symbol.
+Switching project drops everything the previous one answered. A name several symbols share lists
+them and asks which.
+**Frontend dependency**: this is it.
+**Markers**: none
 
 ## Deliberately not in this version
 
