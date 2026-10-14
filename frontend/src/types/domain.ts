@@ -782,6 +782,8 @@ export interface CodemapStatus {
   notes: string[];
   built_at: string;
   duration_ms: number;
+  /** The Archify install a flow can be drawn with, "" when there is none (CODEMAP-017). */
+  archify: string;
 }
 
 /** The stage a build is in, as `codemap:progress` reports it. */
@@ -916,6 +918,13 @@ export interface CodemapHotspot {
 export interface CodemapAskAnswer {
   answer: string;
   session_id: string;
+}
+
+/** A page Archify rendered and the app opened, and Archify's own report on it (CODEMAP-017). */
+export interface CodemapArchifyResult {
+  html_path: string;
+  diagram_type: "architecture" | "sequence";
+  report: string;
 }
 
 /** The whole map at a glance (CODEMAP-011). */

@@ -104,6 +104,9 @@ type Status struct {
 	Notes      []string         `json:"notes"`
 	BuiltAt    string           `json:"built_at"`
 	DurationMs int64            `json:"duration_ms"`
+	// Archify is the version of the Archify install a flow can be exported to, "" when there is
+	// none — the view offers the export only then (CODEMAP-017).
+	Archify string `json:"archify"`
 }
 
 // LanguageStatus is one language's share of the map.
@@ -255,6 +258,9 @@ func (ix *Index) describe(scan repoScan, took time.Duration) Status {
 	}
 
 	status.Languages = append(status.Languages, goStatus, tsStatus, sqlStatus)
+	if cli, err := findArchify(ix.root); err == nil {
+		status.Archify = cli.version
+	}
 	return status
 }
 

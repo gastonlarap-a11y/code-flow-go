@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Database, Flame, Network, Plug, RefreshCw, ServerCog, TriangleAlert } from "lucide-react";
+import { Database, Flame, LayoutDashboard, Network, Plug, RefreshCw, ServerCog, TriangleAlert } from "lucide-react";
 import { BouncingDots } from "../common/BouncingDots";
 import { Chip } from "../common/Chip";
 import { CollapsibleSection } from "../common/CollapsibleSection";
@@ -10,7 +10,7 @@ import { SkeletonRows } from "../common/Skeleton";
 import { onCodemapProgress } from "../../lib/ipc/events";
 import { stageLabel, stateLabel, stateTone } from "../../lib/codemap/labels";
 import { useCodemapStore } from "../../state/codemapStore";
-import { useT } from "../../state/languageStore";
+import { useLanguageStore, useT } from "../../state/languageStore";
 import { useWorkspaceStore } from "../../state/workspaceStore";
 import type { CodemapOverview } from "../../types/domain";
 import { SymbolPanel } from "./SymbolPanel";
@@ -43,6 +43,9 @@ export function CodemapView() {
   const reset = useCodemapStore((s) => s.reset);
   const setStage = useCodemapStore((s) => s.setStage);
   const select = useCodemapStore((s) => s.select);
+  const archify = useCodemapStore((s) => s.archify);
+  const archifying = useCodemapStore((s) => s.archifying);
+  const language = useLanguageStore((s) => s.language);
 
   // Repo-scoped: the map follows the selected project, back to nothing when the last one closes.
   useEffect(() => {
@@ -71,7 +74,17 @@ export function CodemapView() {
         title="codemap.title"
         icon={Network}
         actions={
-          <IconButton label="codemap.refresh" icon={RefreshCw} pending={building} onClick={() => void refresh()} />
+          <>
+            {overview && overview.status.archify !== "" && (
+              <IconButton
+                label="codemap.archify.architecture"
+                icon={LayoutDashboard}
+                pending={archifying}
+                onClick={() => void archify("architecture", language)}
+              />
+            )}
+            <IconButton label="codemap.refresh" icon={RefreshCw} pending={building} onClick={() => void refresh()} />
+          </>
         }
       >
         {overview && <StatusLine overview={overview} />}

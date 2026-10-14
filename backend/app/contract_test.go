@@ -84,6 +84,8 @@ var newSincePort = []string{
 	"codemap_impact",
 	// Asking the AI about the code, grounded in the map and handed the map as tools (CODEMAP-014).
 	"codemap_ask",
+	// Drawing a flow or the overview with the user's own Archify install (CODEMAP-017).
+	"codemap_archify",
 }
 
 // deferred are the eleven names the renderer calls on purpose and the backend deliberately does

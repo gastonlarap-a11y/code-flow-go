@@ -16,13 +16,18 @@ type Deps struct {
 	// Executable is this binary, which an AI run starts as the map's MCP server. Empty runs the AI
 	// without the map's tools; the map's facts still reach it on stdin.
 	Executable string
+	// OutputDir is where Archify documents and pages are written: the app's own data, never the
+	// repository.
+	OutputDir string
+	// Opener shows a rendered page. Nil writes it without opening it.
+	Opener FileOpener
 }
 
 // ErrUnknownSymbol is a flow or an impact asked of a name that is no symbol, or of one that names
 // several — the renderer always sends an ID, so either means the map moved under it.
 var ErrUnknownSymbol = errors.New("no single symbol has that name") //nolint:staticcheck // ST1005: shown to the user as a sentence
 
-// Register adds the code map's seven commands (CODEMAP-007 … CODEMAP-011, CODEMAP-014).
+// Register adds the code map's eight commands (CODEMAP-007 … CODEMAP-011, CODEMAP-014, CODEMAP-017).
 //
 // Every one takes the repository's folder as `rootPath`, like the diagram editor's: the map is of a
 // folder on this machine, whichever project it belongs to. Registered unconditionally — a start-up
@@ -118,6 +123,22 @@ func Register(r *bridge.Registry, deps Deps) {
 			return nil, bridge.MissingParameterError("rootPath")
 		}
 		return service.Ask(ctx, deps.AI, deps.Executable, AskRequest(request))
+	})
+
+	r.Add("codemap_archify", func(ctx context.Context, p bridge.Params) (any, error) {
+		rootPath, err := bridge.Arg[string](p, "rootPath")
+		if err != nil {
+			return nil, err
+		}
+		symbol, err := bridge.ArgOr(p, "symbol", "")
+		if err != nil {
+			return nil, err
+		}
+		language, err := bridge.ArgOr(p, "language", "")
+		if err != nil {
+			return nil, err
+		}
+		return service.Archify(ctx, deps.OutputDir, deps.Opener, ArchifyRequest{RootPath: rootPath, Symbol: symbol, Language: language})
 	})
 }
 

@@ -128,7 +128,7 @@ it is not where the code is.
 `Injected` lists the shell-supplied dependencies of the 2.x core; it was never part of the payload
 and in Go it is the feature package's `Deps` struct.
 
-### Where the 254 are registered
+### Where the 255 are registered
 
 Derived from the registry, not transcribed: every name below was found as a literal registration in
 exactly one non-test file under `backend/`, with zero ambiguity, and the total reconciles with
@@ -147,8 +147,8 @@ exactly one non-test file under `backend/`, with zero ambiguity, and the total r
 | `backend/dbml/commands.go` | 10 | `15-dbml.md` |
 | `backend/security/commands.go` | 10 | `10-security.md` |
 | `backend/apiclient/streamcommands.go` | 9 | `08-api-client.md` |
+| `backend/codemap/commands.go` | 8 | `18-code-map.md` |
 | `backend/review/commands.go` | 7 | `07-review-pipeline.md` |
-| `backend/codemap/commands.go` | 7 | `18-code-map.md` |
 | `backend/activity/commands.go` | 7 | `09-workspace-scoped.md` |
 | `backend/terminal/commands.go` | 4 | `11-files-search-terminal.md` |
 | `backend/update/commands.go` | 3 | `02-bootstrap-platform.md` |
@@ -157,12 +157,12 @@ exactly one non-test file under `backend/`, with zero ambiguity, and the total r
 | `backend/review/commands_publish.go` | 2 | `07-review-pipeline.md` |
 | `backend/platform/commands.go` | 1 | `02-bootstrap-platform.md` |
 | `backend/diagram/commands.go` | 1 | `16-diagrams.md` |
-| **registered** | **243** | |
+| **registered** | **244** | |
 | deferred — never registered, answer `unknown command` | 11 | `12-debugging.md`, `08-api-client.md` |
-| **called by the renderer** | **254** | |
+| **called by the renderer** | **255** | |
 
 **Some of these did not come from 2.x.** `diagram_list_documents` (`16-diagrams.md`),
-`usage_snapshot` (`17-usage.md`) and the seven `codemap_*` (`18-code-map.md`) are commands this
+`usage_snapshot` (`17-usage.md`) and the eight `codemap_*` (`18-code-map.md`) are commands this
 repository added on its own, after the port shipped; there is no C# file under any of them, and
 their rows carry no `<sub>` provenance because there is none to carry. `backend/app/contract_test.go` keeps the two groups apart in the same way:
 `portedCommandCount` is closed at 246 and `newSincePort` lists what came after.
@@ -490,7 +490,7 @@ No parameters at all: it measures this process and the agent transcripts under t
 and the renderer can name neither. One command rather than one per section, because the panel draws
 its four sections together and four round trips would let them disagree about what "now" means.
 
-### `backend/codemap/commands.go` — 7 commands → [18-code-map](18-code-map.md)
+### `backend/codemap/commands.go` — 8 commands → [18-code-map](18-code-map.md)
 <sub>2.x: none — this feature was written here, after the port.</sub>
 
 | Command | Caller parameters | Returns | Injected | TS wrapper |
@@ -502,6 +502,7 @@ its four sections together and four round trips would let them disagree about wh
 | `codemap_flow` | `rootPath: string, symbol: string, depth?: number, dataOnly?: boolean` | `Result&lt;CodemapFlow, string&gt;` | Service | `codemapFlow` |
 | `codemap_impact` | `rootPath: string, symbol: string, depth?: number` | `Result&lt;CodemapImpact, string&gt;` | Service | `codemapImpact` |
 | `codemap_ask` | `rootPath: string, question: string, symbol?: string, runId?: string, sessionId?: string, language?: string` | `Result&lt;CodemapAskAnswer, string&gt;` | Service, AI, Executable | `codemapAsk` |
+| `codemap_archify` | `rootPath: string, symbol?: string, language?: string` | `Result&lt;CodemapArchifyResult, string&gt;` | Service, OutputDir, Opener | `codemapArchify` |
 
 Live signatures, as the handlers read them. Each builds the repository's map on first use and
 answers from memory until a file changes, so they share one `Service` rather than each holding a

@@ -14,6 +14,7 @@ vi.mock("../../lib/ipc/commands", () => ({
   codemapFlow: vi.fn((_root: string, symbol: string) => Promise.resolve(flow(symbol))),
   codemapImpact: vi.fn((_root: string, symbol: string) => Promise.resolve(impact(symbol))),
   codemapAsk: vi.fn(() => Promise.resolve({ answer: "It **saves** one item, through `Save`.", session_id: "s1" })),
+  codemapArchify: vi.fn(() => Promise.resolve({ html_path: "/out/Save-flow.html", diagram_type: "sequence", report: "" })),
   cancelAiRun: vi.fn(() => Promise.resolve()),
 }));
 vi.mock("../../lib/ipc/events", () => ({
@@ -140,6 +141,34 @@ describe("CodemapView", () => {
     );
     expect(screen.getByText(t("codemap.ask.suggestHow"))).toBeTruthy();
     expect(screen.getByLabelText(t("codemap.ask.label"))).toBeTruthy();
+  });
+
+  it("offers Archify only when it is installed", async () => {
+    const user = userEvent.setup();
+    withProject("/repo");
+    const { unmount } = render(<CodemapView />);
+    await screen.findByText(t("codemap.hotspots"));
+    await user.click(screen.getByRole("button", { name: `${t("codemap.kind.func")} invoke` }));
+    await user.click(await screen.findByRole("tab", { name: t("codemap.tab.flow") }));
+    await screen.findByRole("tree");
+
+    expect(screen.queryByRole("button", { name: t("codemap.archify.flow") })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("codemap.archify.architecture") })).toBeNull();
+    unmount();
+
+    const base = overview();
+    api.codemapOverview.mockResolvedValueOnce({ ...base, status: { ...base.status, archify: "3.1.0" } });
+    useCodemapStore.getState().reset();
+    render(<CodemapView />);
+    await screen.findByText(t("codemap.hotspots"));
+    await user.click(screen.getByRole("button", { name: t("codemap.archify.architecture") }));
+    expect(api.codemapArchify).toHaveBeenLastCalledWith("/repo", { language: expect.any(String) });
+
+    await user.click(screen.getByRole("button", { name: `${t("codemap.kind.func")} invoke` }));
+    await user.click(await screen.findByRole("tab", { name: t("codemap.tab.flow") }));
+    await screen.findByRole("tree");
+    await user.click(screen.getByRole("button", { name: t("codemap.archify.flow") }));
+    expect(api.codemapArchify).toHaveBeenLastCalledWith("/repo", { symbol: "ts:src/api.ts#invoke", language: expect.any(String) });
   });
 
   it("goes back to the symbol it came from", async () => {

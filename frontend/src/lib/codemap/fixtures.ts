@@ -39,6 +39,7 @@ export function overview(overrides: Partial<CodemapOverview> = {}): CodemapOverv
       notes: [],
       built_at: "2026-10-14T12:00:00Z",
       duration_ms: 1800,
+      archify: "",
     },
     areas: [{ path: "src", lang: "ts", symbols: 58 }],
     services: [{ name: "Service", file: "shop/shop.go", methods: 4, called_by: 3 }],
