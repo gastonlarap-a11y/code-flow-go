@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import * as api from "../lib/ipc/commands";
+import { diagramName, flowToDiagram, type DiagramLabels } from "../lib/codemap/toDiagram";
+import { normalizeDocumentPath } from "../lib/documentPath";
 import { isCancellation, newRunId, useAiRunStore } from "./aiRunStore";
+import { DOCUMENT_EXTENSION, useDiagramStore } from "./diagramStore";
 import { pushErrorToast } from "./toastStore";
+import { useUiStore } from "./uiStore";
 import type {
   CodemapFlow,
   CodemapImpact,
@@ -31,6 +35,9 @@ export interface CodemapExchange {
 
 /** How many symbols the back button remembers. */
 const TRAIL_LIMIT = 50;
+
+/** How many `-2`, `-3`… a diagram's name is tried with before giving up. */
+const MAX_NAME_ATTEMPTS = 20;
 
 interface CodemapState {
   rootPath: string | null;
@@ -75,6 +82,18 @@ interface CodemapState {
   setDataOnly: (dataOnly: boolean) => Promise<void>;
   /** Asks the AI about the selected symbol (CODEMAP-014), in the interface's language. */
   ask: (question: string, language: string) => Promise<void>;
+  /**
+   * Writes the flow on screen as a `.mmd` diagram and opens it in the diagram editor (CODEMAP-016).
+   * Never overwrites: a name already taken gets `-2`, `-3`… Answers the path it wrote, or null.
+   */
+  drawFlow: (title: string, labels: DiagramLabels) => Promise<string | null>;
+  /** True while Archify renders a page. */
+  archifying: boolean;
+  /**
+   * Draws the selected symbol's flow — or, with `"architecture"`, the whole repository — with the
+   * user's Archify install, which the app then opens (CODEMAP-017). Answers the page's path, or null.
+   */
+  archify: (what: "flow" | "architecture", language: string) => Promise<string | null>;
   reset: () => void;
 }
 
@@ -100,6 +119,7 @@ const INITIAL = {
   exchanges: [] as CodemapExchange[],
   askRunId: null as string | null,
   askSession: "",
+  archifying: false,
 } satisfies Partial<CodemapState>;
 
 /** A counter per kind of request, so an answer can tell whether it is still the latest one. */
@@ -270,6 +290,49 @@ export const useCodemapStore = create<CodemapState>((set, get) => {
       } finally {
         useAiRunStore.getState().finish(runId);
         if (seq === askSeq) set({ askRunId: null });
+      }
+    },
+
+    drawFlow: async (title, labels) => {
+      const { rootPath, flow, detail } = get();
+      if (rootPath === null || flow === null || detail === null) return null;
+      const diagrams = useDiagramStore.getState();
+      // The editor checks a new name against the documents it knows; it has to know them first.
+      await diagrams.loadDocuments(rootPath);
+      const doc = flowToDiagram(flow, title, labels);
+      const base = diagramName(detail.symbol.name);
+      for (let attempt = 1; attempt <= MAX_NAME_ATTEMPTS; attempt++) {
+        const name = attempt === 1 ? base : `${base}-${attempt}`;
+        const outcome = await useDiagramStore.getState().createDocument(rootPath, name, doc);
+        if (outcome === "exists") continue;
+        if (outcome !== null) {
+          pushErrorToast(String(outcome));
+          return null;
+        }
+        const expected = normalizeDocumentPath(name, DOCUMENT_EXTENSION);
+        const written = useDiagramStore.getState().activePath;
+        // A failed write already said why; only a document that is now open was written.
+        if (!expected.ok || written !== expected.relPath) return null;
+        useDiagramStore.getState().openWhenShown(written);
+        useUiStore.getState().setActiveView("diagram");
+        return written;
+      }
+      return null;
+    },
+
+    archify: async (what, language) => {
+      const { rootPath, selected, archifying } = get();
+      if (rootPath === null || archifying || (what === "flow" && selected === null)) return null;
+      set({ archifying: true });
+      try {
+        const options = what === "flow" && selected !== null ? { symbol: selected, language } : { language };
+        const result = await api.codemapArchify(rootPath, options);
+        return result.html_path;
+      } catch (e) {
+        pushErrorToast(String(e));
+        return null;
+      } finally {
+        if (get().rootPath === rootPath) set({ archifying: false });
       }
     },
 

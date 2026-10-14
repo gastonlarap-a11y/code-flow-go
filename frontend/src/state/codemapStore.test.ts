@@ -18,6 +18,12 @@ vi.mock("../lib/ipc/commands", () => ({
   codemapFlow: vi.fn((_root: string, symbol: string) => Promise.resolve(flow(symbol))),
   codemapImpact: vi.fn((_root: string, symbol: string) => Promise.resolve(impact(symbol))),
   codemapAsk: vi.fn(() => Promise.resolve({ answer: "It saves an item.", session_id: "s1" })),
+  codemapArchify: vi.fn(() =>
+    Promise.resolve({ html_path: "/data/codemap/archify/repo/Save-flow.html", diagram_type: "sequence", report: "{}" }),
+  ),
+  diagramListDocuments: vi.fn(() => Promise.resolve<string[]>([])),
+  createFile: vi.fn(() => Promise.resolve(undefined)),
+  writeFileText: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 const toasts: string[] = [];
@@ -27,6 +33,14 @@ vi.mock("./toastStore", () => ({
 
 const api = vi.mocked(await import("../lib/ipc/commands"));
 const { useCodemapStore } = await import("./codemapStore");
+const { useDiagramStore } = await import("./diagramStore");
+const { useUiStore } = await import("./uiStore");
+
+const diagramLabels = {
+  lanes: { ts: "Frontend", go: "Go", sql: "Database" },
+  edge: (kind: string) => kind,
+  cut: (shown: number, total: number) => `${shown}/${total}`,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -197,6 +211,60 @@ describe("the code map's state", () => {
 
     expect(useCodemapStore.getState().exchanges).toEqual([]);
     expect(useCodemapStore.getState().askSession).toBe("");
+  });
+
+  test("a flow becomes a diagram the editor opens, and never overwrites one", async () => {
+    await useCodemapStore.getState().open("/repo");
+    await useCodemapStore.getState().select("go:app/shop.Save");
+    await useCodemapStore.getState().setTab("flow");
+    api.diagramListDocuments.mockResolvedValue(["codemap/Save-flow.mmd"]);
+
+    const written = await useCodemapStore.getState().drawFlow("Save — flow", diagramLabels);
+
+    expect(written).toBe("codemap/Save-flow-2.mmd");
+    expect(api.createFile).toHaveBeenCalledWith("/repo", "codemap/Save-flow-2.mmd");
+    const source = api.writeFileText.mock.calls[0]![2];
+    expect(source).toMatch(/^flowchart TD/);
+    expect(source).toContain('subgraph lane_go ["Go"]');
+    expect(useDiagramStore.getState().pendingOpen).toBe("codemap/Save-flow-2.mmd");
+    expect(useUiStore.getState().activeView).toBe("diagram");
+    api.diagramListDocuments.mockResolvedValue([]);
+  });
+
+  test("no flow on screen, no diagram", async () => {
+    await useCodemapStore.getState().open("/repo");
+    await useCodemapStore.getState().select("go:app/shop.Save");
+
+    expect(await useCodemapStore.getState().drawFlow("t", diagramLabels)).toBeNull();
+    expect(api.createFile).not.toHaveBeenCalled();
+  });
+
+  test("Archify draws the selected symbol's flow, or with no symbol the architecture", async () => {
+    await useCodemapStore.getState().open("/repo");
+    await useCodemapStore.getState().select("go:app/shop.Save");
+
+    expect(await useCodemapStore.getState().archify("flow", "es")).toBe("/data/codemap/archify/repo/Save-flow.html");
+    expect(api.codemapArchify).toHaveBeenLastCalledWith("/repo", { symbol: "go:app/shop.Save", language: "es" });
+    await useCodemapStore.getState().archify("architecture", "en");
+    expect(api.codemapArchify).toHaveBeenLastCalledWith("/repo", { language: "en" });
+    expect(useCodemapStore.getState().archifying).toBe(false);
+  });
+
+  test("an Archify failure is shown, and a second click while it renders is ignored", async () => {
+    await useCodemapStore.getState().open("/repo");
+    await useCodemapStore.getState().select("go:app/shop.Save");
+    const slow = deferred<{ html_path: string; diagram_type: "sequence"; report: string }>();
+    api.codemapArchify.mockReturnValueOnce(slow.promise);
+
+    const first = useCodemapStore.getState().archify("flow", "en");
+    expect(await useCodemapStore.getState().archify("flow", "en")).toBeNull();
+    slow.release({ html_path: "/a.html", diagram_type: "sequence", report: "" });
+    await first;
+    expect(api.codemapArchify).toHaveBeenCalledTimes(1);
+
+    api.codemapArchify.mockRejectedValueOnce(new Error("archify could not render the diagram: bad source"));
+    expect(await useCodemapStore.getState().archify("flow", "en")).toBeNull();
+    expect(toasts).toEqual(["Error: archify could not render the diagram: bad source"]);
   });
 
   test("switching repository forgets the previous one's answers", async () => {

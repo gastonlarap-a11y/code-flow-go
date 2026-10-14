@@ -17,12 +17,14 @@ time — a table name held in a variable — is recorded as *unresolved* and sho
 ## Scope
 
 - `backend/codemap/` — the scan, the Go and TypeScript halves, the SQL tables, the links across the
-  language boundary, the queries, the seven commands, asking the AI and the MCP server
+  language boundary, the queries, the eight commands, asking the AI, the MCP server and the Archify
+  export
 - `main.go` — only the `codemap-mcp` mode switch at the top of `main` (CODEMAP-015)
 - `backend/codemap/extract.mjs` — the TypeScript extractor, embedded in the binary and run by Node
 - `frontend/src/components/codemap/` — the «Code map» module's view
 - `frontend/src/state/codemapStore.ts` — what the view holds, and in what order answers are kept
-- `frontend/src/lib/codemap/` — the vocabulary the view shows for each kind of node and edge
+- `frontend/src/lib/codemap/` — the vocabulary the view shows for each kind of node and edge, and a
+  flow as a Mermaid diagram (CODEMAP-016)
 
 ---
 
@@ -242,7 +244,7 @@ most distinct callers.
 
 ### CODEMAP-012 Registered whether or not the database opened
 **Implementation**: `backend/codemap/commands.go` · `backend/app/registry.go`
-**Behaviour**: the seven commands are registered outside the storage stage, right after the AI
+**Behaviour**: the eight commands are registered outside the storage stage, right after the AI
 layer they ask through: the map reads a folder and runs the user's own toolchains, and needs no
 database and no credential. Every command takes the repository's folder as `rootPath`.
 **Inputs / outputs**: see `01-ipc-surface.md`.
@@ -274,7 +276,7 @@ doc — with three views:
 
 Every symbol in every list moves the map to it; every location opens its file at the line in the
 editor. A back button returns to the symbol before, fifty deep.
-**Inputs / outputs**: the seven commands, through `frontend/src/lib/ipc/commands.ts`;
+**Inputs / outputs**: the eight commands, through `frontend/src/lib/ipc/commands.ts`;
 `codemap:progress`, through `onCodemapProgress`.
 **Edge cases**: an answer is kept only if it is still the latest of its kind — a search answer per
 keystroke, a symbol per click, a tab per selection — so a slow answer to an earlier question never
@@ -328,6 +330,60 @@ precisely. Measured against Claude Code 2.1.299: the server connects, its five t
 `mcp__codemap__*`, and a model given only them answered a flow question by calling
 `codemap_search` and `codemap_flow`.
 **Frontend dependency**: none.
+**Markers**: none
+
+### CODEMAP-016 A flow as a diagram the editor opens
+**Implementation**: `frontend/src/lib/codemap/toDiagram.ts` · `frontend/src/state/codemapStore.ts`
+(`drawFlow`) · `frontend/src/state/diagramStore.ts` (`openWhenShown`)
+**Behaviour**: *Open as a diagram*, on the Flow tab, writes the flow on screen as a Mermaid
+flowchart into the repository's `codemap/` folder and opens it in the diagram editor (16-diagrams.md),
+where it is an ordinary `.mmd` document — edited, exported, committed or deleted like any other.
+There is one lane per language (TypeScript, Go, SQL) as `subgraph`s, and one row per level of the
+flow, shared by every lane: the symbols a step leads to sit side by side on the row below it, five
+to a row before the level wraps, so an arrow never runs behind a sibling and a fan never looks like a
+chain. Each arrow is labelled with how the step was reached; a reference or a dispatch is dotted and
+a crossing into Go is thick. The name is `codemap/<symbol>-flow.mmd`.
+**Inputs / outputs**: the flow already on screen (CODEMAP-009) → one new file, through the editor's
+own `create_file` + `write_file_text`.
+**Edge cases**: never overwrites — a name already taken is tried with `-2`, `-3`… up to `-20`. At most
+sixty symbols are drawn; a longer flow ends in a note saying how many steps of how many were drawn.
+The editor is told which document to open before it is shown, so the document is opened after the
+editor loads its list rather than racing it. Disabled while a flow has no steps.
+**Frontend dependency**: this is it.
+**Markers**: none
+
+### CODEMAP-017 The map drawn by Archify
+**Implementation**: `backend/codemap/archify.go` · `archify_cli.go` · `archify_export.go`
+**Behaviour**: when the user has [Archify](https://github.com/tt-a1i/archify) 3.1 or a later 3.x
+installed — `ARCHIFY_BIN`, or `archify/bin/archify.mjs` under `~/.claude/skills`, `~/.agents/skills`,
+`~/.codex/skills`, or the repository's `.claude/skills` / `.agents/skills` — the status names its
+version, and the view offers two more drawings:
+
+| offered | draws |
+|---|---|
+| *Architecture with Archify* (header) | an architecture diagram: the four busiest folders of each side, the database, and what joins them — calls into Go, tables written and read — counted from the map |
+| *Archify* (Flow tab) | the flow as a sequence diagram: a lifeline per TypeScript file, Go package and the database, an arrow each time the flow leaves one for another — an endpoint's key for a crossing into Go, a dashed arrow for a read |
+
+Positions, labels and citations come from the map, never from a model. The app writes the Archify
+document (`schema_version` 1) and runs `archify deliver <type> --quality standard --json`, which
+validates the document — including that every cited line exists in the pinned commit — before it
+renders the page; the app then opens the page with the system's default application. Both files go
+under the app's data folder (`codemap/archify/<repository>/`), never into the repository.
+**Inputs / outputs**: `codemap_archify(rootPath, symbol?, language?)` →
+`{ html_path, diagram_type, report }`, `report` being Archify's own JSON receipt. Refusals:
+`Archify is not installed`, `ErrNoSequence` (a flow that never leaves one file or package),
+`ErrUnknownSymbol`, Node not found, and Archify's own first complaint when it rejects the document.
+**Edge cases**: Archify reads committed blobs, so a file with uncommitted changes is never cited, and
+a diagram with no citation carries no repository (Archify rejects one with no sources). The origin is
+pinned as Archify's authoring rules say: an HTTP(S) origin loses its userinfo and keeps the rest, a
+GitHub, GitLab or Gitee SSH origin becomes the HTTPS address it matches, any other SSH origin stays
+as it is, and an origin that is a folder on disk pins nothing — that repository's diagrams cite
+nothing. Citations link to the host only when `HEAD` is on a remote branch of GitHub, GitLab or
+Gitee; otherwise `link_mode` is `local-only`. A sequence keeps at most seven lifelines and forty messages — Archify's
+own limits — and says in a card how many steps it left out. Archify runs with the app's
+`PATH`-only environment (SEC-007), so its update check is whatever the user configured.
+**Frontend dependency**: `codemapArchify`; the two buttons, shown only when
+`CodemapStatus.archify` is not empty.
 **Markers**: none
 
 ## Deliberately not in this version

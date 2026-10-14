@@ -314,3 +314,13 @@ test("a project switch drops everything", async () => {
   expect(state.dirty).toBe(false);
   expect(state.canUndo()).toBe(false);
 });
+
+// The code map writes a flow as a diagram and then switches to this view, which resets on mount:
+// the request must survive that reset, and be handed over exactly once.
+test("a document asked for from elsewhere survives the view's reset, once", () => {
+  useDiagramStore.getState().openWhenShown("codemap/Save-flow.mmd");
+  useDiagramStore.getState().reset();
+
+  expect(useDiagramStore.getState().takePendingOpen()).toBe("codemap/Save-flow.mmd");
+  expect(useDiagramStore.getState().takePendingOpen()).toBeNull();
+});

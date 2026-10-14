@@ -8,6 +8,7 @@ import type {
   AutoLinkResult,
   BranchInfo,
   ChatConversationSummary,
+  CodemapArchifyResult,
   CodemapAskAnswer,
   CodemapFlow,
   CodemapImpact,
@@ -878,6 +879,14 @@ export const codemapAsk = (request: {
   sessionId?: string;
   language?: string;
 }) => invoke<CodemapAskAnswer>("codemap_ask", request);
+
+/**
+ * Draws a symbol's flow as an Archify sequence — or, with no symbol, the repository's architecture —
+ * with the user's own Archify install, and opens the page (CODEMAP-017). Offered only when
+ * `CodemapStatus.archify` names an install.
+ */
+export const codemapArchify = (rootPath: string, options: { symbol?: string; language?: string } = {}) =>
+  invoke<CodemapArchifyResult>("codemap_archify", { rootPath, ...options });
 
 /**
  * Everything the usage indicator draws, in one answer (USAGE-001).

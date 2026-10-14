@@ -62,16 +62,34 @@ func schemaOnly(t *testing.T) string {
 	return root
 }
 
-func TestTheSevenCommandsAreRegistered(t *testing.T) {
+func TestTheEightCommandsAreRegistered(t *testing.T) {
 	registry := registryWith(t, codemap.NewService(noTools, nil))
 	for _, name := range []string{
 		"codemap_status", "codemap_overview", "codemap_search", "codemap_symbol", "codemap_flow", "codemap_impact",
-		"codemap_ask",
+		"codemap_ask", "codemap_archify",
 	} {
 		_, found := registry.Lookup(name)
 		assert.True(t, found, name)
 	}
-	assert.Equal(t, 7, registry.Len())
+	assert.Equal(t, 8, registry.Len())
+}
+
+// Without an Archify install the status says so, and the export refuses with the way to get one.
+func TestArchifyIsOfferedOnlyWhenInstalled(t *testing.T) {
+	t.Setenv("ARCHIFY_BIN", "")
+	t.Setenv("HOME", t.TempDir())
+	root := schemaOnly(t)
+	registry := registryWith(t, codemap.NewService(noTools, nil))
+
+	status, _, err := call(t, registry, "codemap_status", map[string]any{"rootPath": root})
+	require.NoError(t, err)
+	assert.Empty(t, status["archify"])
+
+	_, _, err = call(t, registry, "codemap_archify", map[string]any{"rootPath": root})
+	require.ErrorIs(t, err, codemap.ErrNoArchify)
+
+	_, _, err = call(t, registry, "codemap_archify", map[string]any{})
+	require.Error(t, err, "rootPath is required")
 }
 
 // A machine without the toolchains still answers: each language says what it is missing, and the

@@ -64,6 +64,12 @@ interface DiagramState {
   documentsLoading: boolean;
   docLoading: boolean;
   saving: boolean;
+  /**
+   * A document another module asked to show — the code map's flow, written as a diagram. The view
+   * starts over whenever it mounts, so a document opened before switching to it would be lost; this
+   * survives until the view has loaded the folder and opens it then.
+   */
+  pendingOpen: string | null;
 
   doc: () => DiagramDocument;
   /** Whether the canvas may be edited at all: only when the text says what the model says. */
@@ -87,6 +93,10 @@ interface DiagramState {
   undo: () => void;
   redo: () => void;
   reset: () => void;
+  /** Asks the view to open this document the next time it loads the folder. */
+  openWhenShown: (relPath: string) => void;
+  /** Hands over the pending document, once. */
+  takePendingOpen: () => string | null;
 }
 
 /** Why a file could not be opened, as a translation key the view can render. */
@@ -107,6 +117,7 @@ const INITIAL = {
   docLoading: false,
   saving: false,
   editable: false,
+  pendingOpen: null as string | null,
 };
 
 export const useDiagramStore = create<DiagramState>((set, get) => ({
@@ -279,5 +290,15 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     set({ history: next, source: emitMermaid(next.present), dirty: true, selection: NOTHING_SELECTED });
   },
 
-  reset: () => set({ ...INITIAL, history: forget(initialHistory(emptyDocument)) }),
+  // A reset keeps a pending document: the view resets on mount, and the request was made for that
+  // very mount to honour.
+  reset: () => set({ ...INITIAL, history: forget(initialHistory(emptyDocument)), pendingOpen: get().pendingOpen }),
+
+  openWhenShown: (relPath) => set({ pendingOpen: relPath }),
+
+  takePendingOpen: () => {
+    const pending = get().pendingOpen;
+    if (pending !== null) set({ pendingOpen: null });
+    return pending;
+  },
 }));

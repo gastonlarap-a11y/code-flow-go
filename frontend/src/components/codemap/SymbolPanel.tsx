@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -7,20 +7,23 @@ import {
   FlaskConical,
   GitFork,
   Layers,
+  Presentation,
   Route,
   Share2,
   Sparkles,
   TriangleAlert,
   Waypoints,
+  Workflow,
 } from "lucide-react";
+import { Button } from "../common/Button";
 import { Chip } from "../common/Chip";
 import { CollapsibleSection } from "../common/CollapsibleSection";
 import { IconButton } from "../common/IconButton";
 import { SkeletonRows } from "../common/Skeleton";
 import { Tabs, tabPanelProps, type TabOption } from "../common/Tabs";
 import { Checkbox } from "../common/Checkbox";
-import { KIND_ICONS, kindLabel, location } from "../../lib/codemap/labels";
-import { useT } from "../../state/languageStore";
+import { edgeLabel, KIND_ICONS, kindLabel, location, shortName } from "../../lib/codemap/labels";
+import { useLanguageStore, useT } from "../../state/languageStore";
 import { useCodemapStore, type CodemapTab } from "../../state/codemapStore";
 import { useUiStore } from "../../state/uiStore";
 import type { CodemapRelation, CodemapSymbolDetail } from "../../types/domain";
@@ -51,9 +54,29 @@ export function SymbolPanel({ detail }: { detail: CodemapSymbolDetail }) {
   const dataOnly = useCodemapStore((s) => s.dataOnly);
   const setDataOnly = useCodemapStore((s) => s.setDataOnly);
 
+  const drawFlowAction = useCodemapStore((s) => s.drawFlow);
+  const [drawing, setDrawing] = useState(false);
+  const archifyInstalled = useCodemapStore((s) => (s.overview?.status.archify ?? "") !== "");
+  const archify = useCodemapStore((s) => s.archify);
+  const archifying = useCodemapStore((s) => s.archifying);
+  const language = useLanguageStore((s) => s.language);
+
   const { symbol } = detail;
   const Icon = KIND_ICONS[symbol.kind];
   const onSelect = (id: string) => void select(id);
+
+  const drawFlow = async () => {
+    setDrawing(true);
+    try {
+      await drawFlowAction(t("codemap.diagram.title", { name: shortName(symbol.name) }), {
+        lanes: { ts: t("codemap.diagram.laneTs"), go: t("codemap.diagram.laneGo"), sql: t("codemap.diagram.laneSql") },
+        edge: (kind) => t(edgeLabel(kind)),
+        cut: (shown, total) => t("codemap.diagram.cut", { shown, total }),
+      });
+    } finally {
+      setDrawing(false);
+    }
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -90,10 +113,37 @@ export function SymbolPanel({ detail }: { detail: CodemapSymbolDetail }) {
           label={t("codemap.title")}
         />
         {tab === "flow" && (
-          <label className="flex cursor-pointer items-center gap-1.5 text-ui text-[var(--cf-text)]">
-            <Checkbox checked={dataOnly} onChange={(checked) => void setDataOnly(checked)} />
-            {t("codemap.dataOnly")}
-          </label>
+          <>
+            <label className="flex cursor-pointer items-center gap-1.5 text-ui text-[var(--cf-text)]">
+              <Checkbox checked={dataOnly} onChange={(checked) => void setDataOnly(checked)} />
+              {t("codemap.dataOnly")}
+            </label>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Workflow}
+              className="ml-auto"
+              disabled={!flow || loadingTab || flow.root.children.length === 0}
+              pending={drawing}
+              tooltip={t("codemap.diagram.hint")}
+              onClick={() => void drawFlow()}
+            >
+              {t("codemap.diagram.open")}
+            </Button>
+            {archifyInstalled && (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={Presentation}
+                disabled={!flow || loadingTab || flow.root.children.length === 0}
+                pending={archifying}
+                tooltip={t("codemap.archify.flowHint")}
+                onClick={() => void archify("flow", language)}
+              >
+                {t("codemap.archify.flow")}
+              </Button>
+            )}
+          </>
         )}
       </div>
 

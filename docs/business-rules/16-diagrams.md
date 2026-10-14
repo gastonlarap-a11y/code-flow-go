@@ -537,6 +537,20 @@ moving a file is `git mv`, and the schema designer wrote the decision down first
 than a tree: these are a handful of files, and the picker is not the feature"*. A second tree would
 compete with the one that exists.
 
+### DIAG-019 Another module can hand the editor a document to open
+**Implementation**: `frontend/src/state/diagramStore.ts` (`openWhenShown`, `takePendingOpen`) ·
+`frontend/src/components/diagram/DiagramView.tsx`
+**Behaviour**: a module that has just written a diagram — the code map's *Open as a diagram*
+(`18-code-map.md`, CODEMAP-016) — names it with `openWhenShown(path)` and switches to this module.
+When the editor next loads the project's documents it opens that one, once.
+**Inputs / outputs**: `pendingOpen: string | null` — set by `openWhenShown`, read and cleared by
+`takePendingOpen` after `loadDocuments`.
+**Edge cases**: `reset` keeps it — switching module resets the editor, and the switch is exactly
+what has to happen between naming the document and opening it. A document that can no longer be
+read fails like any other that cannot be opened — a toast — and the editor stays on its list.
+**Frontend dependency**: this is it.
+**Markers**: none
+
 ---
 
 ## Deliberately not in this version

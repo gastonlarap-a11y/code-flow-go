@@ -109,8 +109,13 @@ export function DiagramView() {
   // nothing when the last one is closed.
   useEffect(() => {
     reset();
-    if (rootPath !== null) void loadDocuments(rootPath);
-  }, [rootPath, loadDocuments, reset]);
+    if (rootPath === null) return;
+    void loadDocuments(rootPath).then(() => {
+      // A document another module wrote for this view to show (the code map's flow, CODEMAP-016).
+      const pending = useDiagramStore.getState().takePendingOpen();
+      if (pending !== null) void openDocument(rootPath, pending);
+    });
+  }, [rootPath, loadDocuments, openDocument, reset]);
 
   const saveNow = useCallback(() => {
     if (rootPath !== null) void save(rootPath);
