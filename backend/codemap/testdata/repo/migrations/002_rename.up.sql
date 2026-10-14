@@ -1,0 +1,2 @@
+ALTER TABLE carts_old RENAME TO carts;
+DROP TABLE IF EXISTS legacy;

@@ -1,0 +1,5 @@
+-- The first shape of the schema.
+CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+CREATE TABLE carts_old (id INTEGER PRIMARY KEY);
+CREATE TABLE legacy (id INTEGER PRIMARY KEY);
+CREATE TABLE customers (id INTEGER PRIMARY KEY);

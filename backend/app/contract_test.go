@@ -73,6 +73,15 @@ var newSincePort = []string{
 	// Arming the watcher that reopens the app after *Restart now* (BOOT-039). Its own command
 	// rather than part of the quit, so an ordinary quit does not bring the app back.
 	"update_relaunch",
+
+	// The code map (18-code-map.md). One command per question the panel asks — the status, the
+	// overview, a search, a symbol, a flow, an impact — each answered from one cached map.
+	"codemap_status",
+	"codemap_overview",
+	"codemap_search",
+	"codemap_symbol",
+	"codemap_flow",
+	"codemap_impact",
 }
 
 // deferred are the eleven names the renderer calls on purpose and the backend deliberately does
@@ -337,6 +346,7 @@ func TestADegradedStartUpKeepsWhatNeedsNoDatabase(t *testing.T) {
 	for _, name := range []string{
 		"reset_app_data", "has_github_token", "set_ado_pat",
 		"get_status", "get_working_diff", "list_branches", "commit", "stage_file",
+		"diagram_list_documents", "codemap_status", "codemap_flow",
 	} {
 		_, registered := registry.Lookup(name)
 		assert.True(t, registered, "%s needs no database and must survive a failed start-up", name)
