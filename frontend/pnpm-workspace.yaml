@@ -7,8 +7,9 @@ overrides:
   # dependency in package.json is already current. Monaco uses it to sanitize the markdown it
   # renders in hovers and suggestion details, which is content from the repository being edited,
   # so this is a real XSS surface inside the editor rather than a transitive-only concern
-  # (GHSA-cmwh-pvxp-8882). Same major line, so there is no API break to absorb.
-  dompurify: ^3.4.13
+  # (GHSA-cmwh-pvxp-8882; 3.4.16 for GHSA-p98j-92pf-mc4p and GHSA-6688-9rhm-gjv2, both IN_PLACE
+  # mode). Same major line, so there is no API break to absorb.
+  dompurify: ^3.4.16
 
 # pnpm refuses to run a dependency's install scripts unless it is approved here. That approval used
 # to live in `node_modules/.modules.yaml`, which is not version-controlled — so it survived only
