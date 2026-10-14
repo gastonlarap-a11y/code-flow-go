@@ -155,6 +155,7 @@ jobs:
       # node_modules installed, it is checked against both checker APIs over a fixture, with the
       # real go and node: this repository's TypeScript 7 (the native API) and TypeScript 6, the last
       # JavaScript compiler (the classic one). The backend job has no node_modules and skips it.
+      # TypeScript 6 comes from its own lockfile, integrity hash included, like every other package.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -163,10 +164,10 @@ jobs:
       - name: Code map against real TypeScript
         env:
           CODEMAP_REQUIRE_TYPESCRIPT: "1"
-          TS_CLASSIC_VERSION: "6.0.3"
+          TS_CLASSIC: backend/codemap/testdata/ts-classic
         run: |
-          npm install --no-save --prefix "$RUNNER_TEMP/ts-classic" "typescript@$TS_CLASSIC_VERSION"
-          CODEMAP_TYPESCRIPT="$RUNNER_TEMP/ts-classic/node_modules/typescript" \
+          npm ci --ignore-scripts --prefix "$TS_CLASSIC"
+          CODEMAP_TYPESCRIPT="$GITHUB_WORKSPACE/$TS_CLASSIC/node_modules/typescript" \
             go test -race -count=1 -run 'TestTheWholeRepositoryAcrossLanguages' ./backend/codemap/
 
   # The release page tells people to pipe scripts/install-macos.sh straight into a shell, so a bad
