@@ -4,6 +4,7 @@ import {
   GitBranch,
   History,
   Home,
+  Network,
   Send,
   SquareKanban,
   Workflow,
@@ -81,6 +82,9 @@ export const APP_MODULES = [
   // Diagrams are files in the folder too, for the same reason and with the same consequence: they
   // are versioned beside the code they describe.
   { id: "diagram", icon: Workflow, labelKey: "tabbar.diagram", scope: "repo" },
+  // The code map reads the folder's code, not its history: a plain directory maps as well as a
+  // repository does (18-code-map.md).
+  { id: "codemap", icon: Network, labelKey: "tabbar.codemap", scope: "repo" },
   { id: "workitems", icon: SquareKanban, labelKey: "tabbar.workitems", scope: "repo" },
   { id: "api", icon: Send, labelKey: "tabbar.api", scope: "workspace" },
 ] as const satisfies readonly AppModule[];

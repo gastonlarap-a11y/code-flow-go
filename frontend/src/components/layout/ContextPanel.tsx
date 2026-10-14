@@ -32,6 +32,9 @@ const MODULE_PANEL: Record<ModuleId, PanelId | null> = {
   // Same, and more so: the diagram editor already spends two columns of its own on the stencil
   // palette and what is selected.
   diagram: null,
+  // The code map carries its own search column, and its flows need the width the repo panel would
+  // take.
+  codemap: null,
   // Nothing to show beside a module that does not exist yet. The real one will want a list of work
   // items here, which is the whole reason the panel dispatches per module.
   workitems: null,
