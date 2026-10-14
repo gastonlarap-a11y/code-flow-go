@@ -487,7 +487,8 @@ has no 2.x signature to record, so it states the live one.
 | `usage_snapshot` | — | `Result&lt;UsageSnapshot, string&gt;` | Reader, Store, DB | `usageSnapshot` |
 
 No parameters at all: it measures this process and the agent transcripts under the user's own home,
-and the renderer can name neither.
+and the renderer can name neither. One command rather than one per section, because the panel draws
+its four sections together and four round trips would let them disagree about what "now" means.
 
 ### `backend/codemap/commands.go` — 6 commands → [18-code-map](18-code-map.md)
 <sub>2.x: none — this feature was written here, after the port.</sub>
@@ -503,8 +504,7 @@ and the renderer can name neither.
 
 Live signatures, as the handlers read them. Each builds the repository's map on first use and
 answers from memory until a file changes, so they share one `Service` rather than each holding a
-map. One command rather than one per section, because the panel draws
-its four sections together and four round trips would let them disagree about what "now" means.
+map.
 
 ### `backend/terminal/commands.go` — 4 commands → [11-files-search-terminal](11-files-search-terminal.md)
 <sub>2.x: `src/CodeFlow.App/Terminal/TerminalCommands.cs`</sub>
