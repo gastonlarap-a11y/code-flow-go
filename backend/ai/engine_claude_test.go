@@ -1,6 +1,7 @@
 package ai_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -37,6 +38,35 @@ func TestClaudePassesTheToolListTwice(t *testing.T) {
 
 	assert.Contains(t, args, "--tools Read,Grep,Glob")
 	assert.Contains(t, args, "--allowedTools Read,Grep,Glob")
+}
+
+// AI-047's three states. "None" used to send nothing at all, so a review below ultra, a link
+// review and the DBML assistant — all asking for no tools — ran with every default tool.
+func TestClaudeToolStates(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		mcp   string
+		want  []string // exact argv slice after --setting-sources user
+	}{
+		{"unset leaves the CLI defaults", nil, "", nil},
+		// --tools "" alone left the user's own MCP servers loaded: 47 connector tools, measured.
+		{"none disables every tool, ambient MCP servers too", []string{}, "", []string{"--tools", "", "--strict-mcp-config"}},
+		{"none keeps the run's own MCP config", []string{}, "/tmp/mcp.json", []string{"--tools", "", "--mcp-config", "/tmp/mcp.json", "--strict-mcp-config"}},
+		{"a list exists and runs without asking", []string{"Read", "Grep"}, "", []string{"--tools", "Read,Grep", "--allowedTools", "Read,Grep"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := ai.ClaudeCommands{}.BuildCommand(ai.Invocation{Prompt: "ask", AllowedTools: tt.tools, MCPConfig: tt.mcp})
+			i := slices.Index(args, "user")
+			require.GreaterOrEqual(t, i, 0)
+			got := args[i+1:]
+			if len(got) == 0 {
+				got = nil
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestClaudeOmitsEveryOptionalFlagWhenUnset(t *testing.T) {

@@ -234,8 +234,8 @@ func splitHostPath(remoteURL string) (host, path string, ok bool) {
 }
 
 func stripUser(host string) string {
-	if at := strings.LastIndex(host, "@"); at >= 0 {
-		return host[at+1:]
+	if _, afterUser, found := strings.CutLast(host, "@"); found {
+		return afterUser
 	}
 	return host
 }

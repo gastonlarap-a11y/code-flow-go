@@ -1462,12 +1462,25 @@ cannot recur silently. Found by CodeFlow reviewing its own pull request.
 | stored | `AiConfig.AllowedTools` | Claude Code receives |
 |---|---|---|
 | no row | `null`, unless the task is judging (then `["Read","Grep","Glob"]`) | no tool flags — the CLI's own defaults |
-| empty string (every checkbox cleared) | `[]` | `--tools ""`, the CLI's spelling of "disable all tools" |
+| empty string (every checkbox cleared) | `[]` | `--tools ""`, the CLI's spelling of "disable all tools", plus `--strict-mcp-config` when the run brings no MCP config of its own |
 | `"Read,Grep"` | `["Read","Grep"]` | `--tools Read,Grep --allowedTools Read,Grep` |
 
 The middle row is the one that changed: clearing the field was already *read* as "no tools" and had
 no way to be *sent* as one, so it silently became "unset". It is also what a review below `ultra`
 now asks for — see `REVIEW-039`.
+
+**Fixed after 3.8.1 — the Go engine had reopened the same gap.** `BuildCommand` tested only the
+list's length and `toolsFor` returned `[]` for an unset row, so "none" reached Claude Code as no
+flag at all: every review below `ultra`, every link review and the DBML assistant (`[]` by design)
+ran with the CLI's full default toolset. `backend/ai/engine_claude.go` now switches on the three
+states (nil · empty · list) and `backend/ai/routing.go` returns nil for unset; the empty list is the
+only spelling of "none".
+
+`--tools ""` alone is not "none" either: it removes the built-in set and leaves the user's own MCP
+servers loaded. Measured against Claude Code 2.1.299 on 2026-10-14, a run with it still listed 47
+tools — every one a claude.ai connector (Gmail, Google Calendar, Google Drive, Docs) — and listed 0
+once `--strict-mcp-config` was added. The empty state now sends both; a run that carries its own
+`--mcp-config` (a review with workspace MCPs) keeps that config, which is already strict.
 
 `--tools` and `--allowedTools` answer different questions and both are sent when there is a list:
 `--tools` is what exists for the run, `--allowedTools` is what runs without asking. Sending only the

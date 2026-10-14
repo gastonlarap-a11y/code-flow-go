@@ -93,6 +93,16 @@ func TestOnlyTheOuterFenceIsStripped(t *testing.T) {
 	assert.Contains(t, message, "After")
 }
 
+// A reply cut off before its closing fence keeps everything after the opening line.
+func TestAnUnclosedFenceLosesOnlyItsOpeningLine(t *testing.T) {
+	operations, _ := ollamaOperations(t, "```go\nfunc main() {}\n")
+
+	edited, err := operations.InlineEdit(t.Context(), "", "main.go", "file", "selection", "make it empty")
+
+	require.NoError(t, err)
+	assert.Equal(t, "func main() {}", edited)
+}
+
 func TestTextWithNoFenceIsUntouched(t *testing.T) {
 	operations, _ := ollamaOperations(t, "  plain answer  ")
 

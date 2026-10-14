@@ -142,12 +142,12 @@ func splitHostPort(value string, defaultPort int) (host string, port int, err er
 	if strings.Count(value, ":") > 1 {
 		return requireHost(value, defaultPort)
 	}
-	if colon := strings.LastIndex(value, ":"); colon >= 0 {
-		port, err = parsePort(value[colon+1:])
+	if host, rawPort, found := strings.CutLast(value, ":"); found {
+		port, err = parsePort(rawPort)
 		if err != nil {
 			return "", 0, err
 		}
-		return requireHost(value[:colon], port)
+		return requireHost(host, port)
 	}
 	return requireHost(value, defaultPort)
 }
