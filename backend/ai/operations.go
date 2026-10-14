@@ -329,9 +329,7 @@ func StripCodeFence(text string) string {
 		return trimmed
 	}
 
-	closing := strings.LastIndex(rest, "```")
-	if closing < 0 {
-		return strings.TrimSpace(rest)
-	}
-	return strings.TrimSpace(rest[:closing])
+	// Without a closing fence, before is the whole rest.
+	before, _, _ := strings.CutLast(rest, "```")
+	return strings.TrimSpace(before)
 }

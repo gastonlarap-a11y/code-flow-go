@@ -65,7 +65,8 @@ task dev              # hot reload (Go + Vite on 1420)
 task smoke            # the packaged binary's own environment probes
 ```
 
-Go needs `GOROOT`/`PATH` on 1.27.1; `task` sets the macOS deployment target for you.
+Go needs `GOROOT`/`PATH` on 1.27.2 (the `toolchain` line in `go.mod`, mirrored by `GO_VERSION` in both
+workflows — bump all three together); `task` sets the macOS deployment target for you.
 
 Two things that bite on a fresh machine: **`task` itself may not be installed** — `wails3` embeds the
 same runner, so `wails3 task check` runs the Taskfile as written. And **the `wails3` CLI must be the

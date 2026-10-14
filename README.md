@@ -104,7 +104,7 @@ same way. The release workflow smoke-tests it against every image it publishes.
 
 | | Version | Notes |
 |---|---|---|
-| Go | 1.27.1 | `mise use -g go@1.27.1` |
+| Go | 1.27.2 | `mise use -g go@1.27.2` |
 | wails3 CLI | the `github.com/wailsapp/wails/v3` version in `go.mod` | must match it exactly; the install line below reads it from there |
 | Node | 24 | |
 | pnpm | 11.20.0 | pinned by `frontend/package.json` |
@@ -113,9 +113,9 @@ same way. The release workflow smoke-tests it against every image it publishes.
 | Windows | 10 or 11 | needs the WebView2 runtime (preinstalled on 11) |
 
 ```sh
-mise use -g go@1.27.1
+mise use -g go@1.27.2
 go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 wails3 doctor          # must be clean before anything else
 pnpm -C frontend install --frozen-lockfile
 ```
