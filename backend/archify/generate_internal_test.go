@@ -154,7 +154,7 @@ func TestARunIsRefusedBeforeAnyModelIsAsked(t *testing.T) {
 	_, err = Refine(t.Context(), deps, RefineRequest{RootPath: t.TempDir(), Path: "a.archify.json", Instruction: "  "})
 	require.ErrorIs(t, err, ErrNoInstruction)
 
-	t.Setenv("HOME", t.TempDir())
+	setHome(t, t.TempDir())
 	t.Setenv("ARCHIFY_BIN", "")
 	deps.AI = &scriptedModel{}
 	_, err = Generate(t.Context(), deps, GenerateRequest{RootPath: t.TempDir(), Kind: "sequence"})
@@ -250,7 +250,7 @@ func TestARealArchifyRefusesAndThenAcceptsWhatTheModelDraws(t *testing.T) {
 	if script == "" || err != nil {
 		t.Skip("needs ARCHIFY_BIN and node")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setHome(t, t.TempDir())
 	rt := Runtime{Node: node, Path: filepath.SplitList(os.Getenv("PATH"))}
 	root := committedRepo(t, rt, map[string]string{
 		"web/checkout.ts": "export async function checkout() {\n  return fetch('/orders', { method: 'POST' })\n}\n",

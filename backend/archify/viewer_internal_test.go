@@ -129,7 +129,7 @@ func TestARealArchifyValidatesAndRendersAClassDiagram(t *testing.T) {
 	if script == "" || err != nil {
 		t.Skip("needs ARCHIFY_BIN and node")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setHome(t, t.TempDir())
 	cli, err := Find(t.TempDir())
 	require.NoError(t, err)
 	require.True(t, cli.has("class"))

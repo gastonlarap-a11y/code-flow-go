@@ -125,7 +125,7 @@ func TestARealArchifyAcceptsTheDiagramRoutedAlongTheGaps(t *testing.T) {
 	if script == "" || err != nil {
 		t.Skip("needs ARCHIFY_BIN and node")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setHome(t, t.TempDir())
 	rt := Runtime{Node: node, Path: filepath.SplitList(os.Getenv("PATH"))}
 	cli, err := Find(t.TempDir())
 	require.NoError(t, err)

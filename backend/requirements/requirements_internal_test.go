@@ -37,6 +37,14 @@ func TestNodeIsJudgedByWhatTheArchifyInstallerNeeds(t *testing.T) {
 	}
 }
 
+// setHome points the user's home folder at dir for the test: `HOME` where Go reads it, and
+// `USERPROFILE`, which is what os.UserHomeDir reads on Windows.
+func setHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
 // A fake program that prints a version, so the probe runs a real process.
 func fakeProgram(t *testing.T, name, output string) string {
 	t.Helper()
@@ -49,7 +57,7 @@ func fakeProgram(t *testing.T, name, output string) string {
 }
 
 func TestEveryToolIsReportedFoundOrNot(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // no real Archify interferes
+	setHome(t, t.TempDir()) // no real Archify interferes
 	t.Setenv("ARCHIFY_BIN", "")
 	programs := map[string]string{
 		Git:  fakeProgram(t, "git", "git version 2.50.1"),
@@ -71,7 +79,7 @@ func TestEveryToolIsReportedFoundOrNot(t *testing.T) {
 
 func TestAnArchifyTooOldIsInstalledButNotSupported(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("ARCHIFY_BIN", "")
 	install := filepath.Join(home, ".claude", "skills", "archify")
 	require.NoError(t, os.MkdirAll(filepath.Join(install, "bin"), 0o750))

@@ -170,7 +170,7 @@ func TestARealArchifyAcceptsTheClassDiagramsOfThisRepository(t *testing.T) {
 	if script == "" || err != nil {
 		t.Skip("needs ARCHIFY_BIN and node")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setHome(t, t.TempDir())
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	require.NoError(t, err)
 	rt := Runtime{Node: node, Path: filepath.SplitList(os.Getenv("PATH"))}
@@ -231,7 +231,7 @@ func TestARealArchifyAcceptsTheClassDiagramTheMapDraws(t *testing.T) {
 	if script == "" || err != nil {
 		t.Skip("needs ARCHIFY_BIN and node")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setHome(t, t.TempDir())
 	root := t.TempDir()
 	writeFile(t, root, "src/shop.ts", "export interface Shop { buy(): void }\nexport class Cart implements Shop { private items: Item[] = []; buy(): void {} }\nexport class Item {}\n")
 	built, err := BuildClassDiagram(snapshotOf(t, root), Repo{}, "src", "src — classes", func(d, _ int) string { return "drawn" }, "en")

@@ -56,6 +56,14 @@ func TestRemote(t *testing.T) {
 	}
 }
 
+// setHome points the user's home folder at dir for the test: `HOME` where Go reads it, and
+// `USERPROFILE`, which is what os.UserHomeDir reads on Windows.
+func setHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
 // fakeInstall lays out an install the way `npx skills add` does.
 func fakeInstall(t *testing.T, version string) string {
 	t.Helper()
@@ -70,7 +78,7 @@ func fakeInstall(t *testing.T, version string) string {
 }
 
 func TestOnlyASupportedArchifyIsOffered(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // no real install interferes
+	setHome(t, t.TempDir()) // no real install interferes
 
 	t.Setenv("ARCHIFY_BIN", fakeInstall(t, "3.1.0"))
 	cli, err := Find(t.TempDir())
@@ -96,7 +104,7 @@ func TestArchifyIsFoundWhereverTheSkillsCLIPutIt(t *testing.T) {
 	} {
 		t.Run(filepath.Join(dir...), func(t *testing.T) {
 			home := t.TempDir()
-			t.Setenv("HOME", home)
+			setHome(t, home)
 			install := filepath.Join(append(append([]string{home}, dir...), "archify")...)
 			require.NoError(t, os.MkdirAll(filepath.Join(install, "bin"), 0o750))
 			require.NoError(t, os.WriteFile(filepath.Join(install, "bin", "archify.mjs"), []byte("// archify"), 0o600))
@@ -108,7 +116,7 @@ func TestArchifyIsFoundWhereverTheSkillsCLIPutIt(t *testing.T) {
 		})
 	}
 
-	t.Setenv("HOME", t.TempDir())
+	setHome(t, t.TempDir())
 	root := t.TempDir()
 	install := filepath.Join(root, ".agents", "skills", "archify")
 	require.NoError(t, os.MkdirAll(filepath.Join(install, "bin"), 0o750))
