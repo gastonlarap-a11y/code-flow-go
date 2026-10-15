@@ -13,8 +13,15 @@ import tailwindcss from "@tailwindcss/vite";
  * renderer, which is the property the original policy was protecting.
  *
  * `'unsafe-eval'` stays for the API client's Postman-style scripts (`lib/api/sandbox.ts` builds a
- * `new Function`). Everything else is unchanged from 2.x.
+ * `new Function`).
+ *
+ * `frame-src` names one path and nothing else: the Archify pages the asset server serves for the
+ * in-app viewer (ARCHIFY-004, SEC rule in 10-security.md). By path rather than `'self'`, because a
+ * frame allowed the whole origin could be navigated to the runtime endpoint `/wails/runtime`, which
+ * takes a call in its query string. Everything else is unchanged from 2.x.
  */
+const ARCHIFY_VIEW = "/archify-view/";
+
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-eval'",
@@ -26,7 +33,7 @@ const CSP = [
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
-  "frame-src 'none'",
+  `frame-src wails://localhost${ARCHIFY_VIEW} http://wails.localhost${ARCHIFY_VIEW}`,
 ].join("; ");
 
 /**

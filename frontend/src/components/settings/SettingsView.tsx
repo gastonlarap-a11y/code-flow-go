@@ -7,6 +7,7 @@ import {
   GitBranch,
   Globe,
   Keyboard,
+  PackageCheck,
   PackagePlus,
   Palette,
   Plug,
@@ -26,6 +27,7 @@ import { McpSettings } from "./McpSettings";
 import { GitSettings } from "./GitSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
+import { RequirementsSettings } from "./RequirementsSettings";
 import { ApiSettingsBody } from "../api/ApiSettingsModal";
 import { ActivePill } from "../common/ActivePill";
 import { IconButton } from "../common/IconButton";
@@ -53,6 +55,9 @@ const GLOBAL_SECTIONS: { id: SettingsSectionId; labelKey: TranslationKey; icon: 
   { id: "integrations", labelKey: "settings.integrationsSection", icon: Blocks },
   { id: "claude", labelKey: "settings.aiSection", icon: Bot },
   { id: "api", labelKey: "api.settings.title", icon: Zap },
+  // Last of the global ones: read once on a new machine, then rarely — but always there to send a
+  // person to from a feature that needs something installed.
+  { id: "requirements", labelKey: "requirements.section", icon: PackageCheck },
 ];
 
 const WORKSPACE_SECTIONS: { id: SettingsSectionId; labelKey: TranslationKey; icon: typeof Palette }[] = [
@@ -204,6 +209,7 @@ export function SettingsView() {
               {section === "integrations" && <IntegrationsSettings />}
               {section === "claude" && <ClaudeSettings />}
               {section === "api" && <ApiSettingsBody />}
+              {section === "requirements" && <RequirementsSettings />}
               {section === "review" && <ReviewSettings />}
               {section === "sdd" && <SddSettings />}
               {section === "skills" && <SkillsSettings />}

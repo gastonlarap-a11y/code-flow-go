@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/x/xpty"
 
+	"github.com/gastonlarap-a11y/code-flow/backend/repomap"
 	"github.com/gastonlarap-a11y/code-flow/backend/shared/proc"
 	"github.com/gastonlarap-a11y/code-flow/backend/storage"
 )
@@ -69,13 +70,15 @@ func plural(n int, word string) string {
 	return word + "s"
 }
 
-// DefaultProbes are the three things the packaged binary must be able to do on the machine it was
-// installed on: run git, open its database, and allocate a pseudo-terminal.
+// DefaultProbes are the four things the packaged binary must be able to do on the machine it was
+// installed on: run git, open its database, allocate a pseudo-terminal, and parse code.
 //
-// The same three 2.x probed — SQLite, LibGit2Sharp and a PTY — with git standing in for libgit2,
-// which is the swap this port made. Each is stricter than "does the library load", on purpose:
-// loading proves nothing about a locked-down laptop, a read-only volume or an OS that refuses to
-// hand out a PTY, and those are the failures that turn into "the app opens and does nothing".
+// The first three are the ones 2.x probed — SQLite, LibGit2Sharp and a PTY — with git standing in
+// for libgit2, which is the swap this port made. Each is stricter than "does the library load", on
+// purpose: loading proves nothing about a locked-down laptop, a read-only volume or an OS that
+// refuses to hand out a PTY, and those are the failures that turn into "the app opens and does
+// nothing". The fourth came with the code map's drawn view (REPOMAP-003): its grammars are C linked
+// in through cgo, and a binary built without cgo would map every file and no declaration.
 //
 // This list is what `task smoke` runs and what the release workflow runs against each installer
 // before uploading it, so a probe missing here is a class of broken build that ships.
@@ -84,7 +87,17 @@ func DefaultProbes() []Probe {
 		{Name: "git", Run: probeGit},
 		{Name: "storage", Run: probeStorage},
 		{Name: "pty", Run: probePTY},
+		{Name: "parser", Run: probeParser},
 	}
+}
+
+// probeParser parses a snippet with the linked grammars.
+func probeParser(ctx context.Context) error {
+	_ = ctx // the parse is in memory and bounded; taken to match every other probe's signature
+	if err := repomap.ProbeParser(); err != nil {
+		return fmt.Errorf("parse code: %w", err)
+	}
+	return nil
 }
 
 // probeStorage opens a database and runs every migration against it.

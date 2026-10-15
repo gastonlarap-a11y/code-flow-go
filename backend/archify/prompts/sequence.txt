@@ -1,0 +1,11 @@
+The diagram is a sequence (`diagram_type: "sequence"`): one request followed through everything it
+touches, in the order it happens.
+- Participants are the files, classes, services or stores the request passes through, three to eight
+  of them, left to right in the order the request reaches them.
+- Messages are the calls, in order, six to twenty-four of them; label each with what is really
+  called — the route, the function, the query, the event — and add the reply where the code returns
+  something, with the return variant. A participant calling itself is a message to itself.
+- Use a note for the condition that changes the flow: a permission, a cache, a retry.
+- Follow one main request and its important branches, not every path through the code.
+- Every message needs a `y`: 160 for the first and 40 more for each one after it. Segments and
+  activations span those same `y` values.

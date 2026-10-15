@@ -33,6 +33,9 @@ import { exportDiagram, type ExportFormat } from "../../lib/diagram/exportFile";
 import type { StencilId } from "../../lib/diagram/stencils";
 import { apiPickFile, apiReadTextFile } from "../../lib/ipc/apiCommands";
 import type { DiagramDocument } from "../../lib/diagram/model";
+import { isArchifyDocument } from "../../lib/archify/documents";
+import { useArchifyStore } from "../../state/archifyStore";
+import { ArchifyActions, ArchifyPane } from "./ArchifyPane";
 import { DiagramCanvas, type DiagramCanvasHandle } from "./DiagramCanvas";
 import { DiagramInspector } from "./DiagramInspector";
 import { DiagramPalette } from "./DiagramPalette";
@@ -92,6 +95,12 @@ export function DiagramView() {
   const undo = useDiagramStore((s) => s.undo);
   const redo = useDiagramStore((s) => s.redo);
   const reset = useDiagramStore((s) => s.reset);
+  const closeDocument = useDiagramStore((s) => s.closeDocument);
+
+  // An Archify document is shown, not edited, by its own store (ARCHIFY-005).
+  const archifyPath = useArchifyStore((s) => s.path);
+  const openArchify = useArchifyStore((s) => s.open);
+  const closeArchify = useArchifyStore((s) => s.close);
 
   const textWidth = useLayoutStore((s) => s.sizes.dbmlEditorWidth);
   const setSize = useLayoutStore((s) => s.setSize);
@@ -109,13 +118,10 @@ export function DiagramView() {
   // nothing when the last one is closed.
   useEffect(() => {
     reset();
+    closeArchify();
     if (rootPath === null) return;
-    void loadDocuments(rootPath).then(() => {
-      // A document another module wrote for this view to show (the code map's flow, CODEMAP-016).
-      const pending = useDiagramStore.getState().takePendingOpen();
-      if (pending !== null) void openDocument(rootPath, pending);
-    });
-  }, [rootPath, loadDocuments, openDocument, reset]);
+    void loadDocuments(rootPath);
+  }, [rootPath, loadDocuments, reset, closeArchify]);
 
   const saveNow = useCallback(() => {
     if (rootPath !== null) void save(rootPath);
@@ -190,15 +196,36 @@ export function DiagramView() {
 
   const pickDocument = useCallback(
     async (relPath: string) => {
-      if (rootPath === null || relPath === activePath) return;
+      if (rootPath === null || relPath === (activePath ?? archifyPath)) return;
       if (dirty && !(await confirmAction(t("diagram.discardConfirm"), true, t("diagram.discard")))) {
         return;
       }
+      // Branched on the name before anything parses it: an Archify document is JSON, and the
+      // Mermaid parser would refuse it and close the editor on the way.
+      if (isArchifyDocument(relPath)) {
+        closeDocument();
+        await openArchify(rootPath, relPath);
+        return;
+      }
+      closeArchify();
       await openDocument(rootPath, relPath);
       requestAnimationFrame(() => canvasRef.current?.fit());
     },
-    [rootPath, activePath, dirty, openDocument, t],
+    [rootPath, activePath, archifyPath, dirty, openDocument, openArchify, closeArchify, closeDocument, t],
   );
+
+  // A document another module wrote for this view to show — the code map's flow (CODEMAP-016) or
+  // one of its Archify diagrams (ARCHIFY-005) — whether it arrives as the view mounts or while it is
+  // already mounted from an earlier visit. The list is read again so the picker names it, and it
+  // opens as a pick would: asking first when the open one has unsaved changes.
+  const pendingOpen = useDiagramStore((s) => s.pendingOpen);
+  useEffect(() => {
+    if (rootPath === null || pendingOpen === null) return;
+    void loadDocuments(rootPath).then(() => {
+      const pending = useDiagramStore.getState().takePendingOpen();
+      if (pending !== null) void pickDocument(pending);
+    });
+  }, [rootPath, pendingOpen, loadDocuments, pickDocument]);
 
   /**
    * Importing a `.diagram.json`.
@@ -266,7 +293,7 @@ export function DiagramView() {
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-2 border-b border-[var(--cf-border)] px-2 py-1.5">
         <Select
-          value={activePath ?? ""}
+          value={activePath ?? archifyPath ?? ""}
           ariaLabel={t("diagram.documentPicker")}
           size="sm"
           className="max-w-[280px]"
@@ -280,48 +307,60 @@ export function DiagramView() {
 
         <span className="mx-1 h-4 w-px bg-[var(--cf-border)]" aria-hidden="true" />
 
-        <IconButton label="diagram.undo" icon={Undo2} disabled={!canUndo} onClick={undo} />
-        <IconButton label="diagram.redo" icon={Redo2} disabled={!canRedo} onClick={redo} />
+        {archifyPath !== null ? (
+          <span className="ml-auto flex items-center gap-2">
+            <ArchifyActions />
+          </span>
+        ) : (
+          <>
+            <IconButton label="diagram.undo" icon={Undo2} disabled={!canUndo} onClick={undo} />
+            <IconButton label="diagram.redo" icon={Redo2} disabled={!canRedo} onClick={redo} />
 
-        <span className="mx-1 h-4 w-px bg-[var(--cf-border)]" aria-hidden="true" />
+            <span className="mx-1 h-4 w-px bg-[var(--cf-border)]" aria-hidden="true" />
 
-        <IconButton label="diagram.zoomOut" icon={ZoomOut} onClick={() => canvasRef.current?.zoomBy(1 / 1.2)} />
-        <IconButton label="diagram.zoomIn" icon={ZoomIn} onClick={() => canvasRef.current?.zoomBy(1.2)} />
-        <IconButton label="diagram.fit" icon={Maximize2} onClick={() => canvasRef.current?.fit()} />
+            <IconButton label="diagram.zoomOut" icon={ZoomOut} onClick={() => canvasRef.current?.zoomBy(1 / 1.2)} />
+            <IconButton label="diagram.zoomIn" icon={ZoomIn} onClick={() => canvasRef.current?.zoomBy(1.2)} />
+            <IconButton label="diagram.fit" icon={Maximize2} onClick={() => canvasRef.current?.fit()} />
 
-        <span className="ml-auto flex items-center gap-2">
-          {dropped > 0 && (
-            <span role="status" className="text-ui text-[var(--cf-warning)]">
-              {t("diagram.droppedShapes", { count: dropped })}
+            <span className="ml-auto flex items-center gap-2">
+              {dropped > 0 && (
+                <span role="status" className="text-ui text-[var(--cf-warning)]">
+                  {t("diagram.droppedShapes", { count: dropped })}
+                </span>
+              )}
+              {dirty && <span className="text-ui text-[var(--cf-text-muted)]">{t("diagram.unsaved")}</span>}
+
+              <Select
+                value=""
+                ariaLabel={t("diagram.export.action")}
+                size="sm"
+                placeholder={t("diagram.export.action")}
+                options={EXPORTS.map((entry) => ({ value: entry.value, label: t(entry.labelKey) }))}
+                disabled={activePath === null}
+                onChange={(value) => void exportAs(value as ExportFormat)}
+              />
+              <IconButton
+                label="diagram.toggleText"
+                icon={textCollapsed ? PanelRightOpen : PanelRightClose}
+                onClick={() => setTextCollapsed((open) => !open)}
+              />
+              <IconButton
+                label="diagram.save"
+                icon={Save}
+                disabled={!dirty || activePath === null}
+                pending={saving}
+                onClick={saveNow}
+              />
             </span>
-          )}
-          {dirty && <span className="text-ui text-[var(--cf-text-muted)]">{t("diagram.unsaved")}</span>}
-
-          <Select
-            value=""
-            ariaLabel={t("diagram.export.action")}
-            size="sm"
-            placeholder={t("diagram.export.action")}
-            options={EXPORTS.map((entry) => ({ value: entry.value, label: t(entry.labelKey) }))}
-            disabled={activePath === null}
-            onChange={(value) => void exportAs(value as ExportFormat)}
-          />
-          <IconButton
-            label="diagram.toggleText"
-            icon={textCollapsed ? PanelRightOpen : PanelRightClose}
-            onClick={() => setTextCollapsed((open) => !open)}
-          />
-          <IconButton
-            label="diagram.save"
-            icon={Save}
-            disabled={!dirty || activePath === null}
-            pending={saving}
-            onClick={saveNow}
-          />
-        </span>
+          </>
+        )}
       </header>
 
-      {activePath === null ? (
+      {archifyPath !== null ? (
+        <div className="min-h-0 flex-1">
+          <ArchifyPane />
+        </div>
+      ) : activePath === null ? (
         <EmptyState
           icon={Download}
           title={t("diagram.noDocumentOpen")}

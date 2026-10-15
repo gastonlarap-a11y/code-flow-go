@@ -55,14 +55,17 @@ func TestListDocumentsFindsOnlyDiagrams(t *testing.T) {
 
 	write(t, root, "checkout.mmd")
 	write(t, root, "flows", "onboarding.mmd")
+	write(t, root, "codemap", "shop-class.archify.json")
 	write(t, root, "package.json")
+	write(t, root, "n8n.workflow.json")
 	write(t, root, "schema.dbml")
 	write(t, root, "node_modules", "ignored.mmd")
 
 	found, err := diagram.ListDocuments(t.Context(), root)
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"checkout.mmd", "flows/onboarding.mmd"}, found)
+	assert.Equal(t, []string{"checkout.mmd", "codemap/shop-class.archify.json", "flows/onboarding.mmd"}, found,
+		"Archify documents by their one suffix, never any JSON that merely names a diagram type")
 }
 
 // The shape the renderer receives, asserted through the bridge rather than through the Go

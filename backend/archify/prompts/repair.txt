@@ -1,0 +1,2 @@
+Archify refused the document you answered. Its problems are listed below. Answer the whole document
+again with every problem fixed and nothing else changed — JSON only, no prose, no fence.

@@ -62,7 +62,8 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          # ≥ v2.14.0: built on x/tools 0.50, which reads go1.27.2's export data (v5).
+          # ≥ v2.14.0: built on x/tools 0.50, which reads go1.27.2's export data (v5). The
+          # Taskfile's GOLANGCI_LINT_VERSION mirrors it, so `task check` lints as CI does.
           version: v2.14.0
 
       - name: Test
@@ -192,7 +193,7 @@ jobs:
       - name: Shellcheck
         run: |
           shellcheck --version
-          shellcheck scripts/*.sh
+          shellcheck scripts/*.sh .github/scripts/*.sh
 
   # The workflows themselves: the release job holds `contents: write` and runs every build script
   # the repository has, so an injectable expression or a persisted token there is a way to publish
@@ -252,12 +253,24 @@ jobs:
       # The flags of `task build` that decide what ships (BOOT-040), so the probes below run against
       # the same kind of binary a user gets: a production build, and a GUI program on Windows —
       # whose output still reaches this step because bash hands it a pipe, not a console.
+      # And the flags of `task build` that decide what it links: cgo on, stated, so a runner whose C
+      # compiler went missing fails here rather than ship a build without the tree-sitter grammars;
+      # on Windows the C runtime linked statically.
       - name: Build the application
         shell: bash
+        env:
+          CGO_ENABLED: "1"
         run: |
           gui=""
-          if [ "$RUNNER_OS" = "Windows" ]; then gui="-H windowsgui "; fi
+          if [ "$RUNNER_OS" = "Windows" ]; then gui="-H windowsgui -extldflags=-static "; fi
           go build -trimpath -mod=readonly -tags production -ldflags "${gui}-X main.version=0.0.0-ci" -o bin/CodeFlow .
+
+      # A Windows build that needs a MinGW DLL starts on the runner, which has MinGW, and fails on a
+      # user's machine, which does not — so the imports are read, not the build trusted.
+      - name: Check the Windows build needs no MinGW DLL
+        if: runner.os == 'Windows'
+        shell: bash
+        run: ./.github/scripts/check-windows-dlls.sh bin/CodeFlow
 
       # The environment probes, run on the binary that was just produced rather than on the source.
       # This is what catches "it compiles but git is not reachable from a packaged build".

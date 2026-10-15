@@ -11,15 +11,16 @@ import (
 // renderer's own settings screen re-reads the same keys to mirror this cascade. The two have to
 // agree on every name or the UI shows a provider the backend does not use.
 
-// Task is one of the ten things an engine can be asked to do.
+// Task is one of the eleven things an engine can be asked to do.
 //
 // Each selects a provider **and** a model independently, which is the point: one repository can
 // draft commits on a local model, review pull requests on the largest one available, and fix
 // findings through a third engine entirely.
 type Task string
 
-// The ten task keys, VERBATIM — they are the `{task}` in `ai_provider_{task}` and
-// `{provider}_{task}_model`, so a typo here silently orphans a user's saved setting.
+// The eleven task keys, VERBATIM — they are the `{task}` in `ai_provider_{task}` and
+// `{provider}_{task}_model`, so a typo here silently orphans a user's saved setting. `diagram` is
+// the first written here rather than ported: the code map's AI diagrams (ARCHIFY-001).
 const (
 	TaskCommit        Task = "commit"
 	TaskAnalyze       Task = "analyze"
@@ -31,13 +32,14 @@ const (
 	TaskInline        Task = "inline"
 	TaskTicketReview  Task = "ticket_review"
 	TaskDBML          Task = "dbml"
+	TaskDiagram       Task = "diagram"
 )
 
 // AllTasks is every key, for the test that pins them and for anything enumerating the settings
 // screen's rows.
 var AllTasks = []Task{
 	TaskCommit, TaskAnalyze, TaskReview, TaskPRDescription, TaskChat,
-	TaskFix, TaskConflict, TaskInline, TaskTicketReview, TaskDBML,
+	TaskFix, TaskConflict, TaskInline, TaskTicketReview, TaskDBML, TaskDiagram,
 }
 
 // DefaultProvider is where every unset or unrecognised provider lands (AI-001).

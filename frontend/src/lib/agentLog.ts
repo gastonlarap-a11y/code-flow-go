@@ -10,7 +10,9 @@
  * verdict that's about to be rendered as the answer itself) are pure noise in a live log.
  */
 
-/** Fields that usually hold the interesting argument of a tool call, in order of preference. */
+/** Fields that usually hold the interesting argument of a tool call, in order of preference.
+ * `backend/ai/logview.go` keeps the same keys when it reduces an event before sending it (AI-012):
+ * a key added here and not there arrives already dropped. */
 const TOOL_ARG_KEYS = ["file_path", "path", "notebook_path", "command", "pattern", "url", "query", "prompt"];
 
 const MAX_TEXT = 160;

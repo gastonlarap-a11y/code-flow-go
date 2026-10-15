@@ -3,6 +3,9 @@ bin/
 build/bin/
 dist-installers/
 
+# Tools the Taskfile installs for itself (`go:lint:tool`)
+.tools/
+
 # The renderer is built into frontend/dist and embedded with go:embed.
 #
 # The directory is ignored, but `.gitkeep` is committed: `//go:embed all:frontend/dist` fails to

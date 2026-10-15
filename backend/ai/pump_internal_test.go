@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -36,14 +37,47 @@ func TestACharacterSplitAcrossReadsSurvives(t *testing.T) {
 	assert.Equal(t, text, string(collected))
 }
 
-// A progress bar never emits a newline, so without the forced flush the log stays empty for the
-// whole download and then arrives at once — while the buffer grows without bound.
-func TestAPendingLineIsFlushedPastTheThreshold(t *testing.T) {
-	long := strings.Repeat("=", maxPendingBytes+100)
+// A progress bar never emits a newline. It is shown as a terminal shows it — its latest drawing,
+// every so often — rather than as kilobytes of every drawing run together, and the buffer stays one
+// drawing long.
+func TestAProgressBarShowsItsLatestDrawing(t *testing.T) {
+	var bar strings.Builder
+	for i := range 2000 {
+		fmt.Fprintf(&bar, "\rdownloading %3d%%", i%101)
+	}
 
-	lines, _ := collectLines(t, strings.NewReader(long))
+	lines, collected := collectLines(t, strings.NewReader(bar.String()))
 
 	require.NotEmpty(t, lines, "a CLI redrawing a progress bar must not go unreported")
+	for _, line := range lines {
+		assert.Regexp(t, `^downloading +\d+%$`, line, "one drawing per line, never several run together")
+	}
+	assert.Equal(t, bar.String(), string(collected), "the interpreter still gets every byte")
+}
+
+// Within a complete line, what follows the last carriage return is what a terminal shows.
+func TestALineRedrawnBeforeItsNewlineShowsItsLastDrawing(t *testing.T) {
+	lines, _ := collectLines(t, strings.NewReader("10%\r50%\r100%\ndone\n"))
+
+	assert.Equal(t, []string{"100%", "done"}, lines)
+}
+
+// A Windows line ending split across two reads ends a line; it redraws nothing.
+func TestACRLFSplitAcrossReadsEndsALine(t *testing.T) {
+	lines, _ := collectLines(t, iotest.OneByteReader(strings.NewReader("first\r\nsecond\r\n")))
+
+	assert.Equal(t, []string{"first", "second"}, lines)
+}
+
+// A JSON event holding a whole file is one long line. It reaches the log whole, reduced to what
+// the log shows, instead of being cut into pieces nobody can parse.
+func TestALongJSONEventReachesTheLogWhole(t *testing.T) {
+	event := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"src/app.ts","content":"` +
+		strings.Repeat("x", 200_000) + `"}}]}}` + "\n"
+
+	lines, _ := collectLines(t, iotest.HalfReader(strings.NewReader(event)))
+
+	assert.Equal(t, []string{`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"src/app.ts"}}]}}`}, lines)
 }
 
 // A CLI that exits without a trailing newline would otherwise lose its last line, which is often

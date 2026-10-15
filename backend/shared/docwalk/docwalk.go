@@ -18,6 +18,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -43,12 +44,19 @@ var prunedDirectories = map[string]bool{
 	".gradle": true, ".idea": true, ".vs": true, "Pods": true, "DerivedData": true,
 }
 
-// List walks rootPath for files whose name ends in suffix, case-insensitively.
+// Pruned says whether a directory of this name is never worth reading, for another walk of a user's
+// folder that has no repository to ask either (the code map's file index outside git).
+func Pruned(name string) bool {
+	return prunedDirectories[name]
+}
+
+// List walks rootPath for files whose name ends in any of suffixes, case-insensitively.
 //
 // A suffix rather than an extension, because `filepath.Ext("flow.diagram.json")` is `.json` — which
-// would list every JSON file in the tree. Callers pass the suffix in lower case; the comparison
-// folds the file name, not the suffix.
-func List(ctx context.Context, rootPath, suffix string) ([]string, error) {
+// would list every JSON file in the tree. Callers pass the suffixes in lower case; the comparison
+// folds the file name, not the suffix. The diagram editor passes two: its Mermaid files and the
+// Archify documents it shows (ARCHIFY-005).
+func List(ctx context.Context, rootPath string, suffixes ...string) ([]string, error) {
 	root := strings.TrimSpace(rootPath)
 	if root == "" {
 		return nil, ErrNoFolder(rootPath)
@@ -76,7 +84,8 @@ func List(ctx context.Context, rootPath, suffix string) ([]string, error) {
 		if entry.IsDir() {
 			return pruneOrDescend(root, path, entry)
 		}
-		if !strings.HasSuffix(strings.ToLower(entry.Name()), suffix) {
+		name := strings.ToLower(entry.Name())
+		if !slices.ContainsFunc(suffixes, func(suffix string) bool { return strings.HasSuffix(name, suffix) }) {
 			return nil
 		}
 

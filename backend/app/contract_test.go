@@ -86,6 +86,33 @@ var newSincePort = []string{
 	"codemap_ask",
 	// Drawing a flow or the overview with the user's own Archify install (CODEMAP-017).
 	"codemap_archify",
+
+	// The code map's drawn view (19-repo-map.md): the project and a folder as cards joined by their
+	// imports, a file's outline, a name's declarations, its uses, and what is used most — every one
+	// answered from one per-repository index, kept on disk between runs.
+	"repomap_project",
+	"repomap_folder",
+	"repomap_file",
+	"repomap_search",
+	"repomap_usages",
+	"repomap_most_used",
+
+	// Archify documents in the app (20-archify-diagrams.md): what the user's install can draw, a
+	// document rendered for the in-app viewer, and that page opened in the browser.
+	"archify_status",
+	"archify_render",
+	"archify_open_external",
+	// A class diagram drawn from the map's index rather than asked of a model (ARCHIFY-006).
+	"archify_class_diagram",
+	// Diagrams a model draws by reading the repository, a change asked of one, and the topics the
+	// map suggests for them (ARCHIFY-007 … ARCHIFY-009).
+	"archify_generate",
+	"archify_refine",
+	"archify_suggestions",
+
+	// What the features need installed and the app does not ship: found or not, which version, and
+	// whether it will do (21-requirements.md).
+	"requirements_status",
 }
 
 // deferred are the eleven names the renderer calls on purpose and the backend deliberately does

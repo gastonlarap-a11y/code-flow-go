@@ -508,6 +508,52 @@ Live signatures, as the handlers read them. Each builds the repository's map on 
 answers from memory until a file changes, so they share one `Service` rather than each holding a
 map.
 
+### `backend/repomap/commands.go` — 6 commands → [19-repo-map](19-repo-map.md)
+<sub>2.x: none — this feature was written here, after the port.</sub>
+
+| Command | Caller parameters | Returns | Injected | TS wrapper |
+|---|---|---|---|---|
+| `repomap_project` | `rootPath: string` | `Result&lt;RepoMapView, string&gt;` | Service | `repomapProject` |
+| `repomap_folder` | `rootPath: string, focus?: string` | `Result&lt;RepoMapView, string&gt;` | Service | `repomapFolder` |
+| `repomap_file` | `rootPath: string, path: string` | `Result&lt;RepoMapFileDetail \| null, string&gt;` | Service | `repomapFile` |
+| `repomap_search` | `rootPath: string, query: string` | `Result&lt;Vec&lt;RepoMapDeclHit&gt;, string&gt;` | Service | `repomapSearch` |
+| `repomap_usages` | `rootPath: string, name: string, path?: string` | `Result&lt;RepoMapUsageReport, string&gt;` | Service | `repomapUsages` |
+| `repomap_most_used` | `rootPath: string` | `Result&lt;Vec&lt;RepoMapDeclHit&gt;, string&gt;` | Service | `repomapMostUsed` |
+
+One index per repository, shared by the six: the first call reads every code file, later ones only
+what changed, and the index is kept on disk between runs. None needs the database, so all six
+survive a failed storage stage.
+
+### `backend/archify/commands.go` — Archify documents → [20-archify-diagrams](20-archify-diagrams.md)
+<sub>2.x: none — this feature was written here, after the port.</sub>
+
+| Command | Caller parameters | Returns | Injected | TS wrapper |
+|---|---|---|---|---|
+| `archify_status` | `rootPath: string` | `Result&lt;ArchifyStatus, string&gt;` | — | `archifyStatus` |
+| `archify_render` | `rootPath: string, path: string` | `Result&lt;ArchifyRendered, string&gt;` | Runtime, ViewDir | `archifyRender` |
+| `archify_open_external` | `htmlPath: string` | `Result&lt;(), string&gt;` | ViewDir, Opener | `archifyOpenExternal` |
+| `archify_class_diagram` | `rootPath: string, scope: string, language: string` | `Result&lt;ArchifyClassDiagram, string&gt;` | Maps, Runtime | `archifyClassDiagram` |
+| `archify_generate` | `rootPath: string, kind: ArchifyAiKind, topic: string, runId: string, language: string` | `Result&lt;ArchifyDrawn, string&gt;` | AI, Maps, MCPConfig, Runtime | `archifyGenerate` |
+| `archify_refine` | `rootPath: string, path: string, instruction: string, runId: string, language: string` | `Result&lt;ArchifyDrawn, string&gt;` | AI, MCPConfig, Runtime | `archifyRefine` |
+| `archify_suggestions` | `rootPath: string, kind: ArchifyAiKind` | `Result&lt;Vec&lt;ArchifySuggestion&gt;, string&gt;` | Maps | `archifySuggestions` |
+
+The user's own Archify install draws the documents; nothing of Archify ships with the app. A rendered
+page lives in the app's data folder and is served to the in-app viewer by the asset server (SEC-015).
+None of the seven writes into the repository: the renderer saves what `archify_class_diagram`,
+`archify_generate` and `archify_refine` answer, so a refused document is never written. The two AI
+commands run the `diagram` task, held to reading (ARCHIFY-001), and are stopped by their `runId`.
+
+### `backend/requirements/commands.go` — what the features need installed → [21-requirements](21-requirements.md)
+<sub>2.x: none — this feature was written here, after the port.</sub>
+
+| Command | Caller parameters | Returns | Injected | TS wrapper |
+|---|---|---|---|---|
+| `requirements_status` | `rootPath?: string` | `Result&lt;Vec&lt;RequirementTool&gt;, string&gt;` | Finder | `requirementsStatus` |
+
+Git, Node.js, Go and Archify, in that order, each found or not, with the version it printed and
+whether that version will do. The AI engines are not here: `check_ai_provider` already answers them.
+No database: it survives a failed storage stage.
+
 ### `backend/terminal/commands.go` — 4 commands → [11-files-search-terminal](11-files-search-terminal.md)
 <sub>2.x: `src/CodeFlow.App/Terminal/TerminalCommands.cs`</sub>
 

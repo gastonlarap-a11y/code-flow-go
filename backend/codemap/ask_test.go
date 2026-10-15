@@ -16,6 +16,7 @@ import (
 
 	"github.com/gastonlarap-a11y/code-flow/backend/ai"
 	"github.com/gastonlarap-a11y/code-flow/backend/codemap"
+	"github.com/gastonlarap-a11y/code-flow/backend/repomap"
 )
 
 // fakeAI records what the code map hands the AI layer, and what the MCP configuration said while
@@ -126,7 +127,7 @@ func TestTheAskCommandIsRegisteredAndBindsItsParameters(t *testing.T) {
 func TestTheMCPServerAnswersFromTheMap(t *testing.T) {
 	root := schemaOnly(t)
 	ctx := t.Context()
-	server := codemap.NewMCPServer(ctx, codemap.NewService(noTools, nil), root, "test")
+	server := codemap.NewMCPServer(ctx, codemap.NewService(noTools, nil), repomap.NewReadOnlyService(t.TempDir()), root, "test")
 	serverSide, clientSide := mcp.NewInMemoryTransports()
 	_, err := server.Connect(ctx, serverSide, nil)
 	require.NoError(t, err)
@@ -141,7 +142,10 @@ func TestTheMCPServerAnswersFromTheMap(t *testing.T) {
 		names = append(names, tool.Name)
 		assert.True(t, tool.Annotations.ReadOnlyHint, "%s must be read-only", tool.Name)
 	}
-	assert.ElementsMatch(t, []string{"codemap_overview", "codemap_search", "codemap_symbol", "codemap_flow", "codemap_impact"}, names)
+	assert.ElementsMatch(t, []string{
+		"codemap_overview", "codemap_search", "codemap_symbol", "codemap_flow", "codemap_impact",
+		"codemap_files", "codemap_outline", "codemap_declarations", "codemap_name_usages",
+	}, names)
 
 	text := func(name string, args map[string]any) (string, bool) {
 		t.Helper()
@@ -169,11 +173,20 @@ func TestTheMCPServerAnswersFromTheMap(t *testing.T) {
 	missing, failed := text("codemap_flow", map[string]any{"name": "nothing"})
 	assert.True(t, failed, "an unknown symbol is an error the model can read")
 	assert.Contains(t, missing, "no single symbol has that name")
+
+	// The file index's tools, from the same server.
+	files, failed := text("codemap_files", nil)
+	assert.False(t, failed)
+	assert.Contains(t, files, "Repository map:")
+	outline, _ := text("codemap_outline", map[string]any{"path": "nowhere.ts"})
+	assert.Contains(t, outline, "is not in the map")
+	declared, _ := text("codemap_declarations", map[string]any{"query": "nothing"})
+	assert.Contains(t, declared, "Nothing is declared")
 }
 
 func TestRunMCPWantsARoot(t *testing.T) {
 	var stderr bytes.Buffer
-	code := codemap.RunMCP(t.Context(), nil, "test", io.NopCloser(strings.NewReader("")), nopWriteCloser{io.Discard}, &stderr)
+	code := codemap.RunMCP(t.Context(), nil, "test", nil, io.NopCloser(strings.NewReader("")), nopWriteCloser{io.Discard}, &stderr)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr.String(), "usage: codemap-mcp --root")
 }

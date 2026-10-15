@@ -5,6 +5,9 @@ import { check, getVersion, relaunch, type Update } from "../lib/bridge/updater"
  * tighter than this is just traffic against GitHub for no gain. */
 export const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
+/** A build's version as the linker left it when nobody stamped one: `0.0.0`, or `0.0.0-ci`. */
+export const isUnstampedVersion = (version: string): boolean => /^0\.0\.0(?:[-+].*)?$/.test(version);
+
 export type UpdateStatus =
   | "idle"
   | "checking"
@@ -76,6 +79,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     // one would throw away the progress the user is watching. StrictMode's double-invoke and
     // an impatient double-click both land on the "checking" guard.
     if (status === "checking" || status === "downloading" || status === "ready") return;
+    // An unstamped build — `0.0.0`, built from source rather than released — is no installed
+    // release to update: every release reads as newer, and installing one would put an older
+    // build over the one being tested. Only a check someone asks for runs there.
+    if (!manual && isUnstampedVersion(get().currentVersion || (await getVersion().catch(() => "")))) return;
 
     set({ status: "checking", error: manual ? "" : get().error });
     try {

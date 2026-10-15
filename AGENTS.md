@@ -20,7 +20,14 @@ the release's own digest and hands over.
 of these: a canvas for process flows and use cases whose documents are **Mermaid `flowchart` files**,
 `*.mmd`, readable by any Mermaid viewer and by a model. It owns the one command this repository
 invented, `diagram_list_documents`, which is why `backend/app/contract_test.go` now separates
-`portedCommandCount` — closed history — from `newSincePort`.
+`portedCommandCount` — closed history — from `newSincePort`. The code map came next, with two
+indexes: `backend/codemap/` type-checks Go and TypeScript into a symbol graph (`18-code-map.md`),
+and `backend/repomap/` reads any repository file by file through tree-sitter grammars linked with
+cgo (`19-repo-map.md`). Its diagrams are Archify documents in the repository (`backend/archify/`,
+`20-archify-diagrams.md`) — a class diagram from the index, and five kinds an AI draws read-only —
+drawn by the user's own Archify and framed in the app from one path, `/archify-view/` (SEC-015).
+What those features need installed — git, Node.js, Go, Archify, an AI engine — the app lists itself
+under Settings → Requirements (`backend/requirements/`, `21-requirements.md`), and never installs.
 
 **What the migration still owes, and what it does not.** Two of Phase 9's steps need a person at
 each of the two operating systems and block nothing: the manual acceptance checklists, and the half
@@ -42,6 +49,8 @@ its name to `newSincePort`.
 | `backend/bridge/` | The one bound method: `Service.Invoke(method, params)` → command registry |
 | `backend/desktop/` | **The only package that imports Wails**: window, tray, menu, quit, dialogs |
 | `backend/<feature>/` | One package per feature; each exposes `Register(r, deps)` |
+| `backend/repomap/` | The file index: tree-sitter under `//go:build cgo`, its own queries in `queries/`; a `!cgo` build maps files without declarations, and `--smoke-test`'s `parser` probe says which this binary is |
+| `backend/archify/` | The user's Archify: finding, validating, rendering, the viewer middleware `main.go` mounts, the class diagram and the AI's diagrams with their prompts in `prompts/` |
 | `backend/shared/` | `proc` (child processes), `safego` (goroutines), `sentinel` (error prefixes), `docwalk` (finding a folder's documents) |
 | `frontend/` | The React 19 renderer, copied from 2.x and grown since; reaches Go only through `src/lib/bridge/host.ts` |
 | `docs/business-rules/` | The specification: every command, the 14 events, the storage schema |
@@ -66,7 +75,9 @@ task smoke            # the packaged binary's own environment probes
 ```
 
 Go needs `GOROOT`/`PATH` on 1.27.2 (the `toolchain` line in `go.mod`, mirrored by `GO_VERSION` in both
-workflows — bump all three together); `task` sets the macOS deployment target for you.
+workflows — bump all three together); `task` sets the macOS deployment target for you. The linter is
+pinned the same way — `GOLANGCI_LINT_VERSION` in the Taskfile mirrors `ci.yml` — and `task go:check`
+installs it into `.tools/` once, so whichever golangci-lint is on `PATH` does not matter.
 
 Two things that bite on a fresh machine: **`task` itself may not be installed** — `wails3` embeds the
 same runner, so `wails3 task check` runs the Taskfile as written. And **the `wails3` CLI must be the

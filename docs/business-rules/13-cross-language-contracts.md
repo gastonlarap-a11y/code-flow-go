@@ -191,12 +191,13 @@ it is not a duplicated literal, but it is a downstream dependency on the untagge
 
 ### XLANG-004 The AI task keys and the settings-key templates
 **Implementation**: `src/CodeFlow.App/Ai/AiRouting.cs` (`Tasks`) · `backend/ai/routing.go` · `frontend/src/lib/aiTasks.ts`, whose own comment says "Must match the sidecar's `AiTask` keys — these strings are the contract"
-**Behaviour**: Ten task keys form the settings namespace for per-task AI routing. The
+**Behaviour**: Eleven task keys form the settings namespace for per-task AI routing. The
 frontend declares them independently and its own comment states they "must match the sidecar's
-`AiTask` keys".
+`AiTask` keys". `diagram` was added after the port (AI-057, `20-archify-diagrams.md`); it has no
+C# counterpart, and `frontend/src/lib/aiTasks.test.ts` pins the frontend half of the list.
 
 `
-chat  commit  analyze  review  pr_description  fix  conflict  inline  ticket_review  dbml
+chat  commit  analyze  review  pr_description  fix  conflict  inline  ticket_review  dbml  diagram
 `
 
 `AiRoutingTests.The_ten_task_keys_are_verbatim` spells the list out rather than reading it from the
@@ -642,6 +643,25 @@ key renders "undefined". Every field is therefore a value with no `omitempty`.
 either side becomes a missing translation rather than a compile error, and a field renamed on the Go
 side compiles and arrives as `undefined`. Pinned by `TestTheAvailabilityCrossesInTheRenderersShape`
 and `TestAnUnavailableAnswerCarriesWhyAndTheRunningVersion`.
+
+### XLANG-020 What of an AI event the log keeps
+**Implementation**: `backend/ai/logview.go` (`logView`, `logToolArgKeys`) · `frontend/src/lib/agentLog.ts`
+(`formatAgentLogLine`, `TOOL_ARG_KEYS`)
+**Behaviour**: written here, after 3.9.0 (AI-012). The backend reduces each `stream-json` event to
+the fields the renderer's formatter reads before it sends the line: an `assistant` event's `text`
+parts and each `tool_use` part's `name` with the first of eight argument keys, and a `system` `init`
+event's `model`. The eight keys are the formatter's, in its order:
+
+`
+file_path  path  notebook_path  command  pattern  url  query  prompt
+`
+
+**Edge cases**: a key the renderer starts reading that the backend does not keep would arrive
+already dropped, the tool call showing its name alone — so the Go test reads `TOOL_ARG_KEYS` out of
+`agentLog.ts` and fails on any difference.
+**Markers**: `VERBATIM` (the event `type`s `assistant` and `system`, the subtype `init`, and the
+eight keys). Pinned by `TestTheKeptArgumentKeysAreTheRenderersOwn` and
+`TestTheLogKeepsWhatItShowsOfAnEvent`.
 
 ---
 

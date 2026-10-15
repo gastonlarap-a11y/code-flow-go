@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/gastonlarap-a11y/code-flow/backend/archify"
 )
 
 // The map as Archify diagrams (CODEMAP-017): an architecture overview and a flow's sequence, as
@@ -26,13 +28,13 @@ const (
 var ErrNoSequence = errors.New("this flow stays inside one file or package, so there is no sequence to draw") //nolint:staticcheck // ST1005: shown to the user as a sentence
 
 type archifyMeta struct {
-	Title          string             `json:"title"`
-	Subtitle       string             `json:"subtitle,omitempty"`
-	Output         string             `json:"output"`
-	Locale         string             `json:"locale,omitempty"`
-	QualityProfile string             `json:"quality_profile,omitempty"`
-	Repository     *archifyRepository `json:"repository,omitempty"`
-	Legend         *archifyLegend     `json:"legend,omitempty"`
+	Title          string              `json:"title"`
+	Subtitle       string              `json:"subtitle,omitempty"`
+	Output         string              `json:"output"`
+	Locale         string              `json:"locale,omitempty"`
+	QualityProfile string              `json:"quality_profile,omitempty"`
+	Repository     *archify.Repository `json:"repository,omitempty"`
+	Legend         *archifyLegend      `json:"legend,omitempty"`
 }
 
 type archifyLegend struct {
@@ -41,19 +43,6 @@ type archifyLegend struct {
 
 type archifyLegendEntry struct {
 	Label string `json:"label"`
-}
-
-type archifyRepository struct {
-	URL      string `json:"url"`
-	Provider string `json:"provider,omitempty"`
-	LinkMode string `json:"link_mode,omitempty"`
-	Revision string `json:"revision"`
-}
-
-type archifySource struct {
-	Path    string `json:"path"`
-	Line    int    `json:"line,omitempty"`
-	EndLine int    `json:"end_line,omitempty"`
 }
 
 type archifyCard struct {
@@ -73,13 +62,13 @@ type archifyArchitectureDoc struct {
 }
 
 type archifyComponent struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
-	Label    string          `json:"label"`
-	Sublabel string          `json:"sublabel,omitempty"`
-	Sources  []archifySource `json:"sources,omitempty"`
-	Pos      [2]float64      `json:"pos"`
-	Size     [2]float64      `json:"size"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Label    string           `json:"label"`
+	Sublabel string           `json:"sublabel,omitempty"`
+	Sources  []archify.Source `json:"sources,omitempty"`
+	Pos      [2]float64       `json:"pos"`
+	Size     [2]float64       `json:"size"`
 }
 
 type archifyBoundary struct {
@@ -106,11 +95,11 @@ type archifySequenceDoc struct {
 }
 
 type archifyParticipant struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
-	Label    string          `json:"label"`
-	Sublabel string          `json:"sublabel,omitempty"`
-	Sources  []archifySource `json:"sources,omitempty"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Label    string           `json:"label"`
+	Sublabel string           `json:"sublabel,omitempty"`
+	Sources  []archify.Source `json:"sources,omitempty"`
 }
 
 type archifyMessage struct {
@@ -205,7 +194,7 @@ func laneOf(s SymbolRef, words archifyWords) lane {
 // archifySequenceOf draws a flow as a sequence: an arrow each time the flow leaves one file or
 // package for another, a dashed one for a table read. A hop through an endpoint is one arrow,
 // labelled with the endpoint's key, from the caller to the package of the handler.
-func archifySequenceOf(f Flow, repo archifyRepo, output, language string) (archifySequenceDoc, error) {
+func archifySequenceOf(f Flow, repo archify.Repo, output, language string) (archifySequenceDoc, error) {
 	words, locale := wordsFor(language)
 	b := &sequenceBuilder{repo: repo, words: words, ids: archifyIDs{}, lanes: map[string]int{}, y: firstMessageY}
 	b.walk(f.Root, laneOf(f.Root.Symbol, words))
@@ -215,7 +204,7 @@ func archifySequenceOf(f Flow, repo archifyRepo, output, language string) (archi
 
 	cited := false
 	for i := range b.participants {
-		b.participants[i].Sources = repo.cite(b.sources[i])
+		b.participants[i].Sources = cite(repo, b.sources[i])
 		cited = cited || len(b.participants[i].Sources) > 0
 	}
 	doc := archifySequenceDoc{
@@ -226,7 +215,7 @@ func archifySequenceOf(f Flow, repo archifyRepo, output, language string) (archi
 			Output:         output,
 			Locale:         locale,
 			QualityProfile: "standard",
-			Repository:     repo.pinned(cited),
+			Repository:     repo.Pinned(cited),
 			Legend: &archifyLegend{Entries: map[string]archifyLegendEntry{
 				"emphasis": {Label: words.legendCross},
 				"default":  {Label: words.legendCall},
@@ -243,7 +232,7 @@ func archifySequenceOf(f Flow, repo archifyRepo, output, language string) (archi
 }
 
 type sequenceBuilder struct {
-	repo         archifyRepo
+	repo         archify.Repo
 	words        archifyWords
 	ids          archifyIDs
 	participants []archifyParticipant
@@ -349,7 +338,7 @@ const (
 	citationCandidates = 10
 )
 
-func archifyArchitectureOf(g *Graph, overview Overview, repo archifyRepo, output, language string) archifyArchitectureDoc {
+func archifyArchitectureOf(g *Graph, overview Overview, repo archify.Repo, output, language string) archifyArchitectureDoc {
 	words, locale := wordsFor(language)
 	ids := archifyIDs{}
 
@@ -497,7 +486,7 @@ func archifyArchitectureOf(g *Graph, overview Overview, repo archifyRepo, output
 		for _, n := range nodes[:min(len(nodes), citationCandidates)] {
 			refs = append(refs, ref(n))
 		}
-		components[i].Sources = repo.cite(refs)
+		components[i].Sources = cite(repo, refs)
 		cited = cited || len(components[i].Sources) > 0
 	}
 	boundaries := make([]archifyBoundary, 0, 2)
@@ -522,7 +511,7 @@ func archifyArchitectureOf(g *Graph, overview Overview, repo archifyRepo, output
 			Output:         output,
 			Locale:         locale,
 			QualityProfile: "standard",
-			Repository:     repo.pinned(cited),
+			Repository:     repo.Pinned(cited),
 		},
 		Components:  components,
 		Boundaries:  boundaries,

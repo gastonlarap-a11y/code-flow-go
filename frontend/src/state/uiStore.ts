@@ -25,7 +25,9 @@ export type SettingsSectionId =
   | "sdd"
   | "skills"
   | "mcps"
-  | "api";
+  | "api"
+  // What the features need installed, and how to get it (REQ-003).
+  | "requirements";
 
 /**
  * Which group the command bar lists.

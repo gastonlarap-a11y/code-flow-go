@@ -41,6 +41,10 @@ vars:
   # build/config.yml and frontend/package.json to agree with it.
   VERSION: '{{.VERSION | default "0.0.0"}}'
   MACOS_MIN: "26.0"
+  # The linter CI runs — ci.yml's golangci-lint `version:`; bump both together. Installed into
+  # .tools/ by `go:lint:tool` rather than taken from PATH (see there).
+  GOLANGCI_LINT_VERSION: v2.14.0
+  GOLANGCI_LINT: '{{.ROOT_DIR}}/.tools/golangci-lint{{.EXE}}'
 
 env:
   VITE_PORT: 1420
@@ -93,7 +97,8 @@ tasks:
     desc: Vet, lint and test the Go code.
     cmds:
       - go vet ./...
-      - golangci-lint run
+      - task: go:lint:tool
+      - '"{{.GOLANGCI_LINT}}" run'
       - task: go:lint:other-platform
       - go test -race -count=1 ./...
       - task: go:no-bare-goroutines
@@ -106,6 +111,19 @@ tasks:
     # GOVULNCHECK_VERSION.
     cmds:
       - go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  go:lint:tool:
+    desc: Install CI's golangci-lint into .tools/, once per version and Go toolchain.
+    # Not the one on PATH: a version manager keeps whichever golangci-lint it built last, with the Go
+    # it had then, and one built before go1.27.2 cannot read this module's export data — the check
+    # then fails on the linter rather than on the code. Not `go run …@version` either, the way
+    # govulncheck runs: `go:lint:other-platform` sets GOOS=windows, which would build the linter
+    # itself for Windows. One binary, built for the host by the module's own toolchain, serves both.
+    run: once
+    status:
+      - '"{{.GOLANGCI_LINT}}" version | grep -qF "has version {{trimPrefix "v" .GOLANGCI_LINT_VERSION}} built with $(go env GOVERSION) "'
+    cmds:
+      - GOBIN="{{.ROOT_DIR}}/.tools" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
 
   go:lint:other-platform:
     desc: Lint the build-tagged files the host platform never compiles.
@@ -121,12 +139,13 @@ tasks:
     # framework through cgo, so type-checking it from Windows fails on the binding rather than on
     # anything here. A developer on Windows loses nothing — CI's macOS job lints those files
     # natively, which is the stronger check.
+    deps: [go:lint:tool]
     cmds:
       - cmd: |
           if [ "$(go env GOOS)" = "windows" ]; then
             echo "skipped: linting darwin from Windows needs a macOS C toolchain for the keychain binding"
           else
-            GOOS=windows GOARCH=amd64 golangci-lint run
+            GOOS=windows GOARCH=amd64 "{{.GOLANGCI_LINT}}" run
           fi
 
   go:no-bare-goroutines:
@@ -166,10 +185,18 @@ tasks:
     # use and this hand-written one once did not (BOOT-040): without the tag the shipped app had the
     # web inspector on and loaded its renderer from FRONTEND_DEVSERVER_URL when that was set;
     # without the flag Windows opened a console window beside it.
+    #
+    # `CGO_ENABLED=1` is stated rather than left to Go's default, which turns cgo off when no C
+    # compiler is on PATH: the build would still succeed, without the tree-sitter grammars, and the
+    # map would read no declaration (REPOMAP-003). Stated, a missing compiler fails here instead.
+    # On Windows the C runtime is linked statically (`-extldflags=-static`), so the .exe needs no
+    # MinGW DLL beside it on a machine that has no MinGW.
+    env:
+      CGO_ENABLED: "1"
     cmds:
       - go build -trimpath -mod=readonly -tags production -ldflags "-s -w {{.GUI_LDFLAGS}}-X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}}{{.EXE}} .
     vars:
-      GUI_LDFLAGS: '{{if eq OS "windows"}}-H windowsgui {{end}}'
+      GUI_LDFLAGS: '{{if eq OS "windows"}}-H windowsgui -extldflags=-static {{end}}'
 
   dev:
     desc: Run the app with hot reload (Go rebuild + Vite on 1420).
@@ -295,11 +322,11 @@ tasks:
       - go run ./tools/inventory {{.CLI_ARGS}}
 
   scripts:check:
-    desc: Shellcheck the distribution scripts.
+    desc: Shellcheck the distribution scripts and the ones CI runs.
     # scripts/install-macos.sh is what the release page tells people to pipe into a shell, which
     # makes an unquoted expansion in it a user's problem rather than a maintainer's.
     cmds:
-      - shellcheck scripts/*.sh
+      - shellcheck scripts/*.sh .github/scripts/*.sh
 
   check:
     desc: Everything the CI gate runs.

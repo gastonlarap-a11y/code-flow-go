@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/gastonlarap-a11y/code-flow/backend/archify"
 )
 
 // Exporting a flow or the overview to Archify (CODEMAP-017).
@@ -46,12 +48,12 @@ func slug(name string) string {
 // Archify draws the request with the user's Archify install, writing the document and the page
 // under outputDir — never into the repository — and opens the page when an opener is given.
 func (s *Service) Archify(ctx context.Context, outputDir string, opener FileOpener, request ArchifyRequest) (ArchifyResult, error) {
-	tools := s.tools()
+	runtime := runtimeOf(s.tools())
 	root, err := resolveRoot(request.RootPath)
 	if err != nil {
 		return ArchifyResult{}, err
 	}
-	cli, err := findArchify(root)
+	cli, err := archify.Find(root)
 	if err != nil {
 		return ArchifyResult{}, err
 	}
@@ -60,7 +62,7 @@ func (s *Service) Archify(ctx context.Context, outputDir string, opener FileOpen
 		return ArchifyResult{}, err
 	}
 
-	repo := readArchifyRepo(ctx, tools, root)
+	repo := archify.ReadRepo(ctx, runtime, root)
 	dir := filepath.Join(outputDir, slug(filepath.Base(root)))
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return ArchifyResult{}, fmt.Errorf("creating %s: %w", dir, err)
@@ -70,7 +72,7 @@ func (s *Service) Archify(ctx context.Context, outputDir string, opener FileOpen
 		document    any
 		diagramType string
 		name        string
-		pinned      *archifyRepository
+		pinned      *archify.Repository
 	)
 	if strings.TrimSpace(request.Symbol) == "" {
 		name, diagramType = "architecture", ArchifyArchitecture
@@ -103,7 +105,7 @@ func (s *Service) Archify(ctx context.Context, outputDir string, opener FileOpen
 	if pinned != nil {
 		repoRoot = root
 	}
-	report, err := cli.render(ctx, tools, diagramType, dir, name+".json", name+".html", repoRoot)
+	report, err := cli.Deliver(ctx, runtime, diagramType, dir, name+".json", name+".html", repoRoot)
 	if err != nil {
 		return ArchifyResult{}, err
 	}

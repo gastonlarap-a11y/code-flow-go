@@ -16,6 +16,14 @@ vi.mock("../../lib/ipc/commands", () => ({
   codemapAsk: vi.fn(() => Promise.resolve({ answer: "It **saves** one item, through `Save`.", session_id: "s1" })),
   codemapArchify: vi.fn(() => Promise.resolve({ html_path: "/out/Save-flow.html", diagram_type: "sequence", report: "" })),
   cancelAiRun: vi.fn(() => Promise.resolve()),
+  repomapProject: vi.fn(() =>
+    Promise.resolve({
+      graph: { focus: "", nodes: [], edges: [], files: 0, declarations: 0, languages: [] },
+      build: { files: 0, parsed: 0, millis: 1, grammars: true, truncated: 0, git: true },
+    }),
+  ),
+  repomapFolder: vi.fn(),
+  repomapMostUsed: vi.fn(() => Promise.resolve([])),
 }));
 vi.mock("../../lib/ipc/events", () => ({
   onCodemapProgress: vi.fn(() => Promise.resolve(() => {})),
@@ -43,6 +51,8 @@ function withProject(path: string | null) {
 beforeEach(() => {
   vi.clearAllMocks();
   useCodemapStore.getState().reset();
+  // These cases are about the symbol view; the drawn map, where the module opens, has its own.
+  useCodemapStore.setState({ mode: "symbols" });
   useUiStore.setState({ activeView: "codemap", pendingEditorPath: null, pendingEditorLine: null });
 });
 
@@ -57,6 +67,20 @@ describe("CodemapView", () => {
 
     expect(screen.getByText(t("codemap.noProject"))).toBeTruthy();
     expect(api.codemapOverview).not.toHaveBeenCalled();
+  });
+
+  it("opens on the drawn map, which needs no toolchain, and builds the symbols only when asked", async () => {
+    withProject("/repo");
+    useCodemapStore.setState({ mode: "map" });
+    render(<CodemapView />);
+
+    expect(await screen.findByText(t("codemap.map.empty"))).toBeTruthy();
+    expect(api.repomapProject).toHaveBeenCalledWith("/repo");
+    expect(api.codemapOverview).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("tab", { name: t("codemap.view.symbols") }));
+    expect(await screen.findByText(t("codemap.hotspots"))).toBeTruthy();
+    expect(api.codemapOverview).toHaveBeenCalledWith("/repo");
   });
 
   it("builds the map and shows where to start", async () => {

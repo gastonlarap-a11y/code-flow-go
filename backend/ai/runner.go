@@ -35,6 +35,10 @@ type Invocation struct {
 	// ReadOnly marks a run that cannot have written anything, which is what makes it safe to
 	// repeat after a transient network failure (AI-055).
 	ReadOnly bool
+	// RequireReadOnly refuses the run unless the routed engine can read WorkingDir and be held to
+	// only reading it (AI-057): an engine that enforces it, no edit approval, and an explicit list
+	// of reading tools.
+	RequireReadOnly bool
 }
 
 // Result is what a finished run produced.

@@ -390,9 +390,9 @@ tools.
 
 ## Task routing
 
-Ten task keys (`src/CodeFlow.App/Ai/AiRouting.cs`, `Tasks`), each selecting both a provider and a
-model independently, so one repo can draft commits on a local Ollama model, review PRs on Opus,
-and fix findings through opencode:
+Eleven task keys (`src/CodeFlow.App/Ai/AiRouting.cs`, `Tasks`; `backend/ai/routing.go`), each
+selecting both a provider and a model independently, so one repo can draft commits on a local
+Ollama model, review PRs on Opus, and fix findings through opencode:
 
 | Task | `key()` | Purpose | Notes |
 |---|---|---|---|
@@ -406,6 +406,7 @@ and fix findings through opencode:
 | `Inline` | `inline` | Editor inline edit (Ctrl+I) | Text-only, runs while typing — a fast local model is the point |
 | — | `ticket_review` | Branch judged against its work item's acceptance criteria | Ninth key, added after the port. Call site is `src/CodeFlow.App/Tickets/TicketReview.cs` (`14-work-items.md`, `WI-011`); it is in `Judging`, so it inherits the `Read,Grep,Glob` default |
 | — | `dbml` | Schema designer: change, review or explain a `.dbml` document | Tenth key. Call site is `src/CodeFlow.App/Dbml/DbmlAssistant.cs` (`15-dbml.md`, `DBML-016`). The one task bound to the **empty** toolset: it is handed the whole document and needs no repository, so a small or local model fits |
+| — | `diagram` | The code map's repository diagrams: an AI reads the repository and answers an Archify document | Eleventh key, the first written here rather than ported (`backend/archify`, `20-archify-diagrams.md`). It must only read, so it runs only on an engine that can be held to that (AI-057) — Claude or Codex; the settings row and the code map's model chip offer no other |
 
 ### Provider resolution (`provider_for`, `src/CodeFlow.App/Ai/AiCommands.cs`)
 
@@ -979,9 +980,9 @@ Reglas ESTRICTAS de salida:
 **Frontend dependency**: `ai:output` events (see AI-013) and `cancel_ai_run`.
 **Markers**: none
 
-### AI-010 `pump()`: byte-safe line streaming with a `\r` progress-bar escape hatch
-**Implementation**: `src/CodeFlow.App/Ai/AiOperations.cs`
-**Behaviour**: Reads raw bytes (not `string`) to avoid corrupting a multi-byte UTF-8 character split across two `read()` calls. Complete lines (byte-split on `\n`) are streamed via `AiRunRegistry` as they complete. A pending (no-newline-yet) buffer over 8,192 bytes is flushed as one line — this is what keeps a CLI redrawing a `\r` progress bar from growing memory unboundedly and showing nothing.
+### AI-010 `pump()`: byte-safe line streaming, carriage returns read as a terminal reads them
+**Implementation**: `backend/ai/pump.go` · ported from `src/CodeFlow.App/Ai/AiOperations.cs`
+**Behaviour**: Reads raw bytes (not `string`) to avoid corrupting a multi-byte UTF-8 character split across two `read()` calls. Complete lines (byte-split on `\n`) are streamed via `AiRunRegistry` as they complete. **Changed here, after 3.9.0:** a carriage return replaces the line the way a terminal does — only what follows the last `\r` is kept pending, and a complete line shows what follows its last one (`10%\r50%\r100%` reads `100%`); a `\r` at the very end of what was read waits for the next read, so a `\r\n` split across two reads ends a line. A CLI redrawing a progress bar therefore holds one drawing, and every 8,192 bytes of redrawing its latest complete drawing is emitted. A pending line with no carriage return is held whole up to 16 MiB, then emitted as it stands. Through 3.9.0 every pending buffer over 8,192 bytes was flushed as one line, which cut a long JSON event — a tool result holding a file — into pieces the log could not read.
 **Inputs / outputs**: async pipe reader → accumulated `byte[]` (also drives the side-effecting emits).
 **Edge cases**: A `None` `RunCtx` (untracked call) still accumulates bytes for the interpreter but emits nothing.
 
@@ -1002,9 +1003,9 @@ reads, nothing arrives, the silence deadline (`AI-013`) fires and `kill_tree` cl
 **Frontend dependency**: any consumer of `ai:output` must render it as a live activity/progress log, not as a partial answer — a standing misconception this document exists partly to correct.
 **Markers**: none
 
-### AI-012 `emit_line`: per-line cap, blank-line drop, bounded trace
-**Implementation**: `src/CodeFlow.App/Ai/AiRunRegistry.cs`, `28`, `33`
-**Behaviour**: Trims trailing whitespace; drops the line entirely if now empty; truncates to 2,000 chars (`MAX_LINE_CHARS`) with a trailing `…` if longer; when the run is `scoped_with_trace`, appends to a ring buffer capped at 300 lines (`MAX_TRACE_LINES`), dropping the oldest first.
+### AI-012 `emit_line`: event reduction, per-line cap, blank-line drop, bounded trace
+**Implementation**: `backend/ai/runregistry.go` (`EmitLine`) · `backend/ai/logview.go` · ported from `src/CodeFlow.App/Ai/AiRunRegistry.cs`
+**Behaviour**: Trims trailing whitespace; drops the line entirely if now empty; **reduces a tagged JSON event to what the log shows of it** (`backend/ai/logview.go`, changed here after 3.9.0): an `assistant` event keeps its text parts (600 characters each) and each `tool_use` part's name and the first of `file_path`, `path`, `notebook_path`, `command`, `pattern`, `url`, `query`, `prompt` it carries (300 characters) — the keys `frontend/src/lib/agentLog.ts` reads; a `system` `init` event keeps its model; every other tagged event (`user` tool results, `result`, bookkeeping) is dropped, since the renderer shows none of them; plain text and untagged JSON pass untouched. Then it truncates to 2,000 chars (`MAX_LINE_CHARS`) with a trailing `…` if longer; when the run is `scoped_with_trace`, appends to a ring buffer capped at 300 lines (`MAX_TRACE_LINES`), dropping the oldest first. Through 3.9.0 a long event was cut at 2,000 characters before anything read it, and the renderer showed the broken JSON raw.
 **Inputs / outputs**: `(ctx, stream, line)` → emits `ai:output`, mutates `ctx.trace`.
 **Edge cases**: A run started via plain `scoped` (no trace requested) never accumulates a trace, but still emits live events.
 **Frontend dependency**: `send_chat_message`'s persisted `trace_json`.
@@ -1549,6 +1550,14 @@ second bounded nothing — seventeen `Bash` calls in one measured review, with z
 **Edge cases**: `AutoApproveEdits` **blocks the retry**, and that is the whole safety argument — this cannot know how far a write-capable run got before the network went, so repeating one that had already edited files would apply the change twice. A cancellation never reaches here (`OperationCanceledException` is caught a level up, in `RunAsync`), and a quota refusal is not in the table, so neither is ever repeated. The timeout is deliberately absent from the table too: it may mean the far side is still working.
 **Frontend dependency**: none. The point is that the panel never learns a retry happened.
 **Markers**: none. Written after a two-minute loss of DNS on 2026-08-12 destroyed a finished-but-unrun ticket review and two work-item reads; `PROV-049` is the same outage answered on the HTTP side.
+
+### AI-057 A run that must only read is refused on an engine that cannot be held to reading
+**Implementation**: `backend/ai/operations.go` (`checkReadOnly`, `ErrEngineNotReadOnly`) · `backend/ai/engine.go` (`EnforcesReadOnly`) · `backend/ai/runner.go` (`Invocation.RequireReadOnly`) · `frontend/src/lib/aiTasks.ts` (`readOnlyEngines`, `canRunTask`)
+**Behaviour**: written here, not ported. An invocation with `RequireReadOnly` runs only when, once the task's provider is resolved, three things hold: the engine **enforces** reading only — Claude, held by its `--tools` list, and Codex, held by `--sandbox read-only`; nothing approves an edit (`AutoApproveEdits` is false, which is also what keeps Codex's sandbox read-only); and the tool list is explicit and every tool in it only reads — `Read`, `Grep`, `Glob`, or an MCP server's tool (`mcp__…`, which here is only ever the code map's read-only server). Anything else answers `ErrEngineNotReadOnly` before a process is spawned or a request sent. agy is refused because its permissions are all-or-nothing — reading a brief file headlessly needs the same flag that lets it write (`engine_cli.go`); opencode has no flag that bounds it; an HTTP engine has no tools, so it could not read the repository it was asked about.
+**Inputs / outputs**: no wire change of its own. The refusal reads `this needs an engine that can read the repository without changing it — route the task to Claude or Codex (<provider>)`.
+**Edge cases**: a nil tool list is refused rather than defaulted — the CLI's own defaults include tools that write. The settings table and the task-aware model chip (`ChatModelPicker task=…`) offer only the engines a task can run on (`canRunTask`), and a row whose inherited provider cannot run it says so, the way an agentic-only task already did.
+**Frontend dependency**: `TaskRouting` (`settings.taskReadOnlyRequired` / `settings.taskReadOnlyInherited`), `ChatModelPicker`.
+**Markers**: none. The first task to use it is `diagram` (`20-archify-diagrams.md`).
 
 ## Test coverage
 

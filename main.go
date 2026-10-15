@@ -13,12 +13,14 @@ import (
 
 	"github.com/gastonlarap-a11y/code-flow/backend/ai"
 	"github.com/gastonlarap-a11y/code-flow/backend/app"
+	"github.com/gastonlarap-a11y/code-flow/backend/archify"
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
 	"github.com/gastonlarap-a11y/code-flow/backend/codemap"
 	"github.com/gastonlarap-a11y/code-flow/backend/desktop"
 	"github.com/gastonlarap-a11y/code-flow/backend/diagnostics"
 	"github.com/gastonlarap-a11y/code-flow/backend/files"
 	"github.com/gastonlarap-a11y/code-flow/backend/platform"
+	"github.com/gastonlarap-a11y/code-flow/backend/repomap"
 	"github.com/gastonlarap-a11y/code-flow/backend/security"
 	"github.com/gastonlarap-a11y/code-flow/backend/shared/safego"
 	"github.com/gastonlarap-a11y/code-flow/backend/storage"
@@ -50,7 +52,9 @@ func main() {
 	// this binary to ask the map questions, and it must serve stdio and nothing else — no window, no
 	// single-instance lock, no write into the user's data.
 	if len(os.Args) > 1 && os.Args[1] == codemap.MCPCommand {
-		os.Exit(codemap.RunMCP(context.Background(), os.Args[2:], version, os.Stdin, os.Stdout, os.Stderr))
+		// The file index reads the cache the app keeps, and never writes one (REPOMAP-010).
+		maps := repomap.NewReadOnlyService(repomap.CacheDir(platform.DefaultPaths().Base()))
+		os.Exit(codemap.RunMCP(context.Background(), os.Args[2:], version, maps, os.Stdin, os.Stdout, os.Stderr))
 	}
 
 	paths := platform.DefaultPaths()
@@ -125,7 +129,12 @@ func main() {
 			})),
 			application.NewService(host),
 		},
-		Assets: application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
+		// The viewer's rendered Archify pages are served beside the renderer, each under a policy
+		// of its own (ARCHIFY-004); every other request reaches the asset server untouched.
+		Assets: application.AssetOptions{
+			Handler:    application.AssetFileServerFS(assets),
+			Middleware: archify.ViewerMiddleware(archify.ViewDir(paths.Base())),
+		},
 
 		// Closing the last window hides it; only a named quit exits (BOOT-007).
 		Mac:     application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},

@@ -26,6 +26,9 @@ import type {
 
 export type CodemapTab = "relations" | "flow" | "impact" | "ask";
 
+/** Which of the module's two views is open: the drawn map (19-repo-map.md) or the symbols. */
+export type CodemapMode = "map" | "symbols";
+
 /** One question asked about the selected symbol, and its answer once it arrives. */
 export interface CodemapExchange {
   question: string;
@@ -94,6 +97,12 @@ interface CodemapState {
    * user's Archify install, which the app then opens (CODEMAP-017). Answers the page's path, or null.
    */
   archify: (what: "flow" | "architecture", language: string) => Promise<string | null>;
+  /**
+   * The view open in the module. Deliberately not in INITIAL: `reset` starts the symbol map over
+   * when the project changes, and the choice of view outlives that.
+   */
+  mode: CodemapMode;
+  setMode: (mode: CodemapMode) => void;
   reset: () => void;
 }
 
@@ -184,6 +193,9 @@ export const useCodemapStore = create<CodemapState>((set, get) => {
 
   return {
     ...INITIAL,
+
+    mode: "map",
+    setMode: (mode) => set({ mode }),
 
     open: async (rootPath) => {
       searchSeq++;

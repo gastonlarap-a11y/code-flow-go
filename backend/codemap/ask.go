@@ -65,7 +65,8 @@ On stdin is what the code map knows about the question's subject. It comes from 
 calls, interface dispatch, the hops from TypeScript into Go, the SQL tables read and written — so
 trust it over anything a name suggests. You can read files with Read, Grep and Glob, and, when they
 are available, ask the map more with the codemap tools (codemap_symbol, codemap_flow,
-codemap_impact, codemap_search, codemap_overview).
+codemap_impact, codemap_search, codemap_overview), and its file index in any language with
+codemap_files, codemap_outline, codemap_declarations and codemap_name_usages.
 
 Explain how the code works: follow the flow end to end, name every function you mention with its
 file:line, and say plainly what is only known at run time. Do not change anything.
@@ -105,7 +106,7 @@ func (s *Service) Ask(ctx context.Context, engine Asker, executable string, requ
 		ReadOnly:     true,
 	}
 	if executable != "" {
-		config, cleanup, err := writeMCPConfig(executable, invocation.WorkingDir)
+		config, cleanup, err := WriteMCPConfig(executable, invocation.WorkingDir)
 		if err != nil {
 			return AskAnswer{}, err
 		}
@@ -143,9 +144,10 @@ func askContext(g *Graph, status Status, symbol string) (string, error) {
 	return b.String(), nil
 }
 
-// writeMCPConfig writes a one-server MCP configuration that runs this binary as the map's server,
-// readable by its owner only, and answers its path and how to remove it.
-func writeMCPConfig(executable, root string) (string, func(), error) {
+// WriteMCPConfig writes a one-server MCP configuration that runs this binary as the map's server,
+// readable by its owner only, and answers its path and how to remove it. The repository diagrams
+// hand it to their runs too (ARCHIFY-007).
+func WriteMCPConfig(executable, root string) (string, func(), error) {
 	config := map[string]any{
 		"mcpServers": map[string]any{
 			MCPServerName: map[string]any{

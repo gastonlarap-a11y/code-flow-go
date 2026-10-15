@@ -219,7 +219,7 @@ task-routing half of this table against its TypeScript mirror in detail (includi
 | Key (VERBATIM) | Read by | Missing/blank falls back to |
 |---|---|---|
 | `ai_provider` | `src/CodeFlow.App/Ai/AiCommands.cs` (`active_provider`) | `"claude"` |
-| `ai_provider_{task}` — 9 keys, `task ∈ {commit, analyze, review, pr_description, chat, fix, conflict, inline, ticket_review}` (`AiRouting.Tasks`, `src/CodeFlow.App/Ai/AiRouting.cs`) | `src/CodeFlow.App/Ai/AiCommands.cs` (`provider_for`) | the global `ai_provider` |
+| `ai_provider_{task}` — one per task key of XLANG-004, `task ∈ {commit, analyze, review, pr_description, chat, fix, conflict, inline, ticket_review, dbml, diagram}` (`AiRouting.Tasks`, `src/CodeFlow.App/Ai/AiRouting.cs`; `backend/ai/routing.go`) | `src/CodeFlow.App/Ai/AiCommands.cs` (`provider_for`) | the global `ai_provider` |
 | `{provider}_{task}_model` | `src/CodeFlow.App/Ai/AiCommands.cs` (`load_ai_config`) | for `task = commit`: the engine's `commit_message_model()` if non-empty, else `{provider}_model`; for every other task: `{provider}_model` |
 | `{provider}_model` | `src/CodeFlow.App/Ai/AiCommands.cs` | `""` |
 | `{provider}_binary_path` | `src/CodeFlow.App/Ai/AiCommands.cs` | `engine.default_binary()` |

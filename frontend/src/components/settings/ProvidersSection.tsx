@@ -5,7 +5,6 @@ import {
   ChevronDown,
   CircleAlert,
   CircleCheck,
-  Copy,
   ExternalLink,
   FolderOpen,
   KeyRound,
@@ -34,7 +33,9 @@ import { Checkbox } from "../common/Checkbox";
 import { IconButton } from "../common/IconButton";
 import { Tooltip } from "../common/Tooltip";
 import { Skeleton } from "../common/Skeleton";
-import { copyText } from "../../lib/ui/useCopy";
+import { commandFor } from "../../lib/requirements";
+import { usePlatform } from "../../lib/platform";
+import { CommandLine } from "./CommandLine";
 import { Field, FIELD_INPUT } from "./Field";
 import {
   CUSTOM_MODEL,
@@ -178,47 +179,20 @@ function ApiKeyField({ providerId, onSaved }: { providerId: string; onSaved: () 
   );
 }
 
-/** A copyable one-line command. Installing is the user's call, so this hands them the exact string
- * rather than running anything. */
-function CommandLine({ command }: { command: string }) {
+/** How to get this provider working: the install command for this platform (when there's a canonical
+ * one), whatever has to run afterwards (sign-in, pulling a model), and a link to its official docs.
+ * Shared with the requirements view (REQ-003). */
+export function SetupHelp({ provider }: { provider: AiProviderOption }) {
   const t = useT();
-  const [copied, setCopied] = useState(false);
-  return (
-    <Tooltip label={t("api.snippet.copy")}>
-      <button
-        // Named for what pressing it does: the command alone reads as text, not as a control.
-        aria-label={`${t("api.snippet.copy")}: ${command}`}
-        onClick={() => {
-          void copyText(command);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1400);
-        }}
-        className="group flex w-full items-center gap-1.5 rounded-md border border-[var(--cf-border)] bg-black/[0.03] px-2 py-1 text-left font-mono text-badge text-[var(--cf-text)] hover:border-[var(--cf-accent)] dark:bg-white/[0.05]"
-      >
-        <span className="min-w-0 flex-1 truncate">{command}</span>
-        {copied ? (
-          <Check size={11} aria-hidden className="shrink-0 text-[var(--cf-success)]" />
-        ) : (
-          /* Decoration on a control that already has a name — revealing it on hover only sharpens
-             what is already there. */
-          <Copy size={11} aria-hidden className="shrink-0 text-[var(--cf-text-muted)] opacity-0 group-hover:opacity-100" />
-        )}
-      </button>
-    </Tooltip>
-  );
-}
-
-/** How to get this provider working: the install command (when there's a canonical one), whatever
- * has to run afterwards (sign-in, pulling a model), and a link to its official docs. */
-function SetupHelp({ provider }: { provider: AiProviderOption }) {
-  const t = useT();
+  const platform = usePlatform();
   if (!provider.setup) return null;
-  const { url, command, postCommand } = provider.setup;
+  const { url, postCommand } = provider.setup;
+  const command = commandFor(provider.setup.command, platform);
   return (
     <div className="space-y-1.5 rounded-lg border border-[var(--cf-border)] p-2.5">
       <p className="text-body font-medium text-[var(--cf-text)]">{t("settings.setupTitle")}</p>
-      {command && <CommandLine command={command} />}
-      {postCommand && <CommandLine command={postCommand} />}
+      {command && <CommandLine command={command} terminal />}
+      {postCommand && <CommandLine command={postCommand} terminal />}
       <Button variant="ghost" size="sm" icon={ExternalLink} onClick={() => void openExternalUrl(url)}>
         {t("settings.setupDocs")}
       </Button>

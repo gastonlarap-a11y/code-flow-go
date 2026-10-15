@@ -7,12 +7,19 @@ import (
 	"github.com/gastonlarap-a11y/code-flow/backend/shared/proc"
 )
 
-// maxPendingBytes is when a line with no newline yet is flushed anyway.
+// maxPendingBytes is how much of a progress bar's redrawing passes before its latest drawing is
+// shown.
 //
-// It is what keeps a CLI redrawing a `\r` progress bar from growing a buffer without bound and
-// showing nothing while it does — the bar never emits a newline, so without this the log stays
-// empty for the whole download and then arrives at once.
+// A CLI redrawing a `\r` progress bar never emits a newline, so without it the log would stay empty
+// for the whole download. A carriage return replaces the line the way a terminal does — only what
+// follows the last one is kept — so the buffer stays one drawing long, and every 8 KiB of redrawing
+// the latest complete drawing is shown.
 const maxPendingBytes = 8192
+
+// maxLineBytes bounds one line that has no newline yet. A JSON event holding a whole file is one
+// line of hundreds of kilobytes, which must reach the log whole to be read (AI-012); past this a
+// CLI that never writes a newline at all is emitted as it stands rather than held without end.
+const maxLineBytes = 16 << 20
 
 // pump reads one pipe, streaming complete lines and accumulating everything (AI-010).
 //
@@ -28,6 +35,8 @@ func pump(reader io.Reader, run *Run, stream string) []byte {
 		collected bytes.Buffer
 		pending   bytes.Buffer
 		chunk     = make([]byte, 4096)
+		drawing   []byte // the latest complete drawing a carriage return replaced
+		redrawn   int    // bytes of redrawing since a drawing was last shown
 	)
 
 	for {
@@ -44,7 +53,14 @@ func pump(reader io.Reader, run *Run, stream string) []byte {
 			pending.Write(chunk[:n])
 			flushLines(&pending, run, stream)
 
-			if pending.Len() > maxPendingBytes {
+			if replaced, dropped := overwrite(&pending); dropped > 0 {
+				drawing, redrawn = replaced, redrawn+dropped
+			}
+			if redrawn > maxPendingBytes && len(drawing) > 0 {
+				emit(run, stream, drawing)
+				drawing, redrawn = nil, 0
+			}
+			if pending.Len() > maxLineBytes {
 				emit(run, stream, pending.Bytes())
 				pending.Reset()
 			}
@@ -55,11 +71,36 @@ func pump(reader io.Reader, run *Run, stream string) []byte {
 	}
 
 	// Whatever never got its newline. A CLI that exits without one would otherwise lose its last
-	// line, which is often the one that says why it exited.
-	if pending.Len() > 0 {
+	// line, which is often the one that says why it exited — or, for a bar that ended on a carriage
+	// return, its last drawing.
+	switch {
+	case pending.Len() > 0:
 		emit(run, stream, pending.Bytes())
+	case len(drawing) > 0:
+		emit(run, stream, drawing)
 	}
 	return collected.Bytes()
+}
+
+// overwrite applies the carriage returns in what is pending the way a terminal does: what follows
+// the last one replaces the line. It keeps only that, and answers the complete drawing just before
+// it and how many bytes it dropped. A carriage return at the very end is left for the next read to
+// tell apart — a `\r\n` split across two reads ends a line, it redraws nothing.
+func overwrite(pending *bytes.Buffer) (drawing []byte, dropped int) {
+	b := pending.Bytes()
+	if len(b) < 2 {
+		return nil, 0
+	}
+	last := bytes.LastIndexByte(b[:len(b)-1], '\r')
+	if last < 0 {
+		return nil, 0
+	}
+	previous := bytes.LastIndexByte(b[:last], '\r')
+	drawing = bytes.Clone(b[previous+1 : last])
+	rest := bytes.Clone(b[last+1:])
+	pending.Reset()
+	pending.Write(rest)
+	return drawing, last + 1
 }
 
 // flushLines emits every complete line in the buffer and keeps the remainder.
@@ -85,7 +126,16 @@ func emit(run *Run, stream string, line []byte) {
 	if run == nil {
 		return
 	}
-	run.EmitLine(stream, stripANSI(proc.DecodeLossyUTF8(line)))
+	run.EmitLine(stream, stripANSI(proc.DecodeLossyUTF8(lastDrawing(line))))
+}
+
+// lastDrawing is what a terminal shows of a complete line: what follows its last carriage return —
+// `10%\r50%\r100%` reads `100%` — once the `\r` of a `\r\n` ending is set aside.
+func lastDrawing(line []byte) []byte {
+	if _, after, found := bytes.CutLast(bytes.TrimRight(line, "\r"), []byte{'\r'}); found {
+		return after
+	}
+	return line
 }
 
 // stripANSI removes terminal escape sequences.

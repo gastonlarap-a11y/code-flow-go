@@ -61,6 +61,11 @@ func (o Operations) invokeWith(ctx context.Context, runID string, config Config,
 	}
 
 	engine := EngineFor(config.Provider)
+	if inv.RequireReadOnly {
+		if err := checkReadOnly(engine, inv); err != nil {
+			return Result{}, err
+		}
+	}
 
 	if engine.Transport() != TransportSubprocess {
 		// No run is registered for an HTTP turn: there is no process to kill, the request is one
@@ -84,6 +89,30 @@ func (o Operations) invokeWith(ctx context.Context, runID string, config Config,
 
 	return o.runner.Execute(ctx, run, config.Binary, builder, interpreter, inv)
 }
+
+// ErrEngineNotReadOnly refuses a run that must only read the repository on an engine that cannot be
+// held to that (AI-057).
+var ErrEngineNotReadOnly = errors.New("this needs an engine that can read the repository without changing it — route the task to Claude or Codex")
+
+// checkReadOnly is AI-057: the engine enforces reading only, nothing approves an edit, and every
+// tool named only reads — Claude's file readers or an MCP server's tools, which here are the map's.
+func checkReadOnly(engine Engine, inv Invocation) error {
+	if !engine.EnforcesReadOnly() || inv.AutoApproveEdits {
+		return fmt.Errorf("%w (%s)", ErrEngineNotReadOnly, engine.ID())
+	}
+	if inv.AllowedTools == nil {
+		return fmt.Errorf("%w: a read-only run names its tools", ErrEngineNotReadOnly)
+	}
+	for _, tool := range inv.AllowedTools {
+		if !readingTools[tool] && !strings.HasPrefix(tool, "mcp__") {
+			return fmt.Errorf("%w: %s can change files", ErrEngineNotReadOnly, tool)
+		}
+	}
+	return nil
+}
+
+// readingTools are the Claude tools that only read.
+var readingTools = map[string]bool{"Read": true, "Grep": true, "Glob": true}
 
 // subprocessEngine picks the command builder and interpreter for a provider, preparing whatever
 // scratch file its CLI needs.

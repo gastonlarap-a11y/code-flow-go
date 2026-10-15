@@ -1,5 +1,6 @@
 import { Bot, Cpu, Gem, HardDrive, Sparkles, SquareTerminal, type LucideIcon } from "lucide-react";
 import type { TranslationKey } from "./i18n/translations";
+import type { PlatformCommand } from "./requirements";
 
 export interface AiProviderOption {
   id: string;
@@ -32,8 +33,8 @@ export interface AiProviderOption {
   setup?: {
     /** Official install / setup page. */
     url: string;
-    /** Canonical one-line install command, when the provider has one. */
-    command?: string;
+    /** The vendor's recommended one-line install, per platform, when there is one. */
+    command?: PlatformCommand;
     /** Command to run once installed, e.g. signing in. */
     postCommand?: string;
   };
@@ -49,9 +50,11 @@ export const AI_PROVIDERS: AiProviderOption[] = [
     available: true,
     defaultBinary: "claude",
     usesToolAllowlist: true,
+    // The native installer, which Anthropic recommends and which keeps itself updated; npm still
+    // works but needs Node 22+, and Homebrew/winget installs do not update on their own.
     setup: {
-      url: "https://docs.claude.com/en/docs/claude-code/setup",
-      command: "npm install -g @anthropic-ai/claude-code",
+      url: "https://code.claude.com/docs/en/setup",
+      command: { macos: "curl -fsSL https://claude.ai/install.sh | bash", windows: "irm https://claude.ai/install.ps1 | iex" },
     },
   },
   // Gemini now runs through Google's Antigravity CLI (`agy`), the successor to the retired
@@ -62,7 +65,11 @@ export const AI_PROVIDERS: AiProviderOption[] = [
     icon: Gem,
     available: true,
     defaultBinary: "agy",
-    setup: { url: "https://antigravity.google" },
+    // A compiled binary from Google's own installer; the first `agy` run signs in through the browser.
+    setup: {
+      url: "https://antigravity.google/docs/cli/overview",
+      command: { macos: "curl -fsSL https://antigravity.google/cli/install.sh | bash", windows: "irm https://antigravity.google/cli/install.ps1 | iex" },
+    },
   },
   // OpenAI's CLI, logged in with a **ChatGPT subscription** (`codex login`) rather than metered
   // API credits — that's what separates it from the `openai` entry below. Headless via
@@ -73,9 +80,13 @@ export const AI_PROVIDERS: AiProviderOption[] = [
     icon: Cpu,
     available: true,
     defaultBinary: "codex",
+    // OpenAI's own installer scripts (the README's), one per platform — `winget` was offered on macOS.
     setup: {
-      url: "https://developers.openai.com/codex/",
-      command: "winget install OpenAI.Codex",
+      url: "https://developers.openai.com/codex/cli",
+      command: {
+        macos: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+        windows: 'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"',
+      },
       postCommand: "codex login",
     },
   },
@@ -90,7 +101,11 @@ export const AI_PROVIDERS: AiProviderOption[] = [
     icon: SquareTerminal,
     available: true,
     defaultBinary: "opencode",
-    setup: { url: "https://opencode.ai/docs/" },
+    // Native Windows is served by npm (its docs also offer Chocolatey and Scoop, and prefer WSL).
+    setup: {
+      url: "https://opencode.ai/docs/",
+      command: { macos: "curl -fsSL https://opencode.ai/install | bash", windows: "npm i -g opencode-ai" },
+    },
   },
   // Local models via Ollama (HTTP, not a CLI). Non-agentic: no tool use / MCP, so those features
   // are hidden when it's active. `defaultBinary` is the endpoint. See the ollama engine adapter.
@@ -102,7 +117,11 @@ export const AI_PROVIDERS: AiProviderOption[] = [
     defaultBinary: "http://localhost:11434",
     agentic: false,
     isEndpoint: true,
-    setup: { url: "https://ollama.com/download", postCommand: "ollama pull qwen2.5-coder" },
+    setup: {
+      url: "https://ollama.com/download",
+      command: { macos: "curl -fsSL https://ollama.com/install.sh | sh", windows: "irm https://ollama.com/install.ps1 | iex" },
+      postCommand: "ollama pull qwen2.5-coder",
+    },
   },
   // Any endpoint speaking OpenAI's `/v1/chat/completions` — OpenAI itself by default, but the URL
   // is editable, so Azure OpenAI / OpenRouter / Groq / DeepSeek / vLLM all work here. Authenticated

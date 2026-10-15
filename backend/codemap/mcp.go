@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/gastonlarap-a11y/code-flow/backend/repomap"
 	"github.com/gastonlarap-a11y/code-flow/backend/shared/safego"
 )
 
@@ -39,7 +40,16 @@ TypeScript code: real calls, interface dispatch, React renders, the hops from Ty
 - codemap_impact: what breaks if a symbol changes, and the exact test commands to run.
 
 Names accept an ID, a full or trailing name (CreateExpense, Service.CreateExpense) or file:line.
-Every answer cites file:line. "Only known at run time" marks a table or callee held in a variable.`
+Every answer cites file:line. "Only known at run time" marks a table or callee held in a variable.
+
+The map also indexes every code file of the repository file by file — TypeScript, JavaScript, Go,
+Python, Java and Dart with their declarations, any other code file by its name — with nothing to
+build first:
+
+- codemap_files: the repository at a glance — its languages, its folders, what is used most.
+- codemap_outline: what one file declares, what it imports and who imports it.
+- codemap_declarations: where a class, function or type is declared, by part of its name.
+- codemap_name_usages: the files that use a name, confirmed by an import or by name only.`
 
 // graphPatience is how long a tool waits for a cold build before answering that the map is still
 // being built; the build carries on for the next call.
@@ -69,10 +79,30 @@ type impactInput struct {
 	Depth int    `json:"depth,omitempty" jsonschema:"how many levels upstream to walk (default 6)"`
 }
 
-// NewMCPServer exposes the map of root as read-only MCP tools.
-func NewMCPServer(ctx context.Context, service *Service, root, version string) *mcp.Server {
+type pathInput struct {
+	Path string `json:"path" jsonschema:"a file's path in the repository, or a unique trailing part of it"`
+}
+
+type queryInput struct {
+	Query string `json:"query" jsonschema:"a name or part of one: save, Cart, Cart.total"`
+}
+
+type usagesInput struct {
+	Name string `json:"name" jsonschema:"the declaration's name, or Owner.name for a member"`
+	Path string `json:"path,omitempty" jsonschema:"only the declarations in this file"`
+}
+
+// filesOverviewChars bounds codemap_files' answer, inside the tools' own clip.
+const filesOverviewChars = 7_000
+
+// NewMCPServer exposes the map of root as read-only MCP tools: the symbol graph's, and — when maps
+// is given — the file index's (REPOMAP-010).
+func NewMCPServer(ctx context.Context, service *Service, maps *repomap.Service, root, version string) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: MCPServerName, Version: version}, &mcp.ServerOptions{Instructions: mcpInstructions})
 	graph := func(callCtx context.Context) (*Graph, Status, error) { return awaitGraph(ctx, callCtx, service, root) }
+	if maps != nil {
+		addMapTools(server, maps, root)
+	}
 
 	addTool(server, graph, "codemap_overview",
 		"The map at a glance: where the code is, the Go services Wails binds to the frontend, the endpoints, every table with its readers and writers, and the most depended-on symbols.",
@@ -164,6 +194,44 @@ func addTool[In any](server *mcp.Server, graph graphFunc, name, description stri
 	})
 }
 
+// addMapTools registers the file index's four tools. The index reads its cache from disk, so even
+// a cold call answers in the time it takes to look at what changed.
+func addMapTools(server *mcp.Server, maps *repomap.Service, root string) {
+	snapshot := func(ctx context.Context) (*repomap.Snapshot, error) {
+		snap, _, err := maps.Snapshot(ctx, root)
+		return snap, err
+	}
+	addSnapshotTool(server, snapshot, "codemap_files",
+		"The repository at a glance, every language: its size and languages, its folders with their files and declarations, and the declarations other files use most.",
+		func(s *repomap.Snapshot, _ struct{}) string { return s.Overview(filesOverviewChars) })
+	addSnapshotTool(server, snapshot, "codemap_outline",
+		"What one file declares (classes, functions, methods, types, with their lines), what it imports, and which files import it.",
+		func(s *repomap.Snapshot, in pathInput) string { return s.OutlineText(in.Path) })
+	addSnapshotTool(server, snapshot, "codemap_declarations",
+		"Where a class, function, method or type is declared, by part of its name — closest and most used first — with its signature.",
+		func(s *repomap.Snapshot, in queryInput) string { return s.DeclarationsText(in.Query) })
+	addSnapshotTool(server, snapshot, "codemap_name_usages",
+		"The files that use a declaration: confirmed when they import its file or share its package, by name only otherwise, and how many mean a different declaration of the name.",
+		func(s *repomap.Snapshot, in usagesInput) string { return s.UsagesText(in.Name, in.Path) })
+}
+
+// addSnapshotTool registers a read-only tool answered from the file index.
+func addSnapshotTool[In any](server *mcp.Server, snapshot func(context.Context) (*repomap.Snapshot, error), name, description string, answer func(*repomap.Snapshot, In) string) {
+	closedWorld := false
+	tool := &mcp.Tool{
+		Name:        name,
+		Description: description,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &closedWorld},
+	}
+	mcp.AddTool(server, tool, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+		snap, err := snapshot(ctx)
+		if err != nil {
+			return nil, nil, err // the SDK turns it into an error result the model can read
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: Clip(answer(snap, in), MaxTextChars)}}}, nil, nil
+	})
+}
+
 // awaitGraph answers the map, or errStillBuilding when a cold build takes longer than the patience.
 // The build runs under the server's context, not the call's, so giving up on one call does not
 // throw away the work the next one needs.
@@ -191,8 +259,9 @@ func awaitGraph(serverCtx, callCtx context.Context, service *Service, root strin
 }
 
 // RunMCP serves the map of the repository named by `--root` over stdio until the client goes away,
-// and answers the process's exit code.
-func RunMCP(ctx context.Context, args []string, version string, stdin io.ReadCloser, stdout io.WriteCloser, stderr io.Writer) int {
+// and answers the process's exit code. maps is the file index, read-only in this process: it reads
+// the cache the app keeps and writes nothing of the user's (CODEMAP-015).
+func RunMCP(ctx context.Context, args []string, version string, maps *repomap.Service, stdin io.ReadCloser, stdout io.WriteCloser, stderr io.Writer) int {
 	flags := flag.NewFlagSet(MCPCommand, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	root := flags.String("root", "", "the repository to map")
@@ -204,7 +273,7 @@ func RunMCP(ctx context.Context, args []string, version string, stdin io.ReadClo
 	// Warm the map before the first question arrives; a failure here resurfaces on that question.
 	safego.Go("codemap-mcp-warm", func() { _, _, _ = service.Graph(ctx, *root) })
 
-	server := NewMCPServer(ctx, service, *root, version)
+	server := NewMCPServer(ctx, service, maps, *root, version)
 	if err := server.Run(ctx, &mcp.IOTransport{Reader: stdin, Writer: stdout}); err != nil && !errors.Is(err, context.Canceled) {
 		_, _ = fmt.Fprintln(stderr, "codemap mcp:", err)
 		return 1

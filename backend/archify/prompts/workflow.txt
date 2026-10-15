@@ -1,0 +1,9 @@
+The diagram is a workflow (`diagram_type: "workflow"`): one process, step by step, with who does each
+step.
+- Lanes are who acts — a user, a service, a job, a team — two to five of them; put failures, retries
+  and refusals in a lane of their own.
+- Nodes are the steps, six to sixteen of them. Each sits in a lane and a column; the column is the
+  step's order along the main path, and steps that happen at the same time share one.
+- Edges say how the process moves: the happy path, the alternatives, what runs in the background,
+  what goes back, what fails. List the happy path's node ids, in order, as the main path.
+- Label an edge that leaves a decision with the condition that takes it.
