@@ -94,9 +94,12 @@ jobs:
             [ "$state" = "true" ] && echo "v$config exists as a draft; this run will complete it"
             echo "publish=$PUBLISH_REQUESTED" >> "$GITHUB_OUTPUT"
           fi
+        # A push to main publishes; a manual run publishes only when asked to. Not written as
+        # `dispatch && inputs.publish || 'true'`: expressions have no ternary, so with publish=false
+        # that read `false || 'true'` and a manual run meant as a dry run published v3.10.0.
         env:
           GH_TOKEN: ${{ github.token }}
-          PUBLISH_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || 'true' }}
+          PUBLISH_REQUESTED: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
 
   draft:
     name: Draft
