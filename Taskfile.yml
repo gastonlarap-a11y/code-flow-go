@@ -6,9 +6,10 @@ version: "3"
 #
 # Two things here are load-bearing rather than convenience:
 #
-#   - MACOSX_DEPLOYMENT_TARGET and the matching CGO flags. Wails links against the system WebKit
-#     through cgo; without them the linker warns on every object and the produced binary claims to
-#     support macOS 11, which it does not. 26.0 is the minimum this project supports (see README).
+#   - MACOSX_DEPLOYMENT_TARGET and the matching CGO flags, on macOS only. Wails links against the
+#     system WebKit through cgo; without them the linker warns on every object and the produced
+#     binary claims to support macOS 11, which it does not. 26.0 is the minimum this project
+#     supports (see README).
 #   - VITE_PORT stays 1420. The renderer's vite.config.ts fixes the port with strictPort, so
 #     changing it here would make `dev` load someone else's server or nothing at all.
 
@@ -49,10 +50,16 @@ vars:
 env:
   VITE_PORT: 1420
   # Applies to every task, not just `build`: `go test` links the Wails package too, and without
-  # these the linker warns on every object of every run. They are a no-op off macOS.
+  # these the linker warns on every object of every run.
+  #
+  # The CGO flags are macOS-only. Windows builds with cgo too (the tree-sitter grammars), and its
+  # gcc rejects `-mmacosx-version-min` outright — that failed the 3.10.0 Windows installer. Left
+  # empty there, Go uses its own default. `-O2 -g` is that default, restated: a CGO_CFLAGS that is
+  # set replaces it rather than adding to it, so `-mmacosx-version-min` alone compiled every
+  # grammar's parser.c unoptimised.
   MACOSX_DEPLOYMENT_TARGET: "{{.MACOS_MIN}}"
-  CGO_CFLAGS: "-mmacosx-version-min={{.MACOS_MIN}}"
-  CGO_LDFLAGS: "-mmacosx-version-min={{.MACOS_MIN}}"
+  CGO_CFLAGS: '{{if eq OS "darwin"}}-O2 -g -mmacosx-version-min={{.MACOS_MIN}}{{end}}'
+  CGO_LDFLAGS: '{{if eq OS "darwin"}}-O2 -g -mmacosx-version-min={{.MACOS_MIN}}{{end}}'
 
 tasks:
   default:
