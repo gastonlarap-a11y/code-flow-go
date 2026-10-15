@@ -93,6 +93,11 @@ interface DiagramState {
   undo: () => void;
   redo: () => void;
   reset: () => void;
+  /**
+   * Lets go of the open Mermaid document, keeping the folder's list — what the view does when an
+   * Archify document is picked instead (ARCHIFY-005).
+   */
+  closeDocument: () => void;
   /** Asks the view to open this document the next time it loads the folder. */
   openWhenShown: (relPath: string) => void;
   /** Hands over the pending document, once. */
@@ -293,6 +298,14 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   // A reset keeps a pending document: the view resets on mount, and the request was made for that
   // very mount to honour.
   reset: () => set({ ...INITIAL, history: forget(initialHistory(emptyDocument)), pendingOpen: get().pendingOpen }),
+
+  closeDocument: () =>
+    set({
+      ...INITIAL,
+      history: forget(initialHistory(emptyDocument)),
+      documents: get().documents,
+      pendingOpen: get().pendingOpen,
+    }),
 
   openWhenShown: (relPath) => set({ pendingOpen: relPath }),
 

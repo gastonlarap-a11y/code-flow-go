@@ -61,7 +61,7 @@ Every rule is written in one shape:
 `
 
 Rule ids use a per-document prefix (`BOOT`, `STORE`, `GIT`, `AI`, `PROV`, `REVIEW`, `API`,
-`WS`, `SEC`, `FILE`, `DBG`, `XLANG`, `DBML`, `DIAG`, `USAGE`, `CODEMAP`) plus a zero-padded sequence. Ids are stable
+`WS`, `SEC`, `FILE`, `DBG`, `XLANG`, `DBML`, `DIAG`, `USAGE`, `CODEMAP`, `REPOMAP`, `ARCHIFY`, `REQ`) plus a zero-padded sequence. Ids are stable
 once written — later documents reference them.
 
 ## Markers

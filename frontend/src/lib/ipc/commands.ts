@@ -3,6 +3,13 @@ import { host, invoke } from "../bridge/host";
 import { openUrl } from "../bridge/shell";
 import type {
   ActivityLogEntry,
+  ArchifyAiKind,
+  ArchifyClassDiagram,
+  ArchifyDrawn,
+  ArchifyRendered,
+  ArchifyStatus,
+  ArchifySuggestion,
+  RequirementTool,
   AdoProject,
   AdoRepo,
   AutoLinkResult,
@@ -41,6 +48,10 @@ import type {
   Project,
   PullRequestSummary,
   RemoteInfo,
+  RepoMapDeclHit,
+  RepoMapFileDetail,
+  RepoMapUsageReport,
+  RepoMapView,
   RepoStatusInfo,
   ReviewContext,
   SecretHit,
@@ -887,6 +898,83 @@ export const codemapAsk = (request: {
  */
 export const codemapArchify = (rootPath: string, options: { symbol?: string; language?: string } = {}) =>
   invoke<CodemapArchifyResult>("codemap_archify", { rootPath, ...options });
+
+// ---------- the drawn map (19-repo-map.md) ----------
+//
+// One index per repository, read with tree-sitter and kept on disk between runs: the first call
+// reads every code file, later ones only what changed. None needs a toolchain installed.
+
+/** The whole project as cards, folded into folders when it would not fit (REPOMAP-005). */
+export const repomapProject = (rootPath: string) => invoke<RepoMapView>("repomap_project", { rootPath });
+
+/** One folder's subfolders and files; a folder holding only one subfolder opens it (REPOMAP-005). */
+export const repomapFolder = (rootPath: string, focus: string) =>
+  invoke<RepoMapView>("repomap_folder", { rootPath, focus });
+
+/** What a file declares and how it connects; null when the map does not hold it (REPOMAP-006). */
+export const repomapFile = (rootPath: string, path: string) =>
+  invoke<RepoMapFileDetail | null>("repomap_file", { rootPath, path });
+
+/** Declarations by name — `save`, `Cart.total` — the closest and most used first (REPOMAP-006). */
+export const repomapSearch = (rootPath: string, query: string) =>
+  invoke<RepoMapDeclHit[]>("repomap_search", { rootPath, query });
+
+/** The files that use a name, confirmed by an import or kept by name only (REPOMAP-006). */
+export const repomapUsages = (rootPath: string, name: string, path?: string) =>
+  invoke<RepoMapUsageReport>("repomap_usages", { rootPath, name, path });
+
+/** The top-level declarations the most other files use (REPOMAP-006). */
+export const repomapMostUsed = (rootPath: string) => invoke<RepoMapDeclHit[]>("repomap_most_used", { rootPath });
+
+// ---------- Archify documents (20-archify-diagrams.md) ----------
+
+/** Whether the user's Archify is installed, which version, and whether it draws class diagrams. */
+export const archifyStatus = (rootPath: string) => invoke<ArchifyStatus>("archify_status", { rootPath });
+
+/**
+ * Draws a repository's `.archify.json` with the user's Archify into the viewer's folder, once per
+ * document, version and repository (ARCHIFY-003).
+ */
+export const archifyRender = (rootPath: string, path: string) =>
+  invoke<ArchifyRendered>("archify_render", { rootPath, path });
+
+/**
+ * A class diagram of the types under `scope` — a folder, a file, or "" for the repository — read
+ * from the map rather than asked of a model, and checked by Archify when it is installed (ARCHIFY-006).
+ */
+export const archifyClassDiagram = (rootPath: string, scope: string, language: string) =>
+  invoke<ArchifyClassDiagram>("archify_class_diagram", { rootPath, scope, language });
+
+/**
+ * Asks the AI routed to the diagram task for a diagram of the repository, read-only, checked by the
+ * user's Archify — and sent back to the model to be fixed when it is refused (ARCHIFY-007). Nothing
+ * is written: the caller saves the document it answers.
+ */
+export const archifyGenerate = (request: {
+  rootPath: string;
+  kind: ArchifyAiKind;
+  topic: string;
+  runId: string;
+  language: string;
+}) => invoke<ArchifyDrawn>("archify_generate", request);
+
+/** Asks for a changed version of a document in the repository; the caller writes it (ARCHIFY-008). */
+export const archifyRefine = (request: { rootPath: string; path: string; instruction: string; runId: string; language: string }) =>
+  invoke<ArchifyDrawn>("archify_refine", request);
+
+/** Topics the map suggests for a kind of diagram (ARCHIFY-009). */
+export const archifySuggestions = (rootPath: string, kind: ArchifyAiKind) =>
+  invoke<ArchifySuggestion[]>("archify_suggestions", { rootPath, kind });
+
+/**
+ * Git, Node.js, Go and Archify as found on this machine: installed or not, the version, and whether
+ * it will do (REQ-002). `rootPath` lets an Archify installed for that repository only be found.
+ */
+export const requirementsStatus = (rootPath?: string) =>
+  invoke<RequirementTool[]>("requirements_status", rootPath ? { rootPath } : {});
+
+/** Opens a rendered page in the browser, where Archify's own export and sharing work (ARCHIFY-004). */
+export const archifyOpenExternal = (htmlPath: string) => invoke<void>("archify_open_external", { htmlPath });
 
 /**
  * Everything the usage indicator draws, in one answer (USAGE-001).

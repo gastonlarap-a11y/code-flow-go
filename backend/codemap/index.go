@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gastonlarap-a11y/code-flow/backend/ai"
+	"github.com/gastonlarap-a11y/code-flow/backend/archify"
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
 )
 
@@ -258,8 +259,8 @@ func (ix *Index) describe(scan repoScan, took time.Duration) Status {
 	}
 
 	status.Languages = append(status.Languages, goStatus, tsStatus, sqlStatus)
-	if cli, err := findArchify(ix.root); err == nil {
-		status.Archify = cli.version
+	if cli, err := archify.Find(ix.root); err == nil {
+		status.Archify = cli.Version
 	}
 	return status
 }

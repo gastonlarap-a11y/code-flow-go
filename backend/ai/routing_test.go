@@ -29,9 +29,9 @@ func resolve(t *testing.T, rows settings, task ai.Task) ai.Config {
 	return ai.NewRouter(rows).Resolve(t.Context(), task)
 }
 
-// The ten keys are the `{task}` in `ai_provider_{task}` and `{provider}_{task}_model`. A typo here
-// orphans a user's saved setting silently — their override simply stops applying.
-func TestTheTenTaskKeysAreVerbatim(t *testing.T) {
+// The eleven keys are the `{task}` in `ai_provider_{task}` and `{provider}_{task}_model`. A typo
+// here orphans a user's saved setting silently — their override simply stops applying.
+func TestTheTaskKeysAreVerbatim(t *testing.T) {
 	keys := make([]string, 0, len(ai.AllTasks))
 	for _, task := range ai.AllTasks {
 		keys = append(keys, string(task))
@@ -39,7 +39,7 @@ func TestTheTenTaskKeysAreVerbatim(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"commit", "analyze", "review", "pr_description", "chat",
-		"fix", "conflict", "inline", "ticket_review", "dbml",
+		"fix", "conflict", "inline", "ticket_review", "dbml", "diagram",
 	}, keys)
 }
 

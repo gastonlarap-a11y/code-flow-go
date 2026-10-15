@@ -35,6 +35,11 @@ type Engine interface {
 	// ListModelsArgs is the CLI's own model-listing subcommand, or nil when it has none. An engine
 	// with no listing answers an empty list and the renderer falls back to a curated one.
 	ListModelsArgs() []string
+	// EnforcesReadOnly says the engine can read its working directory and be held to only reading
+	// it — what a run with RequireReadOnly needs. Claude is held by its tool list and Codex by its
+	// read-only sandbox. agy has no granular permissions (it skips them all to read its brief),
+	// opencode has no flag that bounds it, and an HTTP engine cannot read the repository at all.
+	EnforcesReadOnly() bool
 }
 
 // EngineFor resolves a provider id (AI-001).
@@ -70,6 +75,7 @@ func (claudeEngine) ID() string               { return "claude" }
 func (claudeEngine) Transport() Transport     { return TransportSubprocess }
 func (claudeEngine) DefaultBinary() string    { return "claude" }
 func (claudeEngine) ListModelsArgs() []string { return nil }
+func (claudeEngine) EnforcesReadOnly() bool   { return true }
 
 // CommitMessageModel is the one engine that names a dedicated fast model, VERBATIM. Drafting a
 // commit message on the base model costs time and money for a job that does not need either.
@@ -81,6 +87,7 @@ func (codexEngine) ID() string                 { return "codex" }
 func (codexEngine) Transport() Transport       { return TransportSubprocess }
 func (codexEngine) DefaultBinary() string      { return "codex" }
 func (codexEngine) CommitMessageModel() string { return "" }
+func (codexEngine) EnforcesReadOnly() bool     { return true }
 
 // ListModelsArgs is nil: Codex has no listing subcommand. Its models come from a cache file its
 // own desktop app maintains, which the discovery code reads rather than spawning anything.
@@ -95,6 +102,7 @@ func (geminiEngine) Transport() Transport       { return TransportSubprocess }
 func (geminiEngine) DefaultBinary() string      { return "agy" }
 func (geminiEngine) CommitMessageModel() string { return "" }
 func (geminiEngine) ListModelsArgs() []string   { return []string{"models"} }
+func (geminiEngine) EnforcesReadOnly() bool     { return false }
 
 type openCodeEngine struct{}
 
@@ -103,6 +111,7 @@ func (openCodeEngine) Transport() Transport       { return TransportSubprocess }
 func (openCodeEngine) DefaultBinary() string      { return "opencode" }
 func (openCodeEngine) CommitMessageModel() string { return "" }
 func (openCodeEngine) ListModelsArgs() []string   { return []string{"models"} }
+func (openCodeEngine) EnforcesReadOnly() bool     { return false }
 
 // ollamaEngine is a local server. Its "binary" is an endpoint, which is why every operation
 // branches on the transport before going near binary resolution.
@@ -113,6 +122,7 @@ func (ollamaEngine) Transport() Transport       { return TransportOllama }
 func (ollamaEngine) DefaultBinary() string      { return "http://localhost:11434" }
 func (ollamaEngine) CommitMessageModel() string { return "" }
 func (ollamaEngine) ListModelsArgs() []string   { return nil }
+func (ollamaEngine) EnforcesReadOnly() bool     { return false }
 
 type openAIEngine struct{}
 
@@ -121,3 +131,4 @@ func (openAIEngine) Transport() Transport       { return TransportOpenAICompatib
 func (openAIEngine) DefaultBinary() string      { return "https://api.openai.com/v1" }
 func (openAIEngine) CommitMessageModel() string { return "" }
 func (openAIEngine) ListModelsArgs() []string   { return nil }
+func (openAIEngine) EnforcesReadOnly() bool     { return false }

@@ -9,6 +9,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gastonlarap-a11y/code-flow/backend/archify"
+	"github.com/gastonlarap-a11y/code-flow/backend/shared/proc"
 )
 
 func step(id, name, kind, lang, file, via string, children ...FlowNode) FlowNode {
@@ -37,7 +40,7 @@ func sampleFlow() Flow {
 }
 
 func TestASequenceHasAnArrowEachTimeTheFlowChangesLane(t *testing.T) {
-	doc, err := archifySequenceOf(sampleFlow(), archifyRepo{}, "list-flow.html", "en")
+	doc, err := archifySequenceOf(sampleFlow(), archify.Repo{}, "list-flow.html", "en")
 	require.NoError(t, err)
 
 	labels := make([]string, 0, len(doc.Participants))
@@ -68,7 +71,7 @@ func TestASequenceStopsAtSevenLifelinesAndSaysSo(t *testing.T) {
 		file := "f" + string(rune('a'+i)) + ".ts"
 		root.Children = append(root.Children, step("ts:"+file+"#f", "f", "func", "ts", file, "call"))
 	}
-	doc, err := archifySequenceOf(Flow{Root: root}, archifyRepo{}, "a.html", "es")
+	doc, err := archifySequenceOf(Flow{Root: root}, archify.Repo{}, "a.html", "es")
 	require.NoError(t, err)
 
 	assert.Len(t, doc.Participants, maxParticipants)
@@ -78,7 +81,7 @@ func TestASequenceStopsAtSevenLifelinesAndSaysSo(t *testing.T) {
 
 func TestAFlowInsideOneFileHasNoSequence(t *testing.T) {
 	flow := Flow{Root: step("ts:a.ts#a", "a", "func", "ts", "a.ts", "", step("ts:a.ts#b", "b", "func", "ts", "a.ts", "call"))}
-	_, err := archifySequenceOf(flow, archifyRepo{}, "a.html", "en")
+	_, err := archifySequenceOf(flow, archify.Repo{}, "a.html", "en")
 	require.ErrorIs(t, err, ErrNoSequence)
 }
 
@@ -98,7 +101,7 @@ func TestTheArchitectureCountsWhatJoinsTheAreas(t *testing.T) {
 	g.AddEdge(Edge{From: "go:app/items.handler", To: "sql:items", Kind: EdgeWrite})
 	g.Finish()
 
-	doc := archifyArchitectureOf(g, g.Overview(Status{}), archifyRepo{}, "architecture.html", "en")
+	doc := archifyArchitectureOf(g, g.Overview(Status{}), archify.Repo{}, "architecture.html", "en")
 
 	labels := map[string]string{}
 	for _, c := range doc.Components {
@@ -114,7 +117,7 @@ func TestTheArchitectureCountsWhatJoinsTheAreas(t *testing.T) {
 	assert.Len(t, doc.Boundaries, 2)
 
 	// Cited by the most used symbols, the same every time the same map is drawn.
-	repo := archifyRepo{meta: &archifyRepository{URL: "https://github.com/acme/app", Revision: strings.Repeat("a", 40)}}
+	repo := archify.Repo{Meta: &archify.Repository{URL: "https://github.com/acme/app", Revision: strings.Repeat("a", 40)}}
 	first, err := json.Marshal(archifyArchitectureOf(g, g.Overview(Status{}), repo, "architecture.html", "en"))
 	require.NoError(t, err)
 	for range 20 {
@@ -127,7 +130,7 @@ func TestTheArchitectureCountsWhatJoinsTheAreas(t *testing.T) {
 	for _, c := range cited.Components {
 		if c.Label == "items" {
 			// One caller each: the tie goes to the ID, the same way every time.
-			assert.Equal(t, []archifySource{{Path: "backend/items/commands.go", Line: 4}, {Path: "backend/items/commands.go", Line: 5}}, c.Sources)
+			assert.Equal(t, []archify.Source{{Path: "backend/items/commands.go", Line: 4}, {Path: "backend/items/commands.go", Line: 5}}, c.Sources)
 		}
 	}
 }
@@ -140,76 +143,13 @@ func mapValues(m map[string]string) []string {
 	return out
 }
 
-func TestCitationsSkipWhatIsNotCommitted(t *testing.T) {
-	repo := archifyRepo{
-		meta:  &archifyRepository{URL: "https://github.com/acme/app", Provider: "github", LinkMode: "web", Revision: strings.Repeat("a", 40)},
-		dirty: map[string]bool{"web/dirty.ts": true},
-	}
-	cited := repo.cite([]SymbolRef{
-		{File: "web/dirty.ts", Line: 1},
-		{File: "web/a.ts", Line: 2, EndLine: 9},
-		{File: "web/a.ts", Line: 2},
-		{File: "web/b.ts", Line: 3}, {File: "web/c.ts", Line: 4}, {File: "web/d.ts", Line: 5},
-	})
-	assert.Equal(t, []archifySource{{Path: "web/a.ts", Line: 2, EndLine: 9}, {Path: "web/b.ts", Line: 3}, {Path: "web/c.ts", Line: 4}}, cited)
-	assert.Nil(t, repo.pinned(false))
-	assert.Nil(t, archifyRepo{}.cite([]SymbolRef{{File: "a.ts", Line: 1}}), "no repository, no citation")
-}
-
-// Archify's own rules: strip HTTP(S) userinfo and keep the rest; a supported host's SSH origin may
-// be written as the HTTPS address it matches; never rewrite another SSH origin; a folder is no
-// repository address at all.
-func TestArchifyRemote(t *testing.T) {
-	tests := []struct {
-		origin, address, provider string
-		ok                        bool
-	}{
-		{"git@github.com:acme/app.git", "https://github.com/acme/app", "github", true},
-		{"https://token:x-oauth@github.com/acme/app.git", "https://github.com/acme/app.git", "github", true},
-		{"https://user@dev.azure.com/org/p/_git/r", "https://dev.azure.com/org/p/_git/r", "", true},
-		{"git@git.internal:team/app.git", "git@git.internal:team/app.git", "", true},
-		{"ssh://git@git.internal:2222/team/app.git", "ssh://git@git.internal:2222/team/app.git", "", true},
-		{"http://git.internal:8080/app", "http://git.internal:8080/app", "", true},
-		{"/local/path", "", "", false},
-		{"file:///local/path", "", "", false},
-		{"../sibling", "", "", false},
-	}
-	for _, tt := range tests {
-		address, provider, ok := archifyRemote(tt.origin)
-		assert.Equal(t, tt.ok, ok, tt.origin)
-		assert.Equal(t, tt.address, address, tt.origin)
-		assert.Equal(t, tt.provider, provider, tt.origin)
-	}
-}
-
-// fakeArchify lays out an install the way `npx skills add` does.
-func fakeArchify(t *testing.T, version string) string {
-	t.Helper()
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "bin"), 0o750))
-	script := filepath.Join(dir, "bin", "archify.mjs")
-	require.NoError(t, os.WriteFile(script, []byte("// archify"), 0o600))
-	manifest, err := json.Marshal(map[string]string{"version": version})
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), manifest, 0o600))
-	return script
-}
-
-func TestOnlyASupportedArchifyIsOffered(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // no real install interferes
-
-	t.Setenv("ARCHIFY_BIN", fakeArchify(t, "3.1.0"))
-	cli, err := findArchify(t.TempDir())
-	require.NoError(t, err)
-	assert.Equal(t, "3.1.0", cli.version)
-
-	t.Setenv("ARCHIFY_BIN", fakeArchify(t, "2.9.0"))
-	_, err = findArchify(t.TempDir())
-	require.ErrorIs(t, err, ErrNoArchify)
-
-	for version, want := range map[string]bool{"3.1.0": true, "3.4.2": true, "3.0.9": false, "4.0.0": false, "x": false} {
-		assert.Equal(t, want, supportedArchify(version), version)
-	}
+// A symbol's file, start and end become an Archify citation; the rules about which ones are kept
+// are package archify's, tested there.
+func TestASymbolIsCitedByItsFileAndLines(t *testing.T) {
+	repo := archify.Repo{Meta: &archify.Repository{URL: "https://github.com/acme/app", Revision: strings.Repeat("a", 40)}}
+	assert.Equal(t, []archify.Source{{Path: "web/a.ts", Line: 2, EndLine: 9}},
+		cite(repo, []SymbolRef{{File: "web/a.ts", Line: 2, EndLine: 9}}))
+	assert.Nil(t, cite(archify.Repo{}, []SymbolRef{{File: "a.ts", Line: 1}}), "no repository, no citation")
 }
 
 // With a real Archify (ARCHIFY_BIN) and node, the fixture repository renders both diagrams.
@@ -242,8 +182,10 @@ func TestARealArchifyRendersBothDiagrams(t *testing.T) {
 		{"-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"},
 		{"remote", "add", "origin", "https://github.com/acme/shop.git"},
 	} {
-		_, err := runGit(t.Context(), tools, root, args...)
-		require.NoError(t, err)
+		cmd := proc.Command(t.Context(), "git", append([]string{"-C", root}, args...)...)
+		cmd.Env = proc.Environment(tools.Path)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
 	}
 	service = NewService(nil, nil)
 	cited, err := service.Archify(t.Context(), out, nil, ArchifyRequest{RootPath: root, Language: "en"})

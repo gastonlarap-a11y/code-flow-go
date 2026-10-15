@@ -1,0 +1,8 @@
+The diagram is a lifecycle (`diagram_type: "lifecycle"`): the states one thing passes through and what
+moves it from one to the next.
+- States are the ones the code really distinguishes — an enum, a status column, a state machine —
+  five to twelve of them, each with the type that fits it: one start, and success or failure for
+  where it ends.
+- Transitions are labelled with the event or the condition that triggers them; a recoverable failure
+  has a way back.
+- List the normal path's state ids, in order, as the main path.

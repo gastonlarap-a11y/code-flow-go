@@ -1,0 +1,8 @@
+The diagram is a data flow (`diagram_type: "dataflow"`): where information comes from, where it is
+changed or kept, and who reads it.
+- Stages are the columns, three to five of them, left to right — for example sources, intake,
+  processing, storage, use.
+- Nodes are the places the data passes through, six to sixteen of them; each sits in a stage and a
+  row, and what produces data sits left of what consumes it.
+- Flows are labelled with the data that moves — rows, events, files — not with the protocol. Classify
+  a flow only when the code makes it clear (personal data, secrets, public).

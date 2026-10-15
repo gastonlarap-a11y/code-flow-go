@@ -54,8 +54,10 @@ diagram without going through this app at all.
 ### DIAG-002 Finding a folder's diagrams is the only thing the backend does
 **Implementation**: `backend/diagram/documents.go` · `backend/diagram/commands.go` ·
 `backend/shared/docwalk/docwalk.go`
-**Behaviour**: `diagram_list_documents` walks the folder for files whose name ends in `.mmd`,
-case-insensitively, and answers them project-relative, sorted, with `/` separators on every
+**Behaviour**: `diagram_list_documents` walks the folder for files whose name ends in `.mmd` — or
+`.archify.json`, the Archify documents the code map writes, which the editor shows rather than
+edits (ARCHIFY-005, `20-archify-diagrams.md`) — case-insensitively, and answers them
+project-relative, sorted, with `/` separators on every
 platform. Build and dependency directories are **pruned rather than filtered** — they are never
 read — and the walk is bounded at 2 000 documents and 24 levels. A symlinked directory is never
 descended into.

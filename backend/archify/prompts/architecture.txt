@@ -1,0 +1,10 @@
+The diagram is an architecture (`diagram_type: "architecture"`): the parts the system is made of and
+how they talk to each other.
+- Components are the deployable or clearly separate parts — applications, services, workers, stores,
+  queues, third-party systems — between six and fourteen of them. Give each the `type` that fits it.
+- Connections follow the main request or data path first; label them with what travels (a protocol,
+  a route, an event) and mark the main path, the asynchronous links and the security-relevant ones
+  with their variants.
+- Boundaries group what belongs together: a process, a layer, a deployment, a trust zone.
+- Two to four cards sum up what a reader should know: the entry points, the stores, the risks.
+- Leave positions out; Archify places components itself.

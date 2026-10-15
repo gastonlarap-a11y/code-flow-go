@@ -936,3 +936,188 @@ export interface CodemapOverview {
   tables: CodemapTableSummary[];
   hotspots: CodemapHotspot[];
 }
+
+// ---------- the drawn map (19-repo-map.md, backend/repomap/wire.go) ----------
+
+/** What a declaration is, VERBATIM from `backend/repomap/facts.go`. */
+export type RepoMapKind =
+  | "class"
+  | "interface"
+  | "enum"
+  | "struct"
+  | "record"
+  | "mixin"
+  | "type"
+  | "function"
+  | "method"
+  | "const"
+  | "var";
+
+/** One card: a folder holding everything below it, or a file. */
+export interface RepoMapNode {
+  /** The folder's or file's path in the repository. */
+  id: string;
+  label: string;
+  folder: boolean;
+  files: number;
+  declarations: number;
+  lines: number;
+  /** The language most of its files are written in. */
+  language: string;
+  /** Files outside the node that import something in it. */
+  imported_by: number;
+  /** The top-level folder it belongs to; "" for a file at the root. */
+  group: string;
+}
+
+/** The imports from one node into another; `weight` counts file-to-file imports. */
+export interface RepoMapEdge {
+  from: string;
+  to: string;
+  weight: number;
+}
+
+export interface RepoMapGraph {
+  /** The folder shown; "" is the repository, and what the project view answers. */
+  focus: string;
+  nodes: RepoMapNode[];
+  edges: RepoMapEdge[];
+  /** These three describe the whole repository, whatever the focus. */
+  files: number;
+  declarations: number;
+  languages: { language: string; files: number }[];
+}
+
+/** How the map was read this time. */
+export interface RepoMapBuild {
+  files: number;
+  /** Files read now rather than taken from the cache. */
+  parsed: number;
+  millis: number;
+  /** False in a build without tree-sitter, where no file has declarations. */
+  grammars: boolean;
+  /** Code files left out past the map's bound. */
+  truncated: number;
+  /** Git chose the files, honouring .gitignore and .gitattributes. */
+  git: boolean;
+}
+
+export interface RepoMapView {
+  graph: RepoMapGraph;
+  build: RepoMapBuild;
+}
+
+export interface RepoMapOutlineRow {
+  name: string;
+  kind: RepoMapKind;
+  line: number;
+  end_line: number;
+  signature: string;
+  depth: number;
+}
+
+export interface RepoMapFileDetail {
+  path: string;
+  language: string;
+  lines: number;
+  /** False for a language without a grammar: its outline and imports are unknown. */
+  parsed: boolean;
+  declarations: RepoMapOutlineRow[];
+  imports: string[];
+  imported_by: string[];
+  external: string[];
+}
+
+export interface RepoMapDeclHit {
+  path: string;
+  name: string;
+  kind: RepoMapKind;
+  line: number;
+  end_line: number;
+  signature: string;
+  /** The declaration it sits inside; "" at the top of its file. */
+  parent: string;
+  /** Other files that mention it and import its file, or share its package. */
+  used_by: number;
+}
+
+export interface RepoMapUsage {
+  path: string;
+  line: number;
+  /** The signature of the declaration the mention sits inside; "" at the top level. */
+  within: string;
+  /** The file imports the declaring one or shares its package; false is a mention by name only. */
+  confirmed: boolean;
+}
+
+// ---------- Archify documents (20-archify-diagrams.md, backend/archify) ----------
+
+/** What the user's Archify install can do. */
+export interface ArchifyStatus {
+  installed: boolean;
+  version: string;
+  /** The install draws class diagrams (its 3.1 line onwards). */
+  has_class: boolean;
+  /** The command that installs it, for the view to offer when it is missing. */
+  install: string;
+}
+
+/** A class diagram drawn from the map, ready to be written into the repository. */
+export interface ArchifyClassDiagram {
+  /** The Archify document, as JSON text. */
+  document: string;
+  title: string;
+  types: number;
+  /** Types past the diagram's bound, the least used, left out. */
+  omitted: number;
+}
+
+/** A program a feature needs and the app does not ship, as found on this machine (REQ-002). */
+export interface RequirementTool {
+  id: "git" | "node" | "go" | "archify";
+  installed: boolean;
+  /** What it reported, "" when it is not installed or did not say. */
+  version: string;
+  path: string;
+  /** False for an install too old for what it is needed for. */
+  supported: boolean;
+}
+
+/** The diagrams a model draws by reading the repository (ARCHIFY-007). */
+export type ArchifyAiKind = "architecture" | "workflow" | "sequence" | "dataflow" | "lifecycle";
+
+/** A document a model drew — or changed — and the user's Archify accepted (ARCHIFY-007, ARCHIFY-008). */
+export interface ArchifyDrawn {
+  /** The Archify document, as JSON text. */
+  document: string;
+  title: string;
+  diagram_type: string;
+  /** How many times the answer went back to the model to be fixed. */
+  rounds: number;
+}
+
+/** A topic worth drawing, picked from the map (ARCHIFY-009). */
+export interface ArchifySuggestion {
+  label: string;
+  /** Where it comes from: `path:line`, or the file that names it. */
+  hint: string;
+  /** What is sent as the topic when it is picked. */
+  topic: string;
+}
+
+/** A document drawn for the in-app viewer. */
+export interface ArchifyRendered {
+  /** Where the asset server serves the page, for an iframe. */
+  view_url: string;
+  /** The page on disk, in the app's data folder — what "open in the browser" opens. */
+  html_path: string;
+  /** Archify's own receipt; "" when the page was already drawn. */
+  report: string;
+}
+
+export interface RepoMapUsageReport {
+  declarations: RepoMapDeclHit[];
+  usages: RepoMapUsage[];
+  /** Files that mention the name but, by their known imports, mean another declaration of it. */
+  excluded: number;
+}

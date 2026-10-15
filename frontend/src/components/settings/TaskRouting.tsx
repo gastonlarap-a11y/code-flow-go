@@ -3,7 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { getSetting, setSetting } from "../../lib/ipc/commands";
 import { useAiModelsStore } from "../../state/aiModelsStore";
 import { AI_PROVIDERS, isAgenticProvider } from "../../lib/aiProviders";
-import { AI_TASKS } from "../../lib/aiTasks";
+import { AI_TASKS, canRunTask } from "../../lib/aiTasks";
 import { useAiProviderStore } from "../../state/aiProviderStore";
 import { useProviderStatusStore } from "../../state/providerStatusStore";
 import { useT } from "../../state/languageStore";
@@ -110,9 +110,11 @@ export function TaskRouting() {
       {AI_TASKS.map((task) => {
         const provider = effectiveProvider(task.key);
         const inherited = !taskProviders[task.key]?.trim();
-        // A task that needs tool use can't run on a local model — including when it inherits a
-        // default that happens to be one, which the row has to call out rather than silently fail.
-        const broken = task.agenticOnly && !isAgenticProvider(provider);
+        // A task that needs tool use can't run on a local model, and one that must only read the
+        // repository can't run on an engine that cannot be held to that — including when it
+        // inherits a default that happens to be one, which the row has to call out rather than
+        // silently fail.
+        const broken = !canRunTask(task, provider, isAgenticProvider);
         const options = modelOptionsFor(provider, modelsByProvider[provider] ?? []);
 
         return (
@@ -134,7 +136,7 @@ export function TaskRouting() {
                     // Providers that aren't installed stay listed but disabled — so it's clear they
                     // exist and what's missing, rather than silently vanishing from the list.
                     ...AI_PROVIDERS.filter((p) => p.available)
-                      .filter((p) => !task.agenticOnly || isAgenticProvider(p.id))
+                      .filter((p) => canRunTask(task, p.id, isAgenticProvider))
                       .map((p) => {
                         const missing = statuses[p.id]?.available === false;
                         return {
@@ -170,7 +172,13 @@ export function TaskRouting() {
             {broken && (
               <p className="mt-1.5 flex items-start gap-1 text-badge leading-snug text-[var(--cf-danger)]">
                 <AlertTriangle size={11} className="mt-0.5 shrink-0" />
-                {inherited ? t("settings.taskAgenticInherited") : t("settings.taskAgenticRequired")}
+                {task.readOnlyEngines
+                  ? inherited
+                    ? t("settings.taskReadOnlyInherited")
+                    : t("settings.taskReadOnlyRequired")
+                  : inherited
+                    ? t("settings.taskAgenticInherited")
+                    : t("settings.taskAgenticRequired")}
               </p>
             )}
           </div>

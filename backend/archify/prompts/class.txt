@@ -1,0 +1,5 @@
+The diagram is a class diagram (`diagram_type: "class"`): types with their fields and methods, and how
+they relate — what each extends and implements, what it holds, what it uses.
+- Every type keeps a `row` and a `col` on the grid: what a type extends or implements sits in a row
+  above it.
+- Relationships go from the type that extends, implements, holds or uses to the one it names.

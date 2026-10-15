@@ -305,7 +305,11 @@ core entirely — in the Electron main/preload layer, not in any ported command 
    is no installed binary to update.
    **Go port**: no longer a bypass. The three surfaces are ordinary registry commands
    (`backend/update/commands.go`), and `update:progress` reaches the renderer for the first time —
-   see `DIVERGENCE-BOOT-g`.
+   see `DIVERGENCE-BOOT-g`. **An unstamped build is not checked on its own** (after 3.9.0): a binary
+   whose version is `0.0.0` — built from source, `0.0.0-ci` in CI — is no installed release, every
+   release reads as newer to it, and the corner notice offered to install one over the build being
+   tested. Its automatic checks are skipped; a manual check from Settings still runs
+   (`isUnstampedVersion`, `state/updateStore.ts`).
 
 3. **`components/api/ImportModal.tsx`** — `getCurrentWebview().onDragDropEvent(...)`
    (`renderer/src/lib/bridge/webview.ts`). the native webview drag handler consumes OS file drops before any

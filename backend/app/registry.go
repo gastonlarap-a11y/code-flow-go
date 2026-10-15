@@ -10,6 +10,7 @@ import (
 	"github.com/gastonlarap-a11y/code-flow/backend/activity"
 	"github.com/gastonlarap-a11y/code-flow/backend/ai"
 	"github.com/gastonlarap-a11y/code-flow/backend/apiclient"
+	"github.com/gastonlarap-a11y/code-flow/backend/archify"
 	"github.com/gastonlarap-a11y/code-flow/backend/bridge"
 	"github.com/gastonlarap-a11y/code-flow/backend/codemap"
 	"github.com/gastonlarap-a11y/code-flow/backend/dbml"
@@ -18,6 +19,8 @@ import (
 	"github.com/gastonlarap-a11y/code-flow/backend/git"
 	"github.com/gastonlarap-a11y/code-flow/backend/platform"
 	"github.com/gastonlarap-a11y/code-flow/backend/providers"
+	"github.com/gastonlarap-a11y/code-flow/backend/repomap"
+	"github.com/gastonlarap-a11y/code-flow/backend/requirements"
 	"github.com/gastonlarap-a11y/code-flow/backend/review"
 	"github.com/gastonlarap-a11y/code-flow/backend/security"
 	"github.com/gastonlarap-a11y/code-flow/backend/storage"
@@ -449,6 +452,56 @@ func BuildRegistry(deps Deps) (*bridge.Registry, func(method string, err error))
 		OutputDir: filepath.Join(deps.Paths.Base(), "codemap", "archify"),
 		Opener:    opener,
 	})
+
+	// The code map's drawn view reads any repository with nothing installed (REPOMAP-001), and
+	// keeps each one's index beside the Archify pages so the next start reads only what changed.
+	maps := repomap.NewService(repomap.CacheDir(deps.Paths.Base()))
+	repomap.Register(registry, repomap.Deps{Service: maps})
+
+	// Validating and rendering Archify documents, the pages the in-app viewer serves, and the
+	// diagrams a model draws by reading the repository (ARCHIFY-002 … ARCHIFY-010). The pages are
+	// derived, so they live in the app's data folder; a model's run is offered this binary as the
+	// map's MCP server, as the code map's questions are.
+	var pageOpener archify.FileOpener
+	if deps.Opener != nil {
+		pageOpener = deps.Opener
+	}
+	var mapTools func(root string) (string, func(), error)
+	if executable := currentExecutable(); executable != "" {
+		mapTools = func(root string) (string, func(), error) { return codemap.WriteMCPConfig(executable, root) }
+	}
+	archify.Register(registry, archify.Deps{
+		Runtime: func() archify.Runtime {
+			tools := codemap.DiscoverTools()
+			return archify.Runtime{Node: tools.Node, Path: tools.Path}
+		},
+		ViewDir:   archify.ViewDir(deps.Paths.Base()),
+		Opener:    pageOpener,
+		Maps:      maps,
+		AI:        ai.NewOperations(aiRouter, runs, httpClient, credentials),
+		MCPConfig: mapTools,
+	})
+
+	// What the features need installed and the app does not ship (REQ-001), found where the code
+	// map and every child process look for programs, afresh on each check.
+	requirements.Register(registry, requirements.Deps{Finder: func() requirements.Finder {
+		tools := codemap.DiscoverTools()
+		return requirements.Finder{
+			Path: tools.Path,
+			Lookup: func(name string) string {
+				switch name {
+				case requirements.Go:
+					return tools.Go
+				case requirements.Node:
+					return tools.Node
+				}
+				if path, ok := ai.FindOnPath(name); ok {
+					return path
+				}
+				return ""
+			},
+		}
+	}})
 
 	// Everything below needs the database. When the storage stage failed it is nil, and these
 	// commands are simply not registered: the window still opens, the renderer's banner says why,

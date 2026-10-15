@@ -204,6 +204,13 @@ jobs:
         shell: bash
         run: wails3 task "$PACKAGE_TASK" VERSION="$RELEASE_VERSION"
 
+      # A Windows build that needs a MinGW DLL starts on the runner, which has MinGW, and fails on a
+      # user's machine, which does not — so the imports are read, not the build trusted.
+      - name: Check the Windows build needs no MinGW DLL
+        if: runner.os == 'Windows'
+        shell: bash
+        run: ./.github/scripts/check-windows-dlls.sh bin/CodeFlow.exe
+
       # The packaged binary answers "is this viable on this machine?" and exits. A build that
       # cannot probe its own environment is not one to upload.
       - name: Smoke-test what was built

@@ -21,7 +21,10 @@ time — a table name held in a variable — is recorded as *unresolved* and sho
   export
 - `main.go` — only the `codemap-mcp` mode switch at the top of `main` (CODEMAP-015)
 - `backend/codemap/extract.mjs` — the TypeScript extractor, embedded in the binary and run by Node
-- `frontend/src/components/codemap/` — the «Code map» module's view
+- `frontend/src/components/codemap/` — the «Code map» module. It has two views: the drawn map
+  (`map/`, `19-repo-map.md`), where it opens because it needs nothing installed, and the symbol view
+  this document describes (`SymbolsView.tsx`), which builds its map only when it is chosen — a
+  repository opened on the drawn map never runs go or node for it
 - `frontend/src/state/codemapStore.ts` — what the view holds, and in what order answers are kept
 - `frontend/src/lib/codemap/` — the vocabulary the view shows for each kind of node and edge, and a
   flow as a Mermaid diagram (CODEMAP-016)
@@ -254,8 +257,9 @@ database and no credential. Every command takes the repository's folder as `root
 `newSincePort` in `backend/app/contract_test.go`.
 
 ### CODEMAP-013 The «Code map» module
-**Implementation**: `frontend/src/components/codemap/CodemapView.tsx` · `SymbolPanel.tsx` ·
-`FlowTree.tsx` · `ImpactPanel.tsx` · `SymbolRow.tsx` · `frontend/src/state/codemapStore.ts`
+**Implementation**: `frontend/src/components/codemap/CodemapView.tsx` (the module and its «Map» /
+«Symbols» switch, `codemapStore.mode`) · `SymbolsView.tsx` · `SymbolPanel.tsx` · `FlowTree.tsx` ·
+`ImpactPanel.tsx` · `SymbolRow.tsx` · `frontend/src/state/codemapStore.ts`
 **Behaviour**: a repo-scoped module, listed after the diagram editor, with no context column — it
 carries its own. Opening it builds the map of the selected project's folder (CODEMAP-002), showing
 the build's stage until the overview arrives; the header then names, per language, what was mapped,
@@ -314,21 +318,26 @@ key is added to its environment (SEC-007).
 **Markers**: none
 
 ### CODEMAP-015 The map as an MCP server
-**Implementation**: `backend/codemap/mcp.go` · `main.go`
+**Implementation**: `backend/codemap/mcp.go` · `main.go` · `backend/repomap/text.go`
 **Behaviour**: `CodeFlow codemap-mcp --root <repository>` serves the map over stdio (the official
 MCP Go SDK) instead of opening a window. `main` checks for it first, beside `--smoke-test`, so the
-mode takes no single-instance lock, opens no window and writes nothing into the user's data. Five
-read-only tools — `codemap_overview`, `codemap_search`, `codemap_symbol`, `codemap_flow`,
-`codemap_impact` — answer text that cites file:line, clipped to 8 000 bytes on a line boundary.
-The map is built in the background as soon as the server starts; a tool waits at most twenty
-seconds for a cold build and otherwise says the map is still being built, while the build carries
-on for the next call.
+mode takes no single-instance lock, opens no window and writes nothing into the user's data. Nine
+read-only tools answer text that cites file:line, clipped to 8 000 bytes on a line boundary:
+- five from the symbol graph — `codemap_overview`, `codemap_search`, `codemap_symbol`,
+  `codemap_flow`, `codemap_impact`. The graph is built in the background as soon as the server
+  starts; a tool waits at most twenty seconds for a cold build and otherwise says the map is still
+  being built, while the build carries on for the next call;
+- four from the file index of `19-repo-map.md`, in any of its languages and with nothing installed —
+  `codemap_files`, `codemap_outline`, `codemap_declarations`, `codemap_name_usages` (REPOMAP-010).
+  Their index is read-only in this process: it reads the cache the app keeps, parses what changed
+  since, and writes nothing.
 **Inputs / outputs**: MCP over newline-delimited JSON-RPC on stdin/stdout. Exit `2` without
 `--root`.
 **Edge cases**: a name several symbols share answers their IDs, so the model can ask again
-precisely. Measured against Claude Code 2.1.299: the server connects, its five tools appear as
+precisely. Measured against Claude Code 2.1.299: the server connects, its five graph tools appear as
 `mcp__codemap__*`, and a model given only them answered a flow question by calling
-`codemap_search` and `codemap_flow`.
+`codemap_search` and `codemap_flow`. The same server is handed to the runs that draw a repository
+diagram (ARCHIFY-007), whose allow-list names `mcp__codemap` whole.
 **Frontend dependency**: none.
 **Markers**: none
 
@@ -353,10 +362,14 @@ editor loads its list rather than racing it. Disabled while a flow has no steps.
 **Markers**: none
 
 ### CODEMAP-017 The map drawn by Archify
-**Implementation**: `backend/codemap/archify.go` · `archify_cli.go` · `archify_export.go`
+**Implementation**: `backend/codemap/archify.go` · `archify_cli.go` · `archify_export.go`; finding,
+rendering and the repository pin are `backend/archify/` (`cli.go`, `repo.go`), shared with the
+repository diagrams (`20-archify-diagrams.md`)
 **Behaviour**: when the user has [Archify](https://github.com/tt-a1i/archify) 3.1 or a later 3.x
-installed — `ARCHIFY_BIN`, or `archify/bin/archify.mjs` under `~/.claude/skills`, `~/.agents/skills`,
-`~/.codex/skills`, or the repository's `.claude/skills` / `.agents/skills` — the status names its
+installed — `ARCHIFY_BIN`, or `archify/bin/archify.mjs` under any folder `npx skills add -g` installs
+skills into (`~/.claude/skills`, `~/.agents/skills`, `~/.config/opencode/skills`, `~/.cursor/skills`,
+`~/.gemini/antigravity/skills`, and the older `~/.codex/skills`), or the repository's `.claude/skills`
+/ `.agents/skills` — the status names its
 version, and the view offers two more drawings:
 
 | offered | draws |
@@ -368,7 +381,10 @@ Positions, labels and citations come from the map, never from a model. The app w
 document (`schema_version` 1) and runs `archify deliver <type> --quality standard --json`, which
 validates the document — including that every cited line exists in the pinned commit — before it
 renders the page; the app then opens the page with the system's default application. Both files go
-under the app's data folder (`codemap/archify/<repository>/`), never into the repository.
+under the app's data folder (`codemap/archify/<repository>/`), never into the repository: these two
+are a picture of the map at one moment, redrawn on demand. The diagrams of the «Map» view are the
+other kind — documents written into the repository, shown in the diagram editor and versioned with
+the code (`20-archify-diagrams.md`).
 **Inputs / outputs**: `codemap_archify(rootPath, symbol?, language?)` →
 `{ html_path, diagram_type, report }`, `report` being Archify's own JSON receipt. Refusals:
 `Archify is not installed`, `ErrNoSequence` (a flow that never leaves one file or package),
@@ -381,7 +397,8 @@ as it is, and an origin that is a folder on disk pins nothing — that repositor
 nothing. Citations link to the host only when `HEAD` is on a remote branch of GitHub, GitLab or
 Gitee; otherwise `link_mode` is `local-only`. A sequence keeps at most seven lifelines and forty messages — Archify's
 own limits — and says in a card how many steps it left out. Archify runs with the app's
-`PATH`-only environment (SEC-007), so its update check is whatever the user configured.
+`PATH`-only environment (SEC-007) plus `ARCHIFY_UPDATE_CHECK_DISABLED=1`: the CLI would otherwise
+look for a new version of itself over the network on every render.
 **Frontend dependency**: `codemapArchify`; the two buttons, shown only when
 `CodemapStatus.archify` is not empty.
 **Markers**: none

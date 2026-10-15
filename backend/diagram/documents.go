@@ -30,10 +30,15 @@ import (
 // multi-dot name would need it. `filepath.Ext` would do here; the shared walk does not care.
 const documentSuffix = ".mmd"
 
-// ListDocuments walks a folder for diagram documents (DIAG-002).
+// archifySuffix is an Archify document the editor shows rather than edits (ARCHIFY-005): one
+// suffix, so unrelated JSON — a workflow export, a state machine — is never picked up as one.
+const archifySuffix = ".archify.json"
+
+// ListDocuments walks a folder for diagram documents (DIAG-002): the editor's Mermaid files and the
+// Archify documents the code map writes beside them.
 //
 // Project-relative, sorted, `/`-separated on every platform, bounded by `docwalk`'s limits, with
 // the directories nobody keeps documents in pruned rather than filtered.
 func ListDocuments(ctx context.Context, rootPath string) ([]string, error) {
-	return docwalk.List(ctx, rootPath, documentSuffix)
+	return docwalk.List(ctx, rootPath, documentSuffix, archifySuffix)
 }

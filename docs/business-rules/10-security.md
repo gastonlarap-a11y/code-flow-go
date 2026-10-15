@@ -595,6 +595,35 @@ credentials" (keychain) and "credentials the user configures for API requests th
 API-client auth storage to the credential store — rather than silently inheriting whichever
 behavior falls out of a straight port.
 
+### SEC-015 The one frame the renderer may hold, and what runs in it
+**Implementation**: `frontend/vite.config.ts` (`frame-src`) · `backend/archify/viewer.go`
+(`ViewerMiddleware`, `pagePolicy`) · `frontend/src/components/diagram/ArchifyPane.tsx` · `main.go`
+(`AssetOptions.Middleware`)
+**Behaviour**: written here, not ported. The renderer's policy allows frames from exactly one path,
+`/archify-view/`, on the app's own origin — `wails://localhost` and `http://wails.localhost` — and
+from nowhere else. That path serves the pages the user's Archify drew from documents in the
+repository (ARCHIFY-004): self-contained HTML whose script and style are inline, which the renderer's
+own policy would refuse in a `srcdoc` frame. Each page is served under a policy of its own, sent as a
+header and repeated as the first element of its `<head>`: inline script and style, images and fonts
+from `data:`/`blob:` only, no `connect-src`, no `form-action`, no base, no frames of its own, and
+`frame-ancestors 'self'`. The renderer frames it with `sandbox="allow-scripts"` and **never**
+`allow-same-origin`, so the page runs in an opaque origin: it cannot read the app's storage, call
+the bridge, or reach the network.
+The path restriction is the part that matters most. The Wails runtime endpoint, `/wails/runtime`,
+accepts a call in its query string when the body is empty; a frame allowed the whole origin could
+be navigated there by its own script and invoke a command. With `frame-src` naming only
+`/archify-view/`, such a navigation is refused by the embedding page's policy.
+The middleware answers only `GET`/`HEAD` of `/archify-view/<64 hex>.html`, reading only from the
+viewer's folder in the app's data; every other request — `/wails/*` included — passes to the asset
+server untouched. Opening a page in the browser accepts only a path inside that folder.
+**Inputs / outputs**: none of its own.
+**Edge cases**: `pnpm dev` injects no policy at all (`contentSecurityPolicy` applies to builds
+only), so this rule is checked against `task build`. A page whose response header were not honoured
+on the app's custom scheme still carries the same policy in its `<head>`; `frame-ancestors` exists
+only as the header.
+**Frontend dependency**: `ArchifyPane`.
+**Markers**: none
+
 ## Test coverage
 
 | extracted case | Source | Fixture | Kind |

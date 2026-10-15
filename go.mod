@@ -5,6 +5,7 @@ go 1.27.0
 toolchain go1.27.2
 
 require (
+	github.com/UserNobody14/tree-sitter-dart v0.0.0-20260707040301-be07cf7118d3
 	github.com/charmbracelet/x/xpty v0.1.4
 	github.com/coder/websocket v1.8.15
 	github.com/danieljoos/wincred v1.2.3
@@ -16,6 +17,12 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/stretchr/testify v1.12.1
 	github.com/syncthing/notify v0.0.0-20250528144937-c7027d4f7465
+	github.com/tree-sitter/go-tree-sitter v0.25.0
+	github.com/tree-sitter/tree-sitter-go v0.25.0
+	github.com/tree-sitter/tree-sitter-java v0.23.5
+	github.com/tree-sitter/tree-sitter-javascript v0.25.0
+	github.com/tree-sitter/tree-sitter-python v0.25.0
+	github.com/tree-sitter/tree-sitter-typescript v0.23.2
 	github.com/wailsapp/wails/v3 v3.0.0-beta.25
 	golang.org/x/sys v0.48.0
 	modernc.org/sqlite v1.59.0
@@ -39,6 +46,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/segmentio/asm v1.1.3 // indirect

@@ -231,11 +231,16 @@ func (run *Run) WatchSilence() {
 
 // EmitLine streams one line of output (AI-012).
 //
-// Trailing whitespace trimmed, an empty result dropped entirely, and the rest capped — a CLI that
+// Trailing whitespace trimmed, an empty result dropped entirely, a JSON event reduced to what the
+// log shows of it (logview.go) — or dropped when it shows nothing — and the rest capped: a CLI that
 // echoes a minified bundle should cost one long line in the log, not a megabyte in every listener.
 func (run *Run) EmitLine(stream, line string) {
 	line = strings.TrimRight(line, " \t\r\n")
 	if line == "" {
+		return
+	}
+	line, keep := logView(line)
+	if !keep {
 		return
 	}
 

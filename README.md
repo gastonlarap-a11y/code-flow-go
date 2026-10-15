@@ -109,16 +109,24 @@ same way. The release workflow smoke-tests it against every image it publishes.
 | Node | 24 | |
 | pnpm | 11.20.0 | pinned by `frontend/package.json` |
 | git | 2.40+ | a runtime dependency, not just a build one |
+| C compiler | clang or gcc | cgo links the tree-sitter grammars (`19-repo-map.md`): the Xcode Command Line Tools on macOS, MinGW-w64 gcc on Windows. The build states `CGO_ENABLED=1`, so a missing compiler fails it instead of producing a map that reads no declaration |
 | macOS | **26 (Tahoe) or newer** | Apple stopped patching macOS 14 in September 2026; every supported version ships Safari 26+, which the renderer relies on for CSS anchor positioning, the Popover API and `light-dark()` |
 | Windows | 10 or 11 | needs the WebView2 runtime (preinstalled on 11) |
 
 ```sh
 mise use -g go@1.27.2
 go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 wails3 doctor          # must be clean before anything else
 pnpm -C frontend install --frozen-lockfile
 ```
+
+golangci-lint needs no install of its own: `task go:check` puts CI's version into `.tools/` the
+first time it runs.
+
+**What the features need on a user's machine** is a different list, and the app shows it itself:
+**Settings → Requirements** names each program a feature drives (git, Node.js, Go, Archify, an AI
+engine), whether this computer has it, and the vendor's command to install it
+(`docs/business-rules/21-requirements.md`).
 
 ## Commands
 

@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Lock, Settings2 } from "lucide-react";
 import { Tooltip } from "../common/Tooltip";
-import { AI_PROVIDERS, modelDisplayLabel } from "../../lib/aiProviders";
+import { AI_PROVIDERS, isAgenticProvider, modelDisplayLabel } from "../../lib/aiProviders";
+import { AI_TASKS, canRunTask } from "../../lib/aiTasks";
+import type { TranslationKey } from "../../lib/i18n/translations";
 import { modelOptionsFor } from "../settings/modelPicker";
 import { useAiModelsStore } from "../../state/aiModelsStore";
 import { useAiProviderStore, useTaskProvider } from "../../state/aiProviderStore";
@@ -27,11 +29,24 @@ const EDGE = 8;
  * Switching provider mid-chat can't work: each CLI keeps its own session store, so the turns so far
  * live somewhere the next engine can't read, and its resume token means nothing there. Rather than
  * silently dropping the thread, the other providers are locked behind "new chat".
+ *
+ * `task` points the same chip at another task's routing — the code map's diagrams use `diagram` —
+ * and only lists the providers that task can run on.
  */
-export function ChatModelPicker({ liveModel, chatActive }: { liveModel: string | null; chatActive: boolean }) {
+export function ChatModelPicker({
+  liveModel,
+  chatActive,
+  task = "chat",
+  heading = "chat.modelForChat",
+}: {
+  liveModel: string | null;
+  chatActive: boolean;
+  task?: string;
+  heading?: TranslationKey;
+}) {
   const t = useT();
-  const providerId = useTaskProvider("chat");
-  const configuredModel = useAiProviderStore((s) => s.taskModels.chat ?? s.model);
+  const providerId = useTaskProvider(task);
+  const configuredModel = useAiProviderStore((s) => s.taskModels[task] ?? s.model);
   const setTaskRouting = useAiProviderStore((s) => s.setTaskRouting);
   const modelsByProvider = useAiModelsStore((s) => s.byProvider);
   const ensureModels = useAiModelsStore((s) => s.ensure);
@@ -46,7 +61,10 @@ export function ChatModelPicker({ liveModel, chatActive }: { liveModel: string |
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const selectable = AI_PROVIDERS.filter((p) => p.available);
+  const definition = AI_TASKS.find((d) => d.key === task);
+  const selectable = AI_PROVIDERS.filter((p) => p.available).filter(
+    (p) => !definition || canRunTask(definition, p.id, isAgenticProvider),
+  );
   // What the engine reported for the last turn beats the stored setting: with no model configured
   // the CLI picks its own, so only the reply knows which.
   const shownModel = liveModel ?? configuredModel;
@@ -119,7 +137,7 @@ export function ChatModelPicker({ liveModel, chatActive }: { liveModel: string |
 
   const pick = async (nextProvider: string, model: string) => {
     setOpen(false);
-    await setTaskRouting("chat", nextProvider, model);
+    await setTaskRouting(task, nextProvider, model);
   };
 
   /** Live list when the CLI gave us one, else the curated fallback — via `modelOptionsFor`, which
@@ -163,7 +181,7 @@ export function ChatModelPicker({ liveModel, chatActive }: { liveModel: string |
             {browsing === null ? (
               <>
                 <p className="shrink-0 px-2.5 py-1.5 text-badge font-medium uppercase tracking-wide text-[var(--cf-text-muted)]">
-                  {t("chat.modelForChat")}
+                  {t(heading)}
                 </p>
                 <div className="min-h-0 flex-1 overflow-auto p-1 pt-0">
                   {selectable.map((p) => {
